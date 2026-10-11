@@ -1,0 +1,82 @@
+[
+  {
+    "id": "1",
+    "title": {
+      "en": "Pan-Seared Herb Chicken",
+      "vi": "Ức gà áp chảo sốt thảo mộc"
+    },
+    "description": {
+      "en": "Juicy chicken breast with crispy skin.",
+      "vi": "Ức gà mọng nước áp chảo ít dầu."
+    },
+    "cook_time": {
+      "en": "20 mins",
+      "vi": "20 phút"
+    },
+    "calories": 380,
+    "protein": 42,
+    "carbs": 12,
+    "fat": 8,
+    "image_url": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=600&q=80",
+    "ingredients": [
+      "Ức gà 200g",
+      "Tiêu đen",
+      "Dầu ô liu",
+      "Bông cải xanh"
+    ],
+    "steps": {
+      "en": [
+        "Season chicken with pepper and salt.",
+        "Sear both sides for 5 minutes."
+      ],
+      "vi": [
+        "Ướp ức gà với tiêu và muối.",
+        "Áp chảo mỗi mặt 5 phút."
+      ]
+    },
+    "chef_advice": {
+      "en": "Do not overcook.",
+      "vi": "Không nấu quá lửa để tránh bị khô."
+    }
+  },
+  {
+    "id": "2",
+    "title": {
+      "en": "Scrambled Eggs with Tomato",
+      "vi": "Trứng xào cà chua"
+    },
+    "description": {
+      "en": "Simple and nutritious home-style dish.",
+      "vi": "Món ăn gia đình thanh đạm, giàu đạm."
+    },
+    "cook_time": {
+      "en": "10 mins",
+      "vi": "10 phút"
+    },
+    "calories": 250,
+    "protein": 18,
+    "carbs": 8,
+    "fat": 14,
+    "image_url": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80",
+    "ingredients": [
+      "2 quả trứng",
+      "1 quả cà chua",
+      "Hành lá",
+      "Gia vị"
+    ],
+    "steps": {
+      "en": [
+        "Whisk eggs.",
+        "Sauté tomatoes until soft, then pour in eggs."
+      ],
+      "vi": [
+        "Đánh đều trứng.",
+        "Xào mềm cà chua rồi đổ trứng vào đảo đều."
+      ]
+    },
+    "chef_advice": {
+      "en": "Cook eggs on low heat.",
+      "vi": "Đảo trứng trên lửa nhỏ để trứng mềm mượt."
+    }
+  }
+]

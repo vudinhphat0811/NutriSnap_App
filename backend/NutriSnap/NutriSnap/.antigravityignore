@@ -1,0 +1,8 @@
+bin/**
+obj/**
+.vs/**
+Migrations/**
+*.dll
+*.exe
+*.pdb
+*.json.map
