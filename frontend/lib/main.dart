@@ -12,11 +12,13 @@ import 'screens/shake_recipe_screen.dart';
 import 'screens/recipe_detail_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/app_state_service.dart';
+import 'constants/api_constants.dart';
 import 'widgets/guest_trial_barrier.dart';
 import 'widgets/social_auth_helper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiConstants.loadSocialConfigs();
   await AppStateService.instance.loadFromLocalStorage();
   runApp(const NutriSnapApp());
 }

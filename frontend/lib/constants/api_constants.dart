@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class ApiConstants {
   // Địa chỉ máy chủ Cloud Production (Render + Supabase PostgreSQL)
   static const String cloudBaseUrl = 'https://nutrisnap-app.onrender.com';
@@ -39,9 +41,42 @@ class ApiConstants {
   static String get profile => '$baseUrl/api/user/profile';
 
   // Cấu hình OAuth 2.0 Bên thứ ba (Google & Facebook)
-  // Web Client ID từ Google Cloud Console (nếu không dùng google-services.json)
-  static const String googleServerClientId = '';
+  // Web Client ID từ Google Cloud Console (nếu có dùng Web OAuth)
+  static String googleServerClientId = '';
 
   // App ID từ Meta for Developers (https://developers.facebook.com)
-  static const String facebookAppId = '';
+  static String facebookAppId = '';
+
+  /// Nạp các cấu hình OAuth được lưu trong SharedPreferences (nếu có)
+  static Future<void> loadSocialConfigs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedFb = prefs.getString('custom_facebook_app_id');
+      if (savedFb != null && savedFb.trim().isNotEmpty) {
+        facebookAppId = savedFb.trim();
+      }
+      final savedGg = prefs.getString('custom_google_client_id');
+      if (savedGg != null && savedGg.trim().isNotEmpty) {
+        googleServerClientId = savedGg.trim();
+      }
+    } catch (_) {}
+  }
+
+  /// Lưu Facebook App ID vào SharedPreferences để dùng lâu dài
+  static Future<void> saveFacebookAppId(String id) async {
+    facebookAppId = id.trim();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('custom_facebook_app_id', facebookAppId);
+    } catch (_) {}
+  }
+
+  /// Lưu Google Web Client ID vào SharedPreferences
+  static Future<void> saveGoogleClientId(String id) async {
+    googleServerClientId = id.trim();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('custom_google_client_id', googleServerClientId);
+    } catch (_) {}
+  }
 }
