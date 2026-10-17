@@ -49,6 +49,8 @@ Thumbs.db
 app.*.symbols
 app.*.map.json
 *.apk
+!apk/
+!apk/*.apk
 *.aab
 .kotlin/
 
