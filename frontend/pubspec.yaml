@@ -14,7 +14,7 @@ dependencies:
   youtube_player_flutter: ^10.0.1
   sensors_plus: ^7.1.1
   url_launcher: ^6.3.3
-  google_sign_in: ^7.2.0
+  google_sign_in: ^6.2.2
 
 dev_dependencies:
   flutter_test:

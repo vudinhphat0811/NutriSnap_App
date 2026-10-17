@@ -82,6 +82,7 @@ builder.Services.AddAuthorization();
 
 // 4. Đăng ký các Services
 builder.Services.AddTransient<IEmailSender<AppUser>, EmailSender>();
+builder.Services.AddTransient<EmailSender>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddHttpClient<MealDbSyncService>();
 builder.Services.AddHttpClient<RecipeService>();

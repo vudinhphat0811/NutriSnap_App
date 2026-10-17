@@ -338,12 +338,21 @@ class _LoginScreenState extends State<LoginScreen> {
                             Expanded(
                               child: OutlinedButton(
                                 onPressed: () async {
-                                  final ok = await SocialAuthHelper.showGoogleAuthDialog(context);
-                                  if (ok && context.mounted) {
-                                    Navigator.pushReplacement(
-                                      context,
-                                      MaterialPageRoute(builder: (_) => const MobileWrapper(child: MainShellScreen())),
-                                    );
+                                  final result = await SocialAuthHelper.signInWithSocial(context, provider: 'google');
+                                  if (result.success && context.mounted) {
+                                    if (result.isNewUser || !AppStateService.instance.userProfile.hasProfile) {
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => OnboardingProfileScreen(initialEmail: result.email),
+                                        ),
+                                      );
+                                    } else {
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => const MobileWrapper(child: MainShellScreen())),
+                                      );
+                                    }
                                   }
                                 },
                                 style: OutlinedButton.styleFrom(
@@ -373,12 +382,21 @@ class _LoginScreenState extends State<LoginScreen> {
                             Expanded(
                               child: OutlinedButton(
                                 onPressed: () async {
-                                  final ok = await SocialAuthHelper.showFacebookAuthDialog(context);
-                                  if (ok && context.mounted) {
-                                    Navigator.pushReplacement(
-                                      context,
-                                      MaterialPageRoute(builder: (_) => const MobileWrapper(child: MainShellScreen())),
-                                    );
+                                  final result = await SocialAuthHelper.signInWithSocial(context, provider: 'facebook');
+                                  if (result.success && context.mounted) {
+                                    if (result.isNewUser || !AppStateService.instance.userProfile.hasProfile) {
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => OnboardingProfileScreen(initialEmail: result.email),
+                                        ),
+                                      );
+                                    } else {
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => const MobileWrapper(child: MainShellScreen())),
+                                      );
+                                    }
                                   }
                                 },
                                 style: OutlinedButton.styleFrom(

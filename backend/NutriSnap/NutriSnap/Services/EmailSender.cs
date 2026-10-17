@@ -74,6 +74,33 @@ public class EmailSender : IEmailSender<AppUser>
         return SendEmailAsync(email, "Mã OTP xác nhận NutriSnap", body);
     }
 
+    // Dùng khi người dùng yêu cầu đổi email đăng ký mới
+    public Task SendChangeEmailCodeAsync(string email, string code)
+    {
+        Console.WriteLine($"[EmailSender] ========================================");
+        Console.WriteLine($"[EmailSender] MÃ OTP ĐỔI EMAIL CHO {email}: {code}");
+        Console.WriteLine($"[EmailSender] ========================================");
+
+        string body = $@"
+            <div style='font-family: Arial, sans-serif; padding: 24px; border: 1px solid #e0e0e0; border-radius: 12px; max-width: 500px; margin: 0 auto;'>
+                <div style='text-align: center; margin-bottom: 20px;'>
+                    <h2 style='color: #16a34a; margin: 0;'>NutriSnap</h2>
+                    <p style='color: #64748b; font-size: 14px;'>Xác nhận thay đổi email đăng ký tài khoản</p>
+                </div>
+                <p>Xin chào,</p>
+                <p>Bạn (hoặc ai đó) vừa yêu cầu đổi địa chỉ email đăng ký trên ứng dụng NutriSnap sang hộp thư này.</p>
+                <p>Mã xác nhận OTP của bạn là:</p>
+                <div style='background-color: #f0fdf4; border: 2px dashed #16a34a; border-radius: 8px; text-align: center; padding: 16px; margin: 20px 0;'>
+                    <span style='font-size: 32px; font-weight: bold; color: #15803d; letter-spacing: 8px;'>{code}</span>
+                </div>
+                <p style='color: #64748b; font-size: 13px;'>Mã xác thực có hiệu lực trong vòng <b>10 phút</b>. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>
+                <hr style='border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;' />
+                <p style='color: #94a3b8; font-size: 11px; text-align: center;'>Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email.</p>
+            </div>";
+
+        return SendEmailAsync(email, "NutriSnap - Mã xác nhận thay đổi email đăng ký", body);
+    }
+
     private async Task SendEmailAsync(string toEmail, string subject, string message)
     {
         try

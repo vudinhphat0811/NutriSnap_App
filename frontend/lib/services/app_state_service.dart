@@ -249,7 +249,12 @@ class AppStateService extends ChangeNotifier {
     if (fbName != null && fbName.isNotEmpty) {
       userProfile.facebookName = fbName;
     }
-    userProfile.hasProfile = true;
+    final bool isNew = data['isNewUser'] == true;
+    if (isNew && !userProfile.hasProfile) {
+      userProfile.hasProfile = false;
+    } else {
+      userProfile.hasProfile = true;
+    }
     isGuestMode = false; // Đã liên kết tài khoản -> Hết trạng thái Khách
     testGuestDaysOverride = null;
     saveToLocalStorage();
@@ -329,6 +334,98 @@ class AppStateService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('[Unlink Facebook Error] $e');
+    }
+  }
+
+  /// Gửi yêu cầu đổi email đăng ký mới (hệ thống gửi OTP 6 số qua email mới)
+  Future<Map<String, dynamic>> requestChangeEmail(String newEmail) async {
+    try {
+      final token = authToken;
+      if (token == null || token.isEmpty) {
+        return {'success': false, 'message': 'Vui lòng đăng nhập để thực hiện đổi email!'};
+      }
+
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/user/request-change-email');
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'newEmail': newEmail.trim()}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final Map<String, dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Mã xác nhận 6 số đã được gửi tới email mới!',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Không thể gửi mã xác nhận (${response.statusCode})',
+        };
+      }
+    } catch (e) {
+      debugPrint('[Request Change Email Error] $e');
+      return {'success': false, 'message': 'Không thể kết nối đến máy chủ: $e'};
+    }
+  }
+
+  /// Xác nhận mã OTP và hoàn tất đổi email đăng ký mới
+  Future<Map<String, dynamic>> confirmChangeEmail({
+    required String newEmail,
+    required String otpCode,
+  }) async {
+    try {
+      final token = authToken;
+      if (token == null || token.isEmpty) {
+        return {'success': false, 'message': 'Vui lòng đăng nhập để thực hiện đổi email!'};
+      }
+
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/user/confirm-change-email');
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              'newEmail': newEmail.trim(),
+              'otpCode': otpCode.trim(),
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final Map<String, dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
+      if (response.statusCode == 200) {
+        final updatedEmail = data['newEmail']?.toString() ?? newEmail.trim();
+        userProfile.email = updatedEmail;
+
+        final newToken = data['token']?.toString();
+        if (newToken != null && newToken.isNotEmpty) {
+          authToken = newToken;
+        }
+
+        await saveToLocalStorage();
+        notifyListeners();
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Đổi email đăng ký thành công!',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Xác nhận mã OTP thất bại (${response.statusCode})',
+        };
+      }
+    } catch (e) {
+      debugPrint('[Confirm Change Email Error] $e');
+      return {'success': false, 'message': 'Không thể kết nối đến máy chủ: $e'};
     }
   }
 
@@ -463,6 +560,8 @@ class AppStateService extends ChangeNotifier {
       dailyWaterGoalMl: waterGoal,
       hasProfile: true,
       avatarPath: userProfile.avatarPath,
+      googleEmail: userProfile.googleEmail,
+      facebookName: userProfile.facebookName,
     );
 
     saveToLocalStorage();

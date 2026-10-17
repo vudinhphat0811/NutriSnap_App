@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_translations.dart';
@@ -132,6 +133,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 12),
 
+                // Email Đăng ký (Có tính năng đổi email xác thực OTP)
+                _buildEmailChangeField(profile, setModalState),
+                const SizedBox(height: 12),
+
                 // Giới tính & Tuổi
                 Row(
                   children: [
@@ -262,6 +267,569 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // WIDGET HIỂN THỊ TRONG MODAL SỬA THÔNG TIN
+  Widget _buildEmailChangeField(UserProfile profile, void Function(void Function()) setModalState) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.mark_email_read_outlined, size: 18, color: AppColors.primaryDark),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Email đăng ký tài khoản',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textBlack,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'Email chính',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  profile.email,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF334155),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: () {
+                  _showChangeEmailDialog(context, onEmailChanged: () {
+                    setModalState(() {});
+                    if (mounted) setState(() {});
+                  });
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit, size: 13, color: AppColors.primaryDark),
+                      SizedBox(width: 4),
+                      Text(
+                        'Đổi mail',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Lưu ý: Đây là email đăng ký gốc của tài khoản, không phải email Google đã liên kết. Khi đổi cần nhập mã xác thực OTP gửi về email mới.',
+            style: TextStyle(fontSize: 10, color: AppColors.textGray, height: 1.3),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // WIDGET DÒNG EMAIL CHÍNH TRONG PHẦN QUẢN LÝ TÀI KHOẢN
+  Widget _buildPrimaryEmailRow(UserProfile profile) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF0FDF4),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFBBF7D0)),
+          ),
+          child: const Center(
+            child: Icon(Icons.mark_email_read_outlined, color: Color(0xFF16A34A), size: 20),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Flexible(
+                    child: Text(
+                      'Email đăng ký (gốc)',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Chính thức',
+                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                profile.email,
+                style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: () => _showChangeEmailDialog(context, onEmailChanged: () => setState(() {})),
+          icon: const Icon(Icons.edit, size: 12),
+          label: const Text('Đổi mail', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            visualDensity: VisualDensity.compact,
+            side: const BorderSide(color: Color(0xFF86EFAC)),
+            foregroundColor: const Color(0xFF16A34A),
+            backgroundColor: const Color(0xFFF0FDF4),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // HỘP THOẠI ĐỔI EMAIL ĐĂNG KÝ VỚI MÃ XÁC NHẬN OTP GỬI VỀ EMAIL MỚI
+  void _showChangeEmailDialog(BuildContext parentContext, {VoidCallback? onEmailChanged}) {
+    final currentEmail = appState.userProfile.email;
+    final newEmailCtrl = TextEditingController();
+    final otpCtrl = TextEditingController();
+
+    int step = 1; // 1: Nhập email mới, 2: Nhập OTP
+    bool isSubmitting = false;
+    String? errorMessage;
+    int countdown = 0;
+    Timer? timer;
+
+    void startCountdown(void Function(void Function()) setDialogState) {
+      countdown = 60;
+      timer?.cancel();
+      timer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (countdown > 0) {
+          setDialogState(() => countdown--);
+        } else {
+          t.cancel();
+        }
+      });
+    }
+
+    showModalBottomSheet(
+      context: parentContext,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (bottomSheetCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: bottomInset > 0 ? bottomInset : 20,
+              top: 16,
+              left: 20,
+              right: 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Header Tiêu đề
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.mark_email_read_rounded, color: Color(0xFF16A34A), size: 22),
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Đổi Email Đăng Ký Tài Khoản',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                            ),
+                            Text(
+                              'Email chính thức (không phải tài khoản Google liên kết)',
+                              style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  const Divider(height: 1),
+                  const SizedBox(height: 14),
+
+                  // BÁO LỖI NẾU CÓ
+                  if (errorMessage != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFECACA)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              errorMessage!,
+                              style: const TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (step == 1) ...[
+                    // BƯỚC 1: NHẬP EMAIL MỚI
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Email đăng ký hiện tại của bạn:', style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+                          const SizedBox(height: 2),
+                          Text(
+                            currentEmail,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    TextField(
+                      controller: newEmailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: InputDecoration(
+                        labelText: 'Nhập địa chỉ Email mới',
+                        hintText: 'vidu@gmail.com',
+                        prefixIcon: const Icon(Icons.alternate_email_rounded),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.security_rounded, size: 16, color: Color(0xFF16A34A)),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Hệ thống sẽ gửi mã xác nhận OTP 6 số đến email mới này để đảm bảo an toàn.',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF166534)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: isSubmitting
+                            ? null
+                            : () async {
+                                final newEmail = newEmailCtrl.text.trim();
+                                if (newEmail.isEmpty || !newEmail.contains('@')) {
+                                  setDialogState(() => errorMessage = 'Vui lòng nhập địa chỉ email hợp lệ!');
+                                  return;
+                                }
+                                if (newEmail.toLowerCase() == currentEmail.toLowerCase()) {
+                                  setDialogState(() => errorMessage = 'Email mới không được trùng với email hiện tại!');
+                                  return;
+                                }
+
+                                setDialogState(() {
+                                  isSubmitting = true;
+                                  errorMessage = null;
+                                });
+
+                                final res = await appState.requestChangeEmail(newEmail);
+                                setDialogState(() => isSubmitting = false);
+
+                                if (res['success'] == true) {
+                                  setDialogState(() {
+                                    step = 2;
+                                    errorMessage = null;
+                                  });
+                                  startCountdown(setDialogState);
+                                  if (parentContext.mounted) {
+                                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                                      SnackBar(
+                                        content: Text(res['message'] ?? 'Mã xác nhận đã được gửi!'),
+                                        backgroundColor: const Color(0xFF16A34A),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  }
+                                } else {
+                                  setDialogState(() => errorMessage = res['message']);
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: isSubmitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            : const Text('Gửi Mã Xác Nhận Đến Email Mới ➔', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ),
+                    ),
+                  ] else ...[
+                    // BƯỚC 2: NHẬP MÃ OTP TỪ EMAIL MỚI
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.outgoing_mail, color: Color(0xFF16A34A), size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Đã gửi mã xác nhận 6 số đến:', style: TextStyle(fontSize: 11, color: Color(0xFF166534))),
+                                Text(
+                                  newEmailCtrl.text.trim(),
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF14532D)),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              timer?.cancel();
+                              setDialogState(() {
+                                step = 1;
+                                errorMessage = null;
+                              });
+                            },
+                            child: const Text('Sửa email', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    TextField(
+                      controller: otpCtrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      maxLength: 6,
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 8, color: AppColors.primaryDark),
+                      decoration: InputDecoration(
+                        counterText: '',
+                        labelText: 'Nhập mã OTP 6 số',
+                        hintText: '123456',
+                        prefixIcon: const Icon(Icons.password_rounded),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Đếm ngược gửi lại mã
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (countdown > 0)
+                          Text(
+                            'Gửi lại mã sau ${countdown}s',
+                            style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+                          )
+                        else
+                          TextButton.icon(
+                            onPressed: isSubmitting
+                                ? null
+                                : () async {
+                                    setDialogState(() {
+                                      isSubmitting = true;
+                                      errorMessage = null;
+                                    });
+                                    final res = await appState.requestChangeEmail(newEmailCtrl.text.trim());
+                                    setDialogState(() => isSubmitting = false);
+                                    if (res['success'] == true) {
+                                      startCountdown(setDialogState);
+                                      if (parentContext.mounted) {
+                                        ScaffoldMessenger.of(parentContext).showSnackBar(
+                                          SnackBar(
+                                            content: Text(res['message'] ?? 'Đã gửi lại mã OTP!'),
+                                            backgroundColor: const Color(0xFF16A34A),
+                                            behavior: SnackBarBehavior.floating,
+                                          ),
+                                        );
+                                      }
+                                    } else {
+                                      setDialogState(() => errorMessage = res['message']);
+                                    }
+                                  },
+                            icon: const Icon(Icons.refresh, size: 16),
+                            label: const Text('Gửi lại mã OTP', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: isSubmitting
+                            ? null
+                            : () async {
+                                final code = otpCtrl.text.trim();
+                                if (code.length < 4) {
+                                  setDialogState(() => errorMessage = 'Vui lòng nhập đủ mã OTP xác thực!');
+                                  return;
+                                }
+
+                                setDialogState(() {
+                                  isSubmitting = true;
+                                  errorMessage = null;
+                                });
+
+                                final res = await appState.confirmChangeEmail(
+                                  newEmail: newEmailCtrl.text.trim(),
+                                  otpCode: code,
+                                );
+                                setDialogState(() => isSubmitting = false);
+
+                                if (res['success'] == true) {
+                                  timer?.cancel();
+                                  if (bottomSheetCtx.mounted) {
+                                    Navigator.pop(bottomSheetCtx);
+                                  }
+                                  onEmailChanged?.call();
+                                  if (parentContext.mounted) {
+                                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                                      SnackBar(
+                                        content: Text('✅ ${res['message'] ?? 'Đổi email đăng ký thành công!'}'),
+                                        backgroundColor: const Color(0xFF16A34A),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  }
+                                } else {
+                                  setDialogState(() => errorMessage = res['message']);
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: isSubmitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            : const Text('Xác Nhận & Hoàn Tất Đổi Email', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    ).then((_) => timer?.cancel());
+  }
+
   void _handleLogout() {
     showDialog(
       context: context,
@@ -371,7 +939,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 3))],
       ),
       child: Row(
         children: [
@@ -386,7 +954,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 Text(profile.fullName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack)),
                 const SizedBox(height: 2),
-                Text(profile.email, style: const TextStyle(fontSize: 12, color: AppColors.textGray)),
+                InkWell(
+                  onTap: () => _showChangeEmailDialog(context, onEmailChanged: () => setState(() {})),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          profile.email,
+                          style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.edit, size: 12, color: AppColors.primaryDark),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -707,6 +1293,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const Divider(height: 1),
           const SizedBox(height: 12),
 
+          // 0. Email Đăng ký chính thức (Không phải Google)
+          _buildPrimaryEmailRow(profile),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+
           // 1. Google
           _buildSocialLinkRow(
             title: 'Tài khoản Google',
@@ -718,7 +1310,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               height: 22,
               errorBuilder: (_, __, ___) => const Icon(Icons.g_mobiledata_rounded, color: Colors.red, size: 26),
             ),
-            onConnect: () => SocialAuthHelper.showGoogleAuthDialog(context),
+            onConnect: () async {
+              final ok = await SocialAuthHelper.showGoogleAuthDialog(context);
+              if (ok && mounted) setState(() {});
+            },
             onDisconnect: () => _confirmUnlink('Google', () => appState.unlinkGoogleAccount()),
           ),
 
@@ -732,7 +1327,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             detail: fbLinked ? profile.facebookName! : 'Chưa liên kết tài khoản Facebook',
             isLinked: fbLinked,
             iconWidget: const Icon(Icons.facebook, color: Color(0xFF1877F2), size: 24),
-            onConnect: () => SocialAuthHelper.showFacebookAuthDialog(context),
+            onConnect: () async {
+              final ok = await SocialAuthHelper.showFacebookAuthDialog(context);
+              if (ok && mounted) setState(() {});
+            },
             onDisconnect: () => _confirmUnlink('Facebook', () => appState.unlinkFacebookAccount()),
           ),
 

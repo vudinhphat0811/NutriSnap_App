@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace NutriSnap.Models;
 
@@ -18,4 +18,19 @@ public class ResetPasswordDto
 
     [Required]
     public string NewPassword { get; set; } = string.Empty;
+}
+
+public class RequestChangeEmailDto
+{
+    [Required, EmailAddress]
+    public string NewEmail { get; set; } = string.Empty;
+}
+
+public class ConfirmChangeEmailDto
+{
+    [Required, EmailAddress]
+    public string NewEmail { get; set; } = string.Empty;
+
+    [Required, MinLength(4)]
+    public string OtpCode { get; set; } = string.Empty;
 }

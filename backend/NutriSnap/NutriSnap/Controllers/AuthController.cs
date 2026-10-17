@@ -103,8 +103,10 @@ public class AuthController : ControllerBase
         }
 
         var user = await _userManager.FindByEmailAsync(req.Email);
+        bool isNewUser = false;
         if (user == null)
         {
+            isNewUser = true;
             user = new AppUser
             {
                 UserName = req.Email,
@@ -156,7 +158,8 @@ public class AuthController : ControllerBase
             avatarUrl = user.AvatarUrl,
             googleEmail = user.GoogleEmail,
             facebookName = user.FacebookName,
-            isGuest = user.IsGuest
+            isGuest = user.IsGuest,
+            isNewUser
         });
     }
 

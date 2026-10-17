@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using NutriSnap.Data;
 using NutriSnap.Models;
+using NutriSnap.Services;
 using System.Security.Claims;
 
 namespace NutriSnap.Controllers;
@@ -12,10 +15,23 @@ namespace NutriSnap.Controllers;
 public class UserController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly UserManager<AppUser> _userManager;
+    private readonly IMemoryCache _cache;
+    private readonly EmailSender _emailSender;
+    private readonly JwtService _jwtService;
 
-    public UserController(AppDbContext context)
+    public UserController(
+        AppDbContext context,
+        UserManager<AppUser> userManager,
+        IMemoryCache cache,
+        EmailSender emailSender,
+        JwtService jwtService)
     {
         _context = context;
+        _userManager = userManager;
+        _cache = cache;
+        _emailSender = emailSender;
+        _jwtService = jwtService;
     }
 
     [HttpGet("profile")]
@@ -266,6 +282,130 @@ public class UserController : ControllerBase
             GuestCreatedAt = createdAt,
             UsageDays = daysUsed,
             IsTrialExpired = isExpired
+        });
+    }
+
+    /// <summary>
+    /// GỬI MÃ OTP ĐỔI EMAIL ĐĂNG KÝ (POST /api/user/request-change-email)
+    /// - Không áp dụng cho Google Email liên kết, mà áp dụng cho Email đăng ký chính của tài khoản
+    /// </summary>
+    [HttpPost("request-change-email")]
+    public async Task<IActionResult> RequestChangeEmail([FromBody] RequestChangeEmailDto dto)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
+        {
+            return Unauthorized(new { message = "Phiên đăng nhập không hợp lệ hoặc đã hết hạn." });
+        }
+
+        var user = await _userManager.FindByIdAsync(userIdStr);
+        if (user == null) return NotFound(new { message = "Không tìm thấy thông tin tài khoản người dùng." });
+
+        if (string.IsNullOrWhiteSpace(dto.NewEmail) || !dto.NewEmail.Contains("@"))
+        {
+            return BadRequest(new { message = "Địa chỉ email mới không hợp lệ." });
+        }
+
+        var newEmail = dto.NewEmail.Trim().ToLowerInvariant();
+
+        // 1. Email mới không được trùng với email hiện tại
+        if (string.Equals(user.Email, newEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { message = "Email mới không được trùng với email đăng ký hiện tại của bạn." });
+        }
+
+        // 2. Email mới chưa được dùng bởi tài khoản khác
+        var existingUser = await _userManager.FindByEmailAsync(newEmail);
+        if (existingUser != null && existingUser.Id != user.Id)
+        {
+            return BadRequest(new { message = "Địa chỉ email này đã được sử dụng bởi một tài khoản khác trên hệ thống!" });
+        }
+
+        // 3. Tạo mã OTP 6 số ngẫu nhiên
+        string otpCode = Random.Shared.Next(100000, 999999).ToString();
+
+        // 4. Lưu mã vào MemoryCache trong 10 phút
+        string cacheKey = $"CHANGE_EMAIL_OTP_{user.Id}_{newEmail}";
+        _cache.Set(cacheKey, otpCode, TimeSpan.FromMinutes(10));
+
+        // 5. Gửi email xác thực tới địa chỉ email mới
+        await _emailSender.SendChangeEmailCodeAsync(newEmail, otpCode);
+
+        return Ok(new
+        {
+            message = $"Mã xác thực 6 số đã được gửi tới '{newEmail}'. Vui lòng kiểm tra hộp thư (kể cả Spam/Quảng cáo)!",
+            email = newEmail
+        });
+    }
+
+    /// <summary>
+    /// XÁC NHẬN MÃ OTP VÀ HOÀN TẤT ĐỔI EMAIL ĐĂNG KÝ (POST /api/user/confirm-change-email)
+    /// </summary>
+    [HttpPost("confirm-change-email")]
+    public async Task<IActionResult> ConfirmChangeEmail([FromBody] ConfirmChangeEmailDto dto)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
+        {
+            return Unauthorized(new { message = "Phiên đăng nhập không hợp lệ hoặc đã hết hạn." });
+        }
+
+        var user = await _userManager.FindByIdAsync(userIdStr);
+        if (user == null) return NotFound(new { message = "Không tìm thấy thông tin tài khoản người dùng." });
+
+        var newEmail = dto.NewEmail.Trim().ToLowerInvariant();
+        var code = dto.OtpCode.Trim();
+
+        // 1. Kiểm tra mã OTP trong cache
+        string cacheKey = $"CHANGE_EMAIL_OTP_{user.Id}_{newEmail}";
+        if (!_cache.TryGetValue(cacheKey, out string? cachedOtp) || cachedOtp != code)
+        {
+            return BadRequest(new { message = "Mã xác thực OTP không chính xác hoặc đã hết hạn (có hiệu lực trong 10 phút)!" });
+        }
+
+        // 2. Kiểm tra lại trùng lặp trước khi ghi nhận
+        var existingUser = await _userManager.FindByEmailAsync(newEmail);
+        if (existingUser != null && existingUser.Id != user.Id)
+        {
+            return BadRequest(new { message = "Địa chỉ email này đã được tài khoản khác đăng ký." });
+        }
+
+        // 3. Cập nhật email tài khoản
+        string oldEmail = user.Email ?? "";
+        user.Email = newEmail;
+        user.NormalizedEmail = _userManager.NormalizeEmail(newEmail);
+        user.EmailConfirmed = true;
+
+        if (string.IsNullOrEmpty(user.UserName) || user.UserName.Contains("@") || user.IsGuest)
+        {
+            user.UserName = newEmail;
+            user.NormalizedUserName = _userManager.NormalizeName(newEmail);
+            user.IsGuest = false;
+        }
+
+        var updateResult = await _userManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+        {
+            return BadRequest(new
+            {
+                message = "Cập nhật email không thành công.",
+                errors = updateResult.Errors.Select(e => e.Description)
+            });
+        }
+
+        // 4. Xóa OTP sau khi đổi thành công
+        _cache.Remove(cacheKey);
+
+        // 5. Cấp JWT Token mới với claim email mới
+        var roles = await _userManager.GetRolesAsync(user);
+        var newToken = _jwtService.GenerateToken(user, roles);
+
+        return Ok(new
+        {
+            message = "Đổi email đăng ký thành công!",
+            oldEmail,
+            newEmail = user.Email,
+            token = newToken
         });
     }
 }

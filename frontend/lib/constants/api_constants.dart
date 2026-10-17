@@ -37,4 +37,11 @@ class ApiConstants {
   static String get forgotPassword => '$baseUrl/api/auth/forgot-password-otp';
   static String get resetPassword => '$baseUrl/api/auth/reset-password-otp';
   static String get profile => '$baseUrl/api/user/profile';
+
+  // Cấu hình OAuth 2.0 Bên thứ ba (Google & Facebook)
+  // Web Client ID từ Google Cloud Console (nếu không dùng google-services.json)
+  static const String googleServerClientId = '';
+
+  // App ID từ Meta for Developers (https://developers.facebook.com)
+  static const String facebookAppId = '';
 }

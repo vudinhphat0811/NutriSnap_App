@@ -50,6 +50,7 @@ app.*.symbols
 app.*.map.json
 *.apk
 *.aab
+.kotlin/
 
 # ==========================================
 # 4. MISCELLANEOUS
