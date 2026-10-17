@@ -141,7 +141,15 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        db.Database.EnsureCreated();
+        try
+        {
+            var creator = Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions.GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>(db.Database);
+            creator.CreateTables();
+        }
+        catch
+        {
+            // Bảng đã được tạo từ trước hoặc cơ sở dữ liệu đã sẵn sàng
+        }
     }
     catch (Exception ex)
     {
@@ -251,31 +259,50 @@ static string ParsePostgresConnectionString(string raw)
 {
     if (string.IsNullOrWhiteSpace(raw)) return raw;
 
-    // Chuyển định dạng URL: postgresql://user:password@host:port/database
+    raw = raw.Trim('"', '\'', ' ');
+
+    // Chuyển định dạng URL: postgresql://username:password@host:port/database
     if (raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
         raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
     {
         try
         {
-            var uri = new Uri(raw);
-            var userInfo = uri.UserInfo.Split(':');
-            var user = Uri.UnescapeDataString(userInfo[0]);
-            var pass = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
-            var port = uri.Port > 0 ? uri.Port : 5432;
-            var db = uri.AbsolutePath.TrimStart('/');
+            var match = System.Text.RegularExpressions.Regex.Match(raw, @"^postgres(?:ql)?://([^:]+):(.*)@([^:/]+)(?::(\d+))?/([^?]+)");
+            if (match.Success)
+            {
+                var user = match.Groups[1].Value;
+                var pass = match.Groups[2].Value;
+                var host = match.Groups[3].Value;
+                var port = match.Groups[4].Success ? int.Parse(match.Groups[4].Value) : 5432;
+                var db = match.Groups[5].Value;
 
-            return $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true;";
+                // Tự động gỡ bỏ dấu ngoặc vuông [] nếu người dùng copy giữ nguyên placeholder [PASSWORD]
+                if (pass.StartsWith("[") && pass.EndsWith("]"))
+                {
+                    pass = pass.Substring(1, pass.Length - 2);
+                }
+
+                // Nếu là Supabase pooler dùng port 6543, chuyển sang 5432 (session mode) để tương thích tối đa với EF Core
+                if (port == 6543 && host.Contains("supabase.com"))
+                {
+                    port = 5432;
+                }
+
+                return $"Host={host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true;Timeout=15;";
+            }
         }
-        catch
-        {
-            return raw;
-        }
+        catch { }
+    }
+
+    if (raw.Contains("Port=6543") && raw.Contains("supabase.com"))
+    {
+        raw = raw.Replace("Port=6543", "Port=5432");
     }
 
     // Đảm bảo có SSL Mode nếu kết nối cloud
     if (!raw.Contains("SSL Mode", StringComparison.OrdinalIgnoreCase) && !raw.Contains("sslmode", StringComparison.OrdinalIgnoreCase))
     {
-        raw = raw.TrimEnd(';') + ";SSL Mode=Require;Trust Server Certificate=true;";
+        raw = raw.TrimEnd(';') + ";SSL Mode=Require;Trust Server Certificate=true;Timeout=15;";
     }
 
     return raw;
