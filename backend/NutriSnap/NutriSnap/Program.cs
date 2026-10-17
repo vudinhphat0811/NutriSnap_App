@@ -8,17 +8,33 @@ using NutriSnap.Data;
 using NutriSnap.Models;
 using NutriSnap.Services;
 
+// Cho phép Npgsql hỗ trợ mọi kiểu DateTime (không bắt buộc UTC)
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 LoadDotEnv();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Cấu hình Database SQL Server (Ưu tiên đọc từ .env / Environment Variables)
-var connectionString = builder.Configuration["DEFAULT_CONNECTION"]
+// 1. Cấu hình Database (Tự động nhận diện PostgreSQL hoặc SQL Server)
+var rawConn = builder.Configuration["DATABASE_URL"]
+    ?? builder.Configuration["POSTGRES_CONNECTION"]
+    ?? builder.Configuration["DEFAULT_CONNECTION"]
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+    ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
+    ?? "";
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString));
+{
+    if (IsPostgres(rawConn))
+    {
+        var pgConn = ParsePostgresConnectionString(rawConn);
+        options.UseNpgsql(pgConn);
+    }
+    else
+    {
+        options.UseSqlServer(rawConn);
+    }
+});
 
 // 2. Kích hoạt Identity (chỉ dùng UserManager / SignInManager)
 builder.Services.AddIdentity<AppUser, IdentityRole<int>>(options =>
@@ -119,6 +135,21 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
+// Tự động kiểm tra và khởi tạo Database Schema (Bảng Users, Roles, Logs...) khi chạy
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Database.EnsureCreated();
+    }
+    catch (Exception ex)
+    {
+        var log = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        log.LogWarning("Khởi tạo cấu trúc Database schema: {Message}", ex.Message);
+    }
+}
+
 // 7. Pipeline xử lý Request
 if (app.Environment.IsDevelopment())
 {
@@ -202,5 +233,51 @@ static void LoadDotEnv()
             }
         }
     }
+}
+
+static bool IsPostgres(string conn)
+{
+    if (string.IsNullOrWhiteSpace(conn)) return false;
+    var lower = conn.ToLowerInvariant();
+    return lower.StartsWith("postgres://") ||
+           lower.StartsWith("postgresql://") ||
+           lower.Contains("host=") ||
+           lower.Contains("sslmode=") ||
+           lower.Contains("port=5432") ||
+           lower.Contains("port=6543");
+}
+
+static string ParsePostgresConnectionString(string raw)
+{
+    if (string.IsNullOrWhiteSpace(raw)) return raw;
+
+    // Chuyển định dạng URL: postgresql://user:password@host:port/database
+    if (raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+        raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        try
+        {
+            var uri = new Uri(raw);
+            var userInfo = uri.UserInfo.Split(':');
+            var user = Uri.UnescapeDataString(userInfo[0]);
+            var pass = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+            var port = uri.Port > 0 ? uri.Port : 5432;
+            var db = uri.AbsolutePath.TrimStart('/');
+
+            return $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true;";
+        }
+        catch
+        {
+            return raw;
+        }
+    }
+
+    // Đảm bảo có SSL Mode nếu kết nối cloud
+    if (!raw.Contains("SSL Mode", StringComparison.OrdinalIgnoreCase) && !raw.Contains("sslmode", StringComparison.OrdinalIgnoreCase))
+    {
+        raw = raw.TrimEnd(';') + ";SSL Mode=Require;Trust Server Certificate=true;";
+    }
+
+    return raw;
 }
 
