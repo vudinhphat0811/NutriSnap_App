@@ -2,15 +2,24 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 class ApiConstants {
-  // Địa chỉ IP của máy tính trong mạng Wi-Fi (đã tự động nhận diện: 192.168.1.16)
+  // Địa chỉ máy chủ Cloud Production (Render + Supabase PostgreSQL)
+  static const String cloudBaseUrl = 'https://nutrisnap-app.onrender.com';
+
+  // Đặt true để sử dụng máy chủ đám mây Render 24/7 (Khuyên dùng khi build APK)
+  // Đặt false nếu muốn chạy thử nghiệm với backend cục bộ trên máy tính
+  static const bool useCloudApi = true;
+
+  // Địa chỉ IP của máy tính trong mạng Wi-Fi (cho trường hợp test local)
   static const String localHostIp = '192.168.1.16';
 
   // Đặt true nếu cắm cáp USB và đã chạy lệnh `adb reverse tcp:5065 tcp:5065`
-  // Đặt false (mặc định) nếu điện thoại và máy tính kết nối chung mạng Wi-Fi
   static const bool useAdbReverse = false;
 
-  // Cổng HTTP backend ASP.NET Core đang chạy
+  // URL API Backend chính thức của ứng dụng
   static String get baseUrl {
+    if (useCloudApi) {
+      return cloudBaseUrl;
+    }
     if (kIsWeb) {
       return 'http://localhost:5065';
     }
@@ -18,7 +27,6 @@ class ApiConstants {
       if (useAdbReverse) {
         return 'http://localhost:5065';
       }
-      // Dành cho điện thoại thật kết nối chung mạng Wi-Fi (192.168.1.16:5065)
       return 'http://$localHostIp:5065';
     }
     return 'http://localhost:5065';
