@@ -48,6 +48,8 @@ Thumbs.db
 **/android/app/release/
 app.*.symbols
 app.*.map.json
+*.apk
+*.aab
 
 # ==========================================
 # 4. MISCELLANEOUS
