@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity;
 using NutriSnap.Models;
 using System.Net;
 using System.Net.Mail;
@@ -79,14 +79,14 @@ public class EmailSender : IEmailSender<AppUser>
         try
         {
             var smtpSection = _config.GetSection("SmtpSettings");
-            var host = smtpSection["Server"] ?? "smtp.gmail.com";
-            var port = int.Parse(smtpSection["Port"] ?? "587");
-            var senderEmail = smtpSection["SenderEmail"];
-            var password = smtpSection["Password"];
+            var host = _config["SMTP_SERVER"] ?? Environment.GetEnvironmentVariable("SMTP_SERVER") ?? smtpSection["Server"] ?? "smtp.gmail.com";
+            var port = int.Parse(_config["SMTP_PORT"] ?? Environment.GetEnvironmentVariable("SMTP_PORT") ?? smtpSection["Port"] ?? "587");
+            var senderEmail = _config["SMTP_SENDER_EMAIL"] ?? Environment.GetEnvironmentVariable("SMTP_SENDER_EMAIL") ?? smtpSection["SenderEmail"];
+            var password = _config["SMTP_PASSWORD"] ?? Environment.GetEnvironmentVariable("SMTP_PASSWORD") ?? smtpSection["Password"];
 
             if (string.IsNullOrEmpty(senderEmail) || string.IsNullOrEmpty(password))
             {
-                Console.WriteLine("[SMTP Warning] Chưa cấu hình SenderEmail hoặc Password trong appsettings.json!");
+                Console.WriteLine("[SMTP Warning] Chưa cấu hình SenderEmail hoặc Password trong .env hoặc appsettings.json!");
                 return;
             }
 

@@ -8,11 +8,17 @@ using NutriSnap.Data;
 using NutriSnap.Models;
 using NutriSnap.Services;
 
+LoadDotEnv();
+
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Cấu hình Database SQL Server
+// 1. Cấu hình Database SQL Server (Ưu tiên đọc từ .env / Environment Variables)
+var connectionString = builder.Configuration["DEFAULT_CONNECTION"]
+    ?? builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(connectionString));
 
 // 2. Kích hoạt Identity (chỉ dùng UserManager / SignInManager)
 builder.Services.AddIdentity<AppUser, IdentityRole<int>>(options =>
@@ -31,7 +37,10 @@ builder.Services.AddIdentity<AppUser, IdentityRole<int>>(options =>
 
 // 3. Cấu hình JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = jwtSettings["SecretKey"]!;
+var secretKey = builder.Configuration["JWT_SECRET"]
+    ?? Environment.GetEnvironmentVariable("JWT_SECRET")
+    ?? jwtSettings["SecretKey"]
+    ?? "NutriSnap@SuperSecretKey_ChangeInProduction_2026!";
 
 builder.Services.AddAuthentication(options =>
 {
@@ -58,7 +67,11 @@ builder.Services.AddAuthorization();
 // 4. Đăng ký các Services
 builder.Services.AddTransient<IEmailSender<AppUser>, EmailSender>();
 builder.Services.AddScoped<JwtService>();
+builder.Services.AddHttpClient<MealDbSyncService>();
 builder.Services.AddHttpClient<RecipeService>();
+builder.Services.AddHttpClient<RecipeCrawlerService>();
+builder.Services.AddHttpClient<TranslationService>();
+builder.Services.AddHttpClient<AiVisionService>();
 builder.Services.AddMemoryCache();
 
 // 5. Cấu hình CORS
@@ -113,10 +126,81 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseStaticFiles();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
-app.Run();
+// Tự động nạp trước cơ sở dữ liệu TheMealDB cục bộ chạy nền
+_ = Task.Run(async () =>
+{
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var sync = scope.ServiceProvider.GetRequiredService<MealDbSyncService>();
+        await sync.GetOrSyncLocalRecipesAsync(false);
+    }
+    catch (Exception ex)
+    {
+        var log = app.Services.GetRequiredService<ILogger<Program>>();
+        log.LogWarning("Không thể tải trước TheMealDB cục bộ: {Message}", ex.Message);
+    }
+});
+
+app.Run();
+
+// ==========================================
+// HÀM HỖ TRỢ TỰ ĐỘNG ĐỌC FILE .ENV CỦA DỰ ÁN
+// ==========================================
+static void LoadDotEnv()
+{
+    var current = new DirectoryInfo(Directory.GetCurrentDirectory());
+    FileInfo? target = null;
+    while (current != null)
+    {
+        var path = Path.Combine(current.FullName, ".env");
+        if (File.Exists(path))
+        {
+            target = new FileInfo(path);
+            break;
+        }
+        current = current.Parent;
+    }
+
+    if (target == null)
+    {
+        var baseDir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (baseDir != null)
+        {
+            var path = Path.Combine(baseDir.FullName, ".env");
+            if (File.Exists(path))
+            {
+                target = new FileInfo(path);
+                break;
+            }
+            baseDir = baseDir.Parent;
+        }
+    }
+
+    if (target != null && target.Exists)
+    {
+        foreach (var line in File.ReadAllLines(target.FullName))
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("#")) continue;
+            var idx = trimmed.IndexOf('=');
+            if (idx > 0)
+            {
+                var key = trimmed.Substring(0, idx).Trim();
+                var val = trimmed.Substring(idx + 1).Trim();
+                if ((val.StartsWith("\"") && val.EndsWith("\"")) || (val.StartsWith("'") && val.EndsWith("'")))
+                {
+                    val = val.Substring(1, val.Length - 2);
+                }
+                Environment.SetEnvironmentVariable(key, val);
+            }
+        }
+    }
+}
+

@@ -88,7 +88,110 @@ public class AuthController : ControllerBase
             token,
             email = user.Email,
             userId = user.Id,
-            fullName = user.FullName
+            fullName = user.FullName,
+            avatarUrl = user.AvatarUrl
+        });
+    }
+
+    // POST /api/auth/social-login
+    [HttpPost("social-login")]
+    public async Task<IActionResult> SocialLogin([FromBody] SocialAuthRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Email))
+        {
+            return BadRequest(new { message = "Email từ tài khoản mạng xã hội không được để trống." });
+        }
+
+        var user = await _userManager.FindByEmailAsync(req.Email);
+        if (user == null)
+        {
+            user = new AppUser
+            {
+                UserName = req.Email,
+                Email = req.Email,
+                FullName = !string.IsNullOrWhiteSpace(req.Name) ? req.Name : req.Email.Split('@')[0],
+                AvatarUrl = req.AvatarUrl,
+                GoogleEmail = req.Provider.Equals("google", StringComparison.OrdinalIgnoreCase) ? req.Email : null,
+                FacebookName = req.Provider.Equals("facebook", StringComparison.OrdinalIgnoreCase) ? (!string.IsNullOrWhiteSpace(req.Name) ? req.Name : req.Email) : null,
+                IsGuest = false
+            };
+
+            var createRes = await _userManager.CreateAsync(user);
+            if (!createRes.Succeeded)
+            {
+                return BadRequest(new { errors = createRes.Errors.Select(e => e.Description) });
+            }
+        }
+        else
+        {
+            // Cập nhật thông tin liên kết mạng xã hội nếu chưa có
+            bool changed = false;
+            if (req.Provider.Equals("google", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(user.GoogleEmail))
+            {
+                user.GoogleEmail = req.Email;
+                changed = true;
+            }
+            else if (req.Provider.Equals("facebook", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(user.FacebookName))
+            {
+                user.FacebookName = !string.IsNullOrWhiteSpace(req.Name) ? req.Name : req.Email;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                await _userManager.UpdateAsync(user);
+            }
+        }
+
+        var roles = await _userManager.GetRolesAsync(user);
+        var token = _jwtService.GenerateToken(user, roles);
+
+        return Ok(new
+        {
+            message = $"Đăng nhập bằng {req.Provider} thành công!",
+            token,
+            email = user.Email,
+            userId = user.Id,
+            fullName = user.FullName,
+            avatarUrl = user.AvatarUrl,
+            googleEmail = user.GoogleEmail,
+            facebookName = user.FacebookName,
+            isGuest = user.IsGuest
+        });
+    }
+
+    // POST /api/auth/guest-login
+    [HttpPost("guest-login")]
+    public async Task<IActionResult> GuestLogin()
+    {
+        string guestEmail = $"guest_{Guid.NewGuid():N}@nutrisnap.app";
+        var guestUser = new AppUser
+        {
+            UserName = guestEmail,
+            Email = guestEmail,
+            FullName = "Khách Trải Nghiệm",
+            IsGuest = true,
+            GuestCreatedAt = DateTime.UtcNow
+        };
+
+        var result = await _userManager.CreateAsync(guestUser);
+        if (!result.Succeeded)
+        {
+            return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
+        }
+
+        var roles = await _userManager.GetRolesAsync(guestUser);
+        var token = _jwtService.GenerateToken(guestUser, roles);
+
+        return Ok(new
+        {
+            message = "Bắt đầu chế độ khách 7 ngày!",
+            token,
+            email = guestUser.Email,
+            userId = guestUser.Id,
+            fullName = guestUser.FullName,
+            isGuest = true,
+            guestCreatedAt = guestUser.GuestCreatedAt
         });
     }
 

@@ -1,5 +1,15 @@
+import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../constants/app_colors.dart';
+import '../constants/app_translations.dart';
+import '../services/ai_vision_service.dart';
+import '../services/meal_db_service.dart';
+import '../services/app_state_service.dart';
+import '../services/recipe_translator.dart';
+import '../services/offline_food_db.dart';
+import '../widgets/marquee_text.dart';
 
 class IngredientScanScreen extends StatefulWidget {
   final Function(int) onNavigate;
@@ -13,10 +23,707 @@ class IngredientScanScreen extends StatefulWidget {
   State<IngredientScanScreen> createState() => _IngredientScanScreenState();
 }
 
-class _IngredientScanScreenState extends State<IngredientScanScreen> {
-  int _selectedGoalIndex = 0;
-  final List<String> _goals = ['Giàu Protein', 'Ít Calo (<400 kcal)', 'Nấu nhanh (<15p)'];
-  final List<String> _spices = ['Tiêu đen xay', 'Dầu oliu', 'Muối biển'];
+class _IngredientScanScreenState extends State<IngredientScanScreen> with SingleTickerProviderStateMixin {
+  final AIVisionService _aiService = AIVisionService();
+  final picker = ImagePicker();
+
+  Uint8List? _imageBytes;
+  bool _isLoading = false;
+  bool _isLoadingMeals = false;
+  String _aiStatusMessage = 'Chưa quét hình ảnh';
+
+  // Animation tia quét Laser & hiệu ứng camera scanner
+  late AnimationController _scannerAnimController;
+  late Animation<double> _laserAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _scannerAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat(reverse: true);
+
+    _laserAnimation = CurvedAnimation(
+      parent: _scannerAnimController,
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  void dispose() {
+    _scannerAnimController.dispose();
+    super.dispose();
+  }
+
+  // Dữ liệu phân tích nguyên liệu từ AI
+  IngredientAnalysisResult? _analysisResult;
+
+  // Index nguyên liệu đang được chọn để xem gợi ý món
+  final Set<int> _selectedIngredientIndices = {0};
+
+  // Danh sách các món ăn khớp
+  List<MealItem> _matchingMeals = [];
+
+  Future<void> _pickAndAnalyzeImage(ImageSource source) async {
+    final XFile? photo = await picker.pickImage(
+      source: source,
+      imageQuality: 70,
+      maxWidth: 800,
+    );
+
+    if (photo == null) return;
+
+    final bytes = await photo.readAsBytes();
+
+    setState(() {
+      _imageBytes = bytes;
+      _isLoading = true;
+      _analysisResult = null;
+      _matchingMeals = [];
+      _selectedIngredientIndices.clear();
+      _selectedIngredientIndices.add(0);
+      _aiStatusMessage = 'AI Cloud đang kiểm tra & nhận diện nguyên liệu...';
+    });
+
+    try {
+      final result = await _aiService.analyzeIngredient(bytes);
+
+      setState(() {
+        _analysisResult = result;
+        _isLoading = false;
+        _selectedIngredientIndices.clear();
+        if (result.ingredients.isNotEmpty) {
+          _selectedIngredientIndices.add(0);
+        }
+        if (!result.isIngredient) {
+          _aiStatusMessage = 'Từ chối: Không phải nguyên liệu thực phẩm';
+        } else {
+          final count = result.ingredients.length;
+          _aiStatusMessage = 'Phát hiện $count nguyên liệu (${_aiService.lastUsedProvider ?? 'AI'})';
+        }
+      });
+
+      // Nếu đúng là nguyên liệu thực phẩm, tự động lấy các món ăn khớp theo các nguyên liệu đã chọn
+      if (result.isIngredient) {
+        _fetchMealsForSelectedIngredients();
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _analysisResult = IngredientAnalysisResult.rejected(
+          'Lỗi khi kết nối dịch vụ AI: $e',
+          provider: _aiService.lastUsedProvider,
+        );
+        _aiStatusMessage = 'Lỗi kết nối AI';
+      });
+    }
+  }
+
+  /// Lấy danh sách món ăn khớp với TẤT CẢ hoặc các nguyên liệu được chọn (xếp hạng theo độ khớp)
+  Future<void> _fetchMealsForSelectedIngredients() async {
+    final ingredients = _analysisResult?.ingredients ?? [];
+    if (_selectedIngredientIndices.isEmpty || ingredients.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _matchingMeals = [];
+          _isLoadingMeals = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) setState(() => _isLoadingMeals = true);
+
+    try {
+      final selectedItems = _selectedIngredientIndices
+          .where((i) => i >= 0 && i < ingredients.length)
+          .map((i) => ingredients[i])
+          .toList();
+
+      if (selectedItems.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _matchingMeals = [];
+            _isLoadingMeals = false;
+          });
+        }
+        return;
+      }
+
+      if (selectedItems.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _matchingMeals = [];
+            _isLoadingMeals = false;
+          });
+        }
+        return;
+      }
+
+      // Toàn bộ logic xếp hạng món và đối soát nguyên liệu (Thịt + Rau Củ) do Backend C# xử lý 100%
+      final ingredientNames = selectedItems.map((e) => e.name).toList();
+      final meals = await TheMealDbService.getMealsByMultipleIngredients(ingredientNames);
+
+      if (mounted) {
+        setState(() {
+          _matchingMeals = meals;
+          _isLoadingMeals = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Multi-ingredient fetch error]: $e');
+      if (mounted) {
+        setState(() => _isLoadingMeals = false);
+      }
+    }
+  }
+
+  Future<void> _fetchMealsFromMealDB(String ingredientKeyword) async {
+    _fetchMealsForSelectedIngredients();
+  }
+
+  void _showImageSourcePicker() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Text(
+                AppTranslations.tr('scan_sheet_title'),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                AppTranslations.tr('scan_sheet_sub'),
+                style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(color: AppColors.accentMint, shape: BoxShape.circle),
+                  child: const Icon(Icons.camera_alt, color: AppColors.primaryDark),
+                ),
+                title: Text(AppTranslations.tr('camera_option'), style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(AppTranslations.tr('camera_option_sub'), style: const TextStyle(fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndAnalyzeImage(ImageSource.camera);
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(color: Color(0xFFDCFCE7), shape: BoxShape.circle),
+                  child: const Icon(Icons.edit_note_rounded, color: AppColors.primaryDark),
+                ),
+                title: const Text('Nhập tay nguyên liệu', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Tự gõ hoặc chọn nguyên liệu có sẵn trong bếp (100% Offline)', style: TextStyle(fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showManualIngredientSheet();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// HỘP THOẠI NHẬP TAY NGUYÊN LIỆU (100% OFFLINE)
+  void _showManualIngredientSheet() {
+    final textController = TextEditingController();
+    final List<String> selectedIngredients = (_analysisResult?.ingredients ?? [])
+        .map((e) => e.name)
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            void toggleIngredient(String name) {
+              final trimmed = name.trim();
+              if (trimmed.isEmpty) return;
+              final cleanName = trimmed.replaceAll(RegExp(r'[\u{1F300}-\u{1F9FF}]', unicode: true), '').trim();
+              final existingIndex = selectedIngredients.indexWhere((e) => e.toLowerCase() == cleanName.toLowerCase());
+              setSheetState(() {
+                if (existingIndex != -1) {
+                  selectedIngredients.removeAt(existingIndex);
+                } else {
+                  selectedIngredients.add(cleanName);
+                }
+              });
+              textController.clear();
+            }
+
+            void addIngredient(String name) => toggleIngredient(name);
+
+            void removeIngredient(int index) {
+              setSheetState(() {
+                selectedIngredients.removeAt(index);
+              });
+            }
+
+            final tempItems = selectedIngredients.map((n) => OfflineFoodDatabase.lookup(n)).toList();
+            final totalTempCal = tempItems.fold(0, (sum, i) => sum + i.calorieNumber);
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.accentMint,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.kitchen_rounded, color: AppColors.primaryDark, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Nhập nguyên liệu có sẵn',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textBlack,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Tra cứu calo & Gợi ý món ngon (Hỗ trợ 100% Offline)',
+                                style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(sheetCtx),
+                          icon: const Icon(Icons.close, color: AppColors.textGray),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 24),
+
+                  // Phần thân cuộn được
+                  Expanded(
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Ô nhập text + Nút Thêm
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: textController,
+                                  decoration: InputDecoration(
+                                    hintText: 'Nhập tên nguyên liệu (vd: thịt bò, trứng, cà chua...)',
+                                    hintStyle: const TextStyle(fontSize: 13, color: AppColors.textLightGray),
+                                    prefixIcon: const Icon(Icons.search, color: AppColors.primary, size: 20),
+                                    filled: true,
+                                    fillColor: const Color(0xFFF8FAFC),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                      borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                                    ),
+                                  ),
+                                  onSubmitted: (val) => addIngredient(val),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              ElevatedButton(
+                                onPressed: () => addIngredient(textController.text),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: const Text('Thêm', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 18),
+
+                          // Gợi ý chọn nhanh 1 chạm
+                          const Row(
+                            children: [
+                              Icon(Icons.bolt_rounded, size: 16, color: Color(0xFFF59E0B)),
+                              SizedBox(width: 6),
+                              Text(
+                                'Gợi ý chọn nhanh 1 chạm:',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textBlack,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: OfflineFoodDatabase.quickSuggestions.map((suggestion) {
+                              final cleanName = suggestion.replaceAll(RegExp(r'[\u{1F300}-\u{1F9FF}]', unicode: true), '').trim();
+                              final isSelected = selectedIngredients.any((e) => e.toLowerCase() == cleanName.toLowerCase());
+
+                              return InkWell(
+                                onTap: () => addIngredient(suggestion),
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: isSelected ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        suggestion,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                          color: isSelected ? const Color(0xFF166534) : AppColors.textBlack,
+                                        ),
+                                      ),
+                                      if (isSelected) ...[
+                                        const SizedBox(width: 4),
+                                        const Icon(Icons.check, size: 14, color: Color(0xFF166534)),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+
+                          const SizedBox(height: 22),
+
+                          // Danh sách nguyên liệu đã chọn
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Nguyên liệu đã chọn (${selectedIngredients.length}):',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textBlack,
+                                ),
+                              ),
+                              if (selectedIngredients.isNotEmpty)
+                                TextButton(
+                                  onPressed: () {
+                                    setSheetState(() => selectedIngredients.clear());
+                                  },
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  child: const Text('Xóa tất cả', style: TextStyle(fontSize: 12)),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+
+                          if (selectedIngredients.isEmpty)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: const Column(
+                                children: [
+                                  Icon(Icons.egg_alt_outlined, size: 36, color: Color(0xFF94A3B8)),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'Chưa có nguyên liệu nào được chọn',
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Gõ tên nguyên liệu hoặc chạm vào các gợi ý ở trên',
+                                    style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            Column(
+                              children: [
+                                ...List.generate(selectedIngredients.length, (idx) {
+                                  final name = selectedIngredients[idx];
+                                  final info = OfflineFoodDatabase.lookup(name);
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.02),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.accentMint,
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(Icons.check_circle_outline, size: 16, color: AppColors.primaryDark),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                info.name,
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: AppColors.textBlack,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                '${info.calories} • ${info.weight} • ${info.protein}',
+                                                style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                                          onPressed: () => removeIngredient(idx),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+
+                                // Thẻ tổng kết calo tạm tính
+                                Container(
+                                  margin: const EdgeInsets.only(top: 8, bottom: 12),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(color: const Color(0xFFFDE68A)),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.local_fire_department, size: 18, color: Color(0xFFD97706)),
+                                          SizedBox(width: 6),
+                                          Text(
+                                            'Tổng năng lượng ước tính:',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF92400E),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        '~$totalTempCal kcal',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFFB45309),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                          const SizedBox(height: 80),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Thanh nút bấm ở dưới cùng
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, -3),
+                        ),
+                      ],
+                    ),
+                    child: SafeArea(
+                      top: false,
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          onPressed: selectedIngredients.isEmpty
+                              ? null
+                              : () {
+                                  Navigator.pop(sheetCtx);
+                                  _processManualIngredients(selectedIngredients);
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: Colors.grey.shade300,
+                            disabledForegroundColor: Colors.grey.shade500,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            elevation: 0,
+                          ),
+                          icon: const Icon(Icons.search, size: 20),
+                          label: Text(
+                            selectedIngredients.isEmpty
+                                ? 'Hãy chọn ít nhất 1 nguyên liệu'
+                                : 'Phân Tích & Tìm Món (${selectedIngredients.length} nguyên liệu)',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Xử lý danh sách nguyên liệu nhập tay từ người dùng
+  void _processManualIngredients(List<String> rawNames) {
+    if (rawNames.isEmpty) return;
+
+    final List<DetectedIngredientItem> items = rawNames.map((name) => OfflineFoodDatabase.lookup(name)).toList();
+    final totalCal = items.fold(0, (sum, i) => sum + i.calorieNumber);
+
+    int totalPro = 0;
+    int totalCarb = 0;
+    int totalFat = 0;
+    for (final it in items) {
+      final pMatch = RegExp(r'(\d+)').firstMatch(it.protein);
+      if (pMatch != null) totalPro += int.parse(pMatch.group(1)!);
+      final cMatch = RegExp(r'(\d+)').firstMatch(it.carbs);
+      if (cMatch != null) totalCarb += int.parse(cMatch.group(1)!);
+      final fMatch = RegExp(r'(\d+)').firstMatch(it.fat);
+      if (fMatch != null) totalFat += int.parse(fMatch.group(1)!);
+    }
+
+    final combinedResult = IngredientAnalysisResult(
+      isIngredient: true,
+      name: items.map((e) => e.name).join(', '),
+      englishName: items.first.englishName,
+      calories: '$totalCal kcal',
+      calorieNumber: totalCal,
+      weight: '~${items.length * 120}g',
+      protein: '${totalPro}g Protein',
+      carbs: '${totalCarb}g Carbs',
+      fat: '${totalFat}g Fat',
+      nutritionComment: 'Dữ liệu dinh dưỡng được tính toán từ ${items.length} nguyên liệu trong bếp của bạn: ${items.map((e) => e.name).join(", ")}. Bữa ăn cung cấp cân bằng đạm, calo và năng lượng thiết yếu.',
+      providerName: 'Chế độ Nhập tay (Offline Dinh dưỡng)',
+      ingredients: items,
+    );
+
+    setState(() {
+      _imageBytes = null;
+      _isLoading = false;
+      _analysisResult = combinedResult;
+      _selectedIngredientIndices.clear();
+      _selectedIngredientIndices.addAll(List.generate(items.length, (i) => i));
+      _matchingMeals = [];
+      _aiStatusMessage = 'Đã phân tích ${items.length} nguyên liệu (Nhập tay Ngoại tuyến)';
+    });
+
+    // Lọc và xếp hạng món ăn phù hợp với TẤT CẢ các nguyên liệu đã nhập
+    _fetchMealsForSelectedIngredients();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,10 +734,10 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Tiêu đề đầu trang
+            // 1. Tiêu đề thương hiệu
             const Center(
               child: Text(
-                'NutriSnap',
+                'NutriSnap AI Vision',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -38,34 +745,46 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
-            // Top Bar: Nút Back + Tiêu đề + Nút Chụp lại
-            _buildTopBar(),
-            const SizedBox(height: 16),
+            // 2. Thanh trạng thái & Nút chụp lại
+            _buildTopActionBar(),
+            const SizedBox(height: 14),
 
-            // Khung hiển thị ảnh chụp nguyên liệu kèm nhãn AI Scan
-            _buildCapturedImageBanner(),
-            const SizedBox(height: 20),
+            // 3. Banner hiển thị ảnh chụp hoặc Giao diện Camera Scanner sinh động
+            if (_imageBytes != null) ...[
+              _buildImagePreviewBanner(),
+              const SizedBox(height: 16),
+            ] else ...[
+              _buildAnimatedScannerDefaultView(),
+              const SizedBox(height: 16),
+            ],
 
-            // Mục tiêu dinh dưỡng (Tags)
-            _buildNutritionGoalsSection(),
-            const SizedBox(height: 20),
+            // 4. Nếu đang tải
+            if (_isLoading) _buildLoadingCard(),
 
-            // Danh sách nguyên liệu cốt lõi (Grid 2x2)
-            _buildCoreIngredientsSection(),
-            const SizedBox(height: 16),
+            // 5. TRƯỜNG HỢP 1: TỪ CHỐI NHẬN DIỆN (Nếu không phải nguyên liệu thực phẩm)
+            if (!_isLoading && _analysisResult != null && !_analysisResult!.isIngredient)
+              _buildRejectionCard(),
 
-            // Ô nhập thêm gia vị tủ bếp & Danh sách tag gia vị
-            _buildSpiceSection(),
-            const SizedBox(height: 16),
+            // 6. TRƯỜNG HỢP 2: LÀ NGUYÊN LIỆU THỰC PHẨM
+            if (!_isLoading && _analysisResult != null && _analysisResult!.isIngredient) ...[
+              // A. Tên nguyên liệu + Lượng Calo + Macro
+              _buildIngredientHeaderCard(),
+              const SizedBox(height: 16),
 
-            // Thẻ phân tích AI: Tối ưu calo thông minh & Độ cân bằng vi chất
-            _buildAiInsightCard(),
-            const SizedBox(height: 20),
+              // B. DANH SÁCH CÁC NGUYÊN LIỆU NHẬN DIỆN ĐƯỢC
+              _buildDetectedIngredientsList(),
+              const SizedBox(height: 16),
 
-            // Nút hành động chính: Chuyển sang màn hình Gợi ý món ăn (Index 2)
-            _buildCtaButton(),
+              // C. Nhận xét chuyên sâu về nguyên liệu
+              _buildNutritionCommentCard(),
+              const SizedBox(height: 20),
+
+              // D. Danh sách các món ăn khớp
+              _buildMatchingMealsSection(),
+            ],
+
             const SizedBox(height: 24),
           ],
         ),
@@ -73,13 +792,13 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> {
     );
   }
 
-  // --- CÁC THÀNH PHẦN GIAO DIỆN ---
+  // --- WIDGETS CON ---
 
-  Widget _buildTopBar() {
+  Widget _buildTopActionBar() {
     return Row(
       children: [
         InkWell(
-          onTap: () => widget.onNavigate(0), // Quay về Trang chủ (Index 0)
+          onTap: () => widget.onNavigate(0),
           borderRadius: BorderRadius.circular(20),
           child: Container(
             width: 38,
@@ -98,248 +817,790 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> {
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
+            children: [
               Text(
-                'Nguyên liệu nhận diện',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                AppTranslations.tr('scan_title'),
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.textBlack),
               ),
+              const SizedBox(height: 2),
               Text(
-                'Phân tích thị giác AI',
-                style: TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.w600),
+                _aiStatusMessage == 'Chưa quét hình ảnh' ? AppTranslations.tr('scan_status_default') : _aiStatusMessage,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, color: AppColors.textGray),
               ),
             ],
           ),
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.accentIndigo,
-            borderRadius: BorderRadius.circular(16),
+        InkWell(
+          onTap: _showManualIngredientSheet,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFF2563EB)),
+                SizedBox(width: 4),
+                Text(
+                  'Nhập tay',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                ),
+              ],
+            ),
           ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.camera_alt_outlined, size: 14, color: AppColors.primaryDark),
-              SizedBox(width: 4),
-              Text(
-                'Chụp lại',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
-              ),
-            ],
+        ),
+        const SizedBox(width: 6),
+        InkWell(
+          onTap: _showImageSourcePicker,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: AppColors.accentMint,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.camera_alt_outlined, size: 14, color: AppColors.primaryDark),
+                const SizedBox(width: 4),
+                Text(
+                  AppTranslations.tr('scan_button'),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+                ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildCapturedImageBanner() {
-    return Stack(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: Image.network(
-            'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?auto=format&fit=crop&w=800&q=80',
-            height: 190,
+  Widget _buildImagePreviewBanner() {
+    if (_imageBytes == null) return const SizedBox.shrink();
+
+    return GestureDetector(
+      onTap: _showImageSourcePicker,
+      child: Stack(
+        children: [
+          Container(
+            height: 220,
             width: double.infinity,
-            fit: BoxFit.cover,
-          ),
-        ),
-        Positioned(
-          left: 12,
-          bottom: 12,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.92),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
                 ),
-                const SizedBox(width: 6),
-                RichText(
-                  text: const TextSpan(
-                    style: TextStyle(fontSize: 11, color: Color(0xFF334155)),
-                    children: [
-                      TextSpan(text: 'NutriVision AI • Đã tìm thấy '),
-                      TextSpan(
-                        text: '4 nguyên liệu',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.memory(
+                    _imageBytes!,
+                    fit: BoxFit.cover,
+                  ),
+                  // Khi AI đang quét ảnh thật, hiển thị tia laser chạy trên ảnh
+                  if (_isLoading)
+                    AnimatedBuilder(
+                      animation: _laserAnimation,
+                      builder: (context, child) {
+                        return Positioned(
+                          top: _laserAnimation.value * 190,
+                          left: 0,
+                          right: 0,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                height: 3,
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Colors.transparent,
+                                      Color(0xFF10B981),
+                                      Color(0xFF34D399),
+                                      Color(0xFF10B981),
+                                      Colors.transparent,
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF10B981).withOpacity(0.9),
+                                      blurRadius: 10,
+                                      spreadRadius: 2,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                height: 26,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      const Color(0xFF10B981).withOpacity(0.25),
+                                      Colors.transparent,
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.refresh_rounded, size: 14, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text(
+                    AppTranslations.tr('change_photo'),
+                    style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// GIAO DIỆN QUÉT MẶC ĐỊNH SINH ĐỘNG (AI Camera Scanner Viewfinder)
+  Widget _buildAnimatedScannerDefaultView() {
+    return Column(
+      children: [
+        // 1. KHUNG NGẮM CAMERA AI SCANNER CHUYỂN ĐỘNG
+        Container(
+          height: 270,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF0F172A),
+                Color(0xFF1E293B),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(
+              color: const Color(0xFF10B981).withOpacity(0.35),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF10B981).withOpacity(0.12),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(26),
+            child: Stack(
+              children: [
+                // 4 Góc ngắm camera viewfinder
+                Positioned(top: 14, left: 14, child: _buildCornerBracket(top: true, left: true)),
+                Positioned(top: 14, right: 14, child: _buildCornerBracket(top: true, left: false)),
+                Positioned(bottom: 14, left: 14, child: _buildCornerBracket(top: false, left: true)),
+                Positioned(bottom: 14, right: 14, child: _buildCornerBracket(top: false, left: false)),
+
+                // Tia quét Laser chuyển động lên xuống
+                AnimatedBuilder(
+                  animation: _laserAnimation,
+                  builder: (context, child) {
+                    return Positioned(
+                      top: 25 + (_laserAnimation.value * 210),
+                      left: 20,
+                      right: 20,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            height: 3,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [
+                                  Colors.transparent,
+                                  Color(0xFF10B981),
+                                  Color(0xFF34D399),
+                                  Color(0xFF10B981),
+                                  Colors.transparent,
+                                ],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF10B981).withOpacity(0.9),
+                                  blurRadius: 10,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            height: 28,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  const Color(0xFF10B981).withOpacity(0.2),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      TextSpan(text: ' (98%)'),
-                    ],
+                    );
+                  },
+                ),
+
+                // Tâm ngắm hồng ngoại AI ở giữa
+                Center(
+                  child: Container(
+                    width: 90,
+                    height: 90,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF10B981).withOpacity(0.25),
+                        width: 1.5,
+                      ),
+                      color: const Color(0xFF10B981).withOpacity(0.04),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFF10B981).withOpacity(0.4),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.filter_center_focus_rounded,
+                          color: Color(0xFF34D399),
+                          size: 32,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Các nhãn thực phẩm nổi nhấp nhô xung quanh tâm ngắm
+                AnimatedBuilder(
+                  animation: _laserAnimation,
+                  builder: (context, child) {
+                    final progress = _laserAnimation.value;
+                    return Stack(
+                      children: [
+                        Positioned(
+                          top: 42 + (sin(progress * pi) * 6),
+                          left: 28,
+                          child: _buildFloatingFoodBadge('🥩', 'Thịt tươi'),
+                        ),
+                        Positioned(
+                          top: 42 - (sin(progress * pi) * 6),
+                          right: 28,
+                          child: _buildFloatingFoodBadge('🥦', 'Rau xanh'),
+                        ),
+                        Positioned(
+                          bottom: 50 + (cos(progress * pi) * 5),
+                          left: 32,
+                          child: _buildFloatingFoodBadge('🥕', 'Củ quả'),
+                        ),
+                        Positioned(
+                          bottom: 50 - (cos(progress * pi) * 5),
+                          right: 32,
+                          child: _buildFloatingFoodBadge('🐟', 'Hải sản'),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+
+                // Thanh trạng thái AI Vision Scanner ở phía trên
+                Positioned(
+                  top: 14,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A).withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF34D399),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'AI VISION SCANNER • SẴN SÀNG',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.8,
+                              color: Color(0xFF34D399),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Lời nhắc ở đáy viewfinder
+                Positioned(
+                  bottom: 14,
+                  left: 20,
+                  right: 20,
+                  child: Center(
+                    child: Text(
+                      'Đặt nguyên liệu vào khung ngắm để phân tích dinh dưỡng',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white.withOpacity(0.75),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
-        Positioned(
-          right: 12,
-          bottom: 12,
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.4),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.fullscreen_rounded, size: 20, color: Colors.white),
-          ),
-        ),
-      ],
-    );
-  }
 
-  Widget _buildNutritionGoalsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+        const SizedBox(height: 16),
+
+        // 2. HAI NÚT BẤM TO CHỤP ẢNH & THƯ VIỆN TRỰC TIẾP
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: const [
-            Text(
-              'Mục tiêu dinh dưỡng',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textGray),
-            ),
-            Text(
-              '⚙ Tùy chỉnh',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          child: Row(
-            children: List.generate(_goals.length, (index) {
-              final isSelected = _selectedGoalIndex == index;
-              return GestureDetector(
-                onTap: () => setState(() => _selectedGoalIndex = index),
-                child: Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF6EE7B7) : Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: isSelected ? Colors.transparent : const Color(0xFFE2E8F0),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isSelected) ...[
-                        const Icon(Icons.check_circle, size: 14, color: AppColors.primaryDark),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        _goals[index],
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: isSelected ? AppColors.primaryDark : const Color(0xFF334155),
-                        ),
-                      ),
-                    ],
+          children: [
+            Expanded(
+              flex: 6,
+              child: ElevatedButton.icon(
+                onPressed: () => _pickAndAnalyzeImage(ImageSource.camera),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-              );
-            }),
+                icon: const Icon(Icons.camera_alt_rounded, size: 20),
+                label: Text(
+                  AppTranslations.tr('camera_option'),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 5,
+              child: OutlinedButton.icon(
+                onPressed: () => _pickAndAnalyzeImage(ImageSource.gallery),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryDark,
+                  side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+                  backgroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                icon: const Icon(Icons.photo_library_outlined, size: 18, color: Color(0xFF6366F1)),
+                label: Text(
+                  AppTranslations.tr('gallery_option'),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 10),
+
+        // 2b. NÚT NHẬP TAY NGUYÊN LIỆU TRỰC TIẾP (100% OFFLINE)
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _showManualIngredientSheet,
+            style: OutlinedButton.styleFrom(
+              backgroundColor: const Color(0xFFF0FDF4),
+              foregroundColor: const Color(0xFF166534),
+              side: const BorderSide(color: Color(0xFF86EFAC), width: 1.2),
+              padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            icon: const Icon(Icons.edit_note_rounded, size: 22, color: AppColors.primary),
+            label: const Text(
+              '✍️ Nhập tay nguyên liệu trong bếp (Hỗ trợ Ngoại tuyến)',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // 3. THẺ TÍNH NĂNG AI THÔNG MINH & BỘ LỌC AN TOÀN
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.auto_awesome, size: 16, color: Color(0xFF166534)),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'NutriSnap AI Vision Hoạt Động Thế Nào?',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textBlack,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _buildFeatureRow(
+                Icons.verified_user_outlined,
+                const Color(0xFF10B981),
+                'Kiểm duyệt an toàn thực phẩm',
+                'Tự động từ chối nếu ảnh không phải nguyên liệu (vật dụng, người, phong cảnh...).',
+              ),
+              const SizedBox(height: 10),
+              _buildFeatureRow(
+                Icons.local_fire_department_outlined,
+                const Color(0xFFF97316),
+                'Ước tính Calo & Macro tức thì',
+                'Phân tích chi tiết lượng Đạm (Protein), Tinh bột (Carb), Chất béo (Fat).',
+              ),
+              const SizedBox(height: 10),
+              _buildFeatureRow(
+                Icons.restaurant_menu_rounded,
+                const Color(0xFF6366F1),
+                'Khớp công thức TheMealDB',
+                'Gợi ý các món ăn ngon nhất có thể nấu ngay với nguyên liệu vừa quét.',
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 4. GỢI Ý NGUYÊN LIỆU PHỔ BIẾN
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '💡 Hỗ trợ nhận diện tốt nhất:',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textGray),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  _buildIngredientTag('🥩 Thịt heo / bò'),
+                  _buildIngredientTag('🍗 Thịt gà'),
+                  _buildIngredientTag('🥦 Bông cải'),
+                  _buildIngredientTag('🥚 Trứng gà'),
+                  _buildIngredientTag('🥕 Cà rốt'),
+                  _buildIngredientTag('🍅 Cà chua'),
+                  _buildIngredientTag('🐟 Cá tươi'),
+                ],
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildCoreIngredientsSection() {
-    return Column(
+  Widget _buildCornerBracket({required bool top, required bool left}) {
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        border: Border(
+          top: top ? const BorderSide(color: Color(0xFF34D399), width: 3.5) : BorderSide.none,
+          bottom: !top ? const BorderSide(color: Color(0xFF34D399), width: 3.5) : BorderSide.none,
+          left: left ? const BorderSide(color: Color(0xFF34D399), width: 3.5) : BorderSide.none,
+          right: !left ? const BorderSide(color: Color(0xFF34D399), width: 3.5) : BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingFoodBadge(String emoji, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 12)),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeatureRow(IconData icon, Color color, String title, String subtitle) {
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: const [
-            Text(
-              'Nguyên liệu cốt lõi',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
-            ),
-            Text(
-              'Nhấn ✕ để bỏ bớt',
-              style: TextStyle(fontSize: 11, color: AppColors.textLightGray),
-            ),
-          ],
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 16, color: color),
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _buildIngredientCard(
-                icon: Icons.set_meal_outlined,
-                name: 'Ức gà tươi',
-                weight: '~250g',
-                metricLabel: 'Chỉ số',
-                metricValue: '41g Protein',
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textBlack),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildIngredientCard(
-                icon: Icons.eco_outlined,
-                name: 'Bông cải xanh',
-                weight: '~180g',
-                metricLabel: 'Chỉ số',
-                metricValue: 'Giàu chất xơ',
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 11, color: AppColors.textGray, height: 1.3),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _buildIngredientCard(
-                icon: Icons.egg_outlined,
-                name: '2 Trứng gà',
-                weight: '~110g',
-                metricLabel: 'Năng lượng',
-                metricValue: '140 kcal',
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildIngredientCard(
-                icon: Icons.circle_outlined,
-                name: 'Cà chua bi',
-                weight: '~90g',
-                metricLabel: 'Dưỡng chất',
-                metricValue: 'Vitamin C',
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildIngredientCard({
-    required IconData icon,
-    required String name,
-    required String weight,
-    required String metricLabel,
-    required String metricValue,
-  }) {
+  Widget _buildIngredientTag(String label) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 11, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+      ),
+    );
+  }
+
+  Widget _buildLoadingCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)],
+      ),
+      child: Column(
+        children: [
+          const CircularProgressIndicator(color: AppColors.primary),
+          const SizedBox(height: 16),
+          Text(
+            AppTranslations.tr('analyzing'),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Hệ thống AI đa đám mây đang kiểm tra nguyên liệu và calo',
+            style: TextStyle(fontSize: 12, color: AppColors.textGray),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// TỪ CHỐI NHẬN DIỆN KHI KHÔNG PHẢI NGUYÊN LIỆU THỰC PHẨM
+  Widget _buildRejectionCard() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFFCA5A5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEF4444),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.no_food_outlined, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Từ chối nhận diện: Không phải nguyên liệu!',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF991B1B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _analysisResult?.rejectReason ??
+                'Ảnh đã chụp không chứa nguyên liệu thực phẩm hoặc thức ăn. Vui lòng thử lại với ảnh thịt, cá, rau củ hoặc nguyên liệu tươi sống.',
+            style: const TextStyle(fontSize: 13, color: Color(0xFF7F1D1D), height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _showImageSourcePicker,
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFFEF4444)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              icon: const Icon(Icons.camera_alt_outlined, color: Color(0xFFEF4444), size: 18),
+              label: const Text(
+                'Chụp lại ảnh nguyên liệu thực tế',
+                style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _showManualIngredientSheet,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              icon: const Icon(Icons.edit_note_rounded, size: 20),
+              label: const Text(
+                '✍️ Hoặc nhập tay nguyên liệu bạn có',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ĐẦU RA: TÊN NGUYÊN LIỆU + CALO
+  Widget _buildIngredientHeaderCard() {
+    final res = _analysisResult!;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
+          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 3)),
         ],
       ),
       child: Column(
@@ -349,233 +1610,632 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppColors.accentIndigo,
-                  borderRadius: BorderRadius.circular(10),
+                  color: AppColors.accentMint,
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(icon, size: 18, color: AppColors.primaryDark),
+                child: const Icon(Icons.restaurant_menu_rounded, size: 28, color: AppColors.primaryDark),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack)),
-                    Text(weight, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primary)),
-                  ],
-                ),
-              ),
-              InkWell(
-                onTap: () {},
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle),
-                  child: const Icon(Icons.close, size: 12, color: AppColors.textGray),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(metricLabel, style: const TextStyle(fontSize: 11, color: AppColors.textGray)),
-                Text(metricValue, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textBlack)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSpiceSection() {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: AppColors.accentIndigo.withOpacity(0.6),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.soup_kitchen_outlined, size: 18, color: AppColors.textGray),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Thêm gia vị tủ bếp (dầu hào, tiêu, tỏi...)',
-                  style: TextStyle(fontSize: 12, color: AppColors.textLightGray),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.add, size: 16, color: Colors.white),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: _spices.map((spice) {
-            return Container(
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppColors.accentIndigo,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    spice,
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.close, size: 12, color: AppColors.textGray),
-                ],
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAiInsightCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.accentIndigo.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.auto_awesome, color: Colors.white, size: 18),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Tối ưu hóa Calo thông minh',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: MarqueeText(
+                            text: res.name,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textBlack,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            res.ingredients.length > 1
+                                ? '${res.ingredients.length} nguyên liệu ✓'
+                                : 'Hợp lệ ✓',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(height: 4),
+                    const SizedBox(height: 4),
                     Text(
-                      'Nhóm nguyên liệu này hoàn hảo cho ngân sách 700 kcal còn lại của bạn trong ngày.',
-                      style: TextStyle(fontSize: 11, color: AppColors.textGray, height: 1.3),
+                      res.ingredients.length > 1
+                          ? 'Tổng khối lượng: ${res.weight} (${res.ingredients.length} loại)'
+                          : 'Ước tính khối lượng: ${res.weight}',
+                      style: const TextStyle(fontSize: 12, color: AppColors.textGray),
                     ),
                   ],
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
           const SizedBox(height: 14),
+
+          // LƯỢNG CALO NỔI BẬT
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
+              color: AppColors.accentIndigo,
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
               children: [
-                SizedBox(
-                  width: 38,
-                  height: 38,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: const [
-                      CircularProgressIndicator(
-                        value: 0.68,
-                        strokeWidth: 4,
-                        backgroundColor: AppColors.accentIndigo,
-                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                      ),
-                      Text('68%', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.primaryDark)),
-                    ],
-                  ),
-                ),
+                const Icon(Icons.local_fire_department, color: Colors.deepOrange, size: 24),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Độ cân bằng vi chất', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textBlack)),
-                      Text('Đạt chuẩn bữa ăn phục hồi cơ', style: TextStyle(fontSize: 10, color: AppColors.textGray)),
+                      const Text(
+                        'NĂNG LƯỢNG (CALO)',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textGray),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        res.calories,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryDark,
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF6EE7B7),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Text('Tối ưu', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryDark)),
+                  child: Text(
+                    res.englishName.toUpperCase(),
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                  ),
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 12),
+
+          // Macro Stats: Protein, Carbs, Fat
+          Row(
+            children: [
+              Expanded(child: _buildMacroBadge('Đạm (Protein)', res.protein, Colors.blue.shade700, const Color(0xFFEFF6FF))),
+              const SizedBox(width: 8),
+              Expanded(child: _buildMacroBadge('Tinh bột (Carb)', res.carbs, Colors.amber.shade800, const Color(0xFFFFFBEB))),
+              const SizedBox(width: 8),
+              Expanded(child: _buildMacroBadge('Chất béo (Fat)', res.fat, Colors.red.shade700, const Color(0xFFFEF2F2))),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCtaButton() {
+  Widget _buildMacroBadge(String title, String val, Color textColor, Color bgColor) {
     return Container(
-      width: double.infinity,
-      height: 48,
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 9, color: AppColors.textGray, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 2),
+          Text(
+            val,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColor),
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => widget.onNavigate(2), // Nhấn nút sẽ chuyển sang tab Thực đơn gợi ý (Index 2)
-          borderRadius: BorderRadius.circular(24),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Text(
-                'Gợi ý danh sách món ăn phù hợp (AI)',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+    );
+  }
+
+  /// ĐẦU RA: NHẬN XÉT VỀ NGUYÊN LIỆU
+  Widget _buildNutritionCommentCard() {
+    final res = _analysisResult!;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.auto_awesome, size: 14, color: Colors.white),
               ),
-              SizedBox(width: 6),
-              Icon(Icons.arrow_forward_rounded, size: 16, color: Colors.white),
+              const SizedBox(width: 8),
+              const Text(
+                'Nhận Xét Dinh Dưỡng Từ Chuyên Gia AI',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+              ),
             ],
           ),
+          const SizedBox(height: 10),
+          Text(
+            res.nutritionComment,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFF334155),
+              height: 1.5,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          if (res.context.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Bối cảnh nhận diện: ${res.context}',
+              style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: AppColors.textLightGray),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// BẢNG DANH SÁCH NHIỀU NGUYÊN LIỆU PHÁT HIỆN ĐƯỢC
+  Widget _buildDetectedIngredientsList() {
+    final ingredients = _analysisResult?.ingredients ?? [];
+    if (ingredients.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentMint,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.format_list_bulleted_rounded, size: 16, color: AppColors.primaryDark),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Nguyên Liệu Nhận Diện (${ingredients.length})',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: _showManualIngredientSheet,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit_note_rounded, size: 14, color: Color(0xFF2563EB)),
+                      SizedBox(width: 3),
+                      Text(
+                        '✍️ Thêm/Sửa',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Chạm để chọn hoặc hủy chọn nhiều nguyên liệu để lọc món ăn gợi ý:',
+            style: TextStyle(fontSize: 11, color: AppColors.textGray),
+          ),
+          const SizedBox(height: 12),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: ingredients.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final item = ingredients[index];
+              final isSelected = _selectedIngredientIndices.contains(index);
+
+              return InkWell(
+                onTap: () {
+                  setState(() {
+                    if (_selectedIngredientIndices.contains(index)) {
+                      _selectedIngredientIndices.remove(index);
+                    } else {
+                      _selectedIngredientIndices.add(index);
+                    }
+                  });
+                  _fetchMealsForSelectedIngredients();
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isSelected ? const Color(0xFF10B981) : const Color(0xFFE2E8F0),
+                      width: isSelected ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      // Emoji đại diện
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: isSelected ? const Color(0xFFDCFCE7) : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Center(
+                          child: Text(
+                            _getIngredientEmoji(item.name),
+                            style: const TextStyle(fontSize: 20),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // Tên & Thông số
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: MarqueeText(
+                                    text: item.name,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSelected ? const Color(0xFF065F46) : AppColors.textBlack,
+                                    ),
+                                  ),
+                                ),
+                                if (isSelected) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF10B981),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Text(
+                                      'Đang chọn',
+                                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Text(
+                                  item.weight,
+                                  style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text('•', style: TextStyle(color: AppColors.textLightGray, fontSize: 10)),
+                                const SizedBox(width: 6),
+                                Text(
+                                  item.calories,
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFEA580C)),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text('•', style: TextStyle(color: AppColors.textLightGray, fontSize: 10)),
+                                const SizedBox(width: 6),
+                                Text(
+                                  item.protein,
+                                  style: const TextStyle(fontSize: 11, color: Color(0xFF2563EB)),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                        size: 20,
+                        color: isSelected ? const Color(0xFF10B981) : const Color(0xFFCBD5E1),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getIngredientEmoji(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('bò') || lower.contains('beef')) return '🥩';
+    if (lower.contains('gà') || lower.contains('chicken')) return '🍗';
+    if (lower.contains('heo') || lower.contains('lợn') || lower.contains('pork')) return '🥓';
+    if (lower.contains('cá') || lower.contains('fish') || lower.contains('salmon')) return '🐟';
+    if (lower.contains('tôm') || lower.contains('shrimp')) return '🦐';
+    if (lower.contains('trứng') || lower.contains('egg')) return '🥚';
+    if (lower.contains('cải') || lower.contains('rau') || lower.contains('broccoli')) return '🥦';
+    if (lower.contains('cà rốt') || lower.contains('carrot')) return '🥕';
+    if (lower.contains('cà chua') || lower.contains('tomato')) return '🍅';
+    if (lower.contains('hành') || lower.contains('onion')) return '🧅';
+    if (lower.contains('khoai') || lower.contains('potato')) return '🥔';
+    if (lower.contains('nấm') || lower.contains('mushroom')) return '🍄';
+    if (lower.contains('ớt') || lower.contains('chili') || lower.contains('pepper')) return '🌶️';
+    if (lower.contains('đậu') || lower.contains('bean') || lower.contains('tofu')) return '🫘';
+    return '🥗';
+  }
+
+  /// ĐẦU RA: CÁC MÓN ĂN KHỚP VỚI NGUYÊN LIỆU (Đã gỡ TheMealDB, hỗ trợ chữ chạy LED)
+  Widget _buildMatchingMealsSection() {
+    final ingredients = _analysisResult?.ingredients ?? [];
+    final selectedItems = _selectedIngredientIndices
+        .where((i) => i >= 0 && i < ingredients.length)
+        .map((i) => ingredients[i])
+        .toList();
+
+    final activeIngredientName = selectedItems.isNotEmpty
+        ? selectedItems.map((e) => e.name).join(' + ')
+        : '';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. Tiêu đề danh mục (Loại bỏ hoàn toàn TheMealDB theo yêu cầu)
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.accentMint,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.restaurant, size: 16, color: AppColors.primaryDark),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              AppTranslations.tr('matching_recipes'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+            ),
+          ],
+        ),
+
+        // 2. Chip hiển thị nguyên liệu đang được chọn gợi ý với hiệu ứng chữ LED chạy nếu quá dài
+        if (activeIngredientName.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                AppStateService.instance.currentLanguage == 'vi'
+                    ? 'Gợi ý món từ (${selectedItems.length}):'
+                    : 'Recipes for (${selectedItems.length}):',
+                style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDCFCE7),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF86EFAC)),
+                  ),
+                  child: MarqueeText(
+                    text: activeIngredientName,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF166534),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 12),
+
+        if (_selectedIngredientIndices.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Center(
+              child: Text(
+                'Vui lòng chọn ít nhất 1 nguyên liệu phía trên để hiển thị gợi ý món ăn.',
+                style: TextStyle(fontSize: 12, color: AppColors.textGray),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else if (_isLoadingMeals)
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+            child: const Center(
+              child: Column(
+                children: [
+                  CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                  SizedBox(height: 10),
+                  Text('Đang tìm món phù hợp...', style: TextStyle(fontSize: 12, color: AppColors.textGray)),
+                ],
+              ),
+            ),
+          )
+        else if (_matchingMeals.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+            child: Center(
+              child: Text(
+                AppTranslations.tr('no_matching_recipes'),
+                style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+              ),
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _matchingMeals.length > 8 ? 8 : _matchingMeals.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              final meal = _matchingMeals[index];
+              return _buildMealTile(meal);
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMealTile(MealItem meal) {
+    return InkWell(
+      onTap: () async {
+        // Tải chi tiết món ăn với ngôn ngữ hiện tại
+        final navigator = Navigator.of(context);
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        );
+
+        final detail = await TheMealDbService.getMealDetail(
+          meal.idMeal,
+          lang: AppStateService.instance.currentLanguage,
+        );
+        navigator.pop(); // Đóng loading
+
+        if (detail != null) {
+          AppStateService.instance.setSelectedMeal(detail);
+        } else {
+          AppStateService.instance.setSelectedMeal(meal);
+        }
+
+        // Chuyển sang màn hình RecipeDetailScreen (Index 6)
+        widget.onNavigate(6);
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 6, offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                meal.strMealThumb,
+                width: 64,
+                height: 64,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 64,
+                  height: 64,
+                  color: Colors.grey.shade200,
+                  child: const Icon(Icons.fastfood, color: Colors.grey),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Hiệu ứng chữ chạy LED (Marquee) khi tên món dài
+                  MarqueeText(
+                    text: AppStateService.instance.currentLanguage == 'vi'
+                        ? RecipeTranslator.translateDishName(meal.strMeal)
+                        : meal.strMeal,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.local_fire_department_outlined, size: 14, color: AppColors.primary),
+                      const SizedBox(width: 2),
+                      Text(
+                        '~${meal.estimatedCalories} kcal',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        '${meal.estimatedProtein}g Đạm',
+                        style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textLightGray),
+          ],
         ),
       ),
     );

@@ -58,3 +58,11 @@ app.*.map.json
 .buildlog/
 .swiftpm/
 migrate_working_dir/
+
+# ==========================================
+# 5. ENVIRONMENT VARIABLES & SECRETS
+# ==========================================
+.env
+.env.*
+*.env
+!.env.example

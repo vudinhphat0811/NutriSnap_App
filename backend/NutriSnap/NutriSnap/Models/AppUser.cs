@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity;
 using System.ComponentModel.DataAnnotations;
 
 namespace NutriSnap.Models;
@@ -7,6 +7,9 @@ public class AppUser : IdentityUser<int>
 {
     [MaxLength(100)]
     public string FullName { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string? AvatarUrl { get; set; }
 
     public int Age { get; set; } = 22;
 
@@ -23,6 +26,15 @@ public class AppUser : IdentityUser<int>
 
     public int DailyWaterGoalMl { get; set; } = 2000;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    [MaxLength(200)]
+    public string? GoogleEmail { get; set; }
+
+    [MaxLength(200)]
+    public string? FacebookName { get; set; }
+
+    public bool IsGuest { get; set; } = false;
+    public DateTime? GuestCreatedAt { get; set; }
 
     // Quan hệ 1 User có nhiều MealLogs và DailyWaterLogs
     public ICollection<MealLog> MealLogs { get; set; } = new List<MealLog>();
