@@ -7,7 +7,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../constants/api_constants.dart';
 import '../constants/app_colors.dart';
 import '../services/app_state_service.dart';
-import 'facebook_oauth_screen.dart';
 
 /// Kết quả xác thực OAuth mạng xã hội
 class SocialAuthResult {
@@ -28,9 +27,8 @@ class SocialAuthResult {
   });
 }
 
-/// Quản lý Xác thực & Liên kết Mạng xã hội (Google & Facebook)
+/// Quản lý Xác thực & Liên kết Mạng xã hội (Google chính thức)
 /// - Gọi trực tiếp giao diện "Chọn tài khoản" của hệ thống Google Play Services
-/// - Mở WebView chính thức của Facebook để người dùng nhấn nút Xác nhận / Cấp quyền
 /// - Không tự tạo tài khoản giả, không form tự chế, không tài khoản khách
 class SocialAuthHelper {
   // Thông tin chữ ký APK và Package Name chuẩn của ứng dụng
@@ -138,91 +136,6 @@ class SocialAuthHelper {
   }
 
   /// =========================================================================
-  /// 2. ĐĂNG NHẬP / ĐĂNG KÝ / LIÊN KẾT BẰNG FACEBOOK CHÍNH THỨC (IN-APP WEBVIEW)
-  /// =========================================================================
-  static Future<SocialAuthResult> signInWithFacebook(BuildContext context) async {
-    try {
-      // 1. Nếu chưa có Meta App ID, hiển thị dialog hướng dẫn & nhập ID
-      if (ApiConstants.facebookAppId.isEmpty) {
-        final bool shouldProceed = await _showFacebookConfigDialog(context);
-        if (!shouldProceed || ApiConstants.facebookAppId.isEmpty) {
-          return const SocialAuthResult(
-            success: false,
-            message: 'Cần nhập Facebook App ID để tiến hành đăng nhập.',
-          );
-        }
-      }
-
-      if (!context.mounted) {
-        return const SocialAuthResult(success: false, message: 'Đã hủy thao tác.');
-      }
-
-      // 2. Mở WebView đăng nhập Facebook chính thức có màn hình xác nhận / cấp quyền
-      final FacebookAuthResponse? response = await Navigator.of(context).push<FacebookAuthResponse>(
-        MaterialPageRoute(
-          fullscreenDialog: true,
-          builder: (_) => FacebookOAuthScreen(appId: ApiConstants.facebookAppId),
-        ),
-      );
-
-      // Nếu người dùng đóng hoặc hủy
-      if (response == null || !response.success) {
-        final msg = response?.message ?? 'Đã hủy đăng nhập Facebook.';
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(msg),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        return SocialAuthResult(success: false, message: msg);
-      }
-
-      // 3. Người dùng đã bấm "Xác nhận / Tiếp tục" trên Facebook thành công!
-      // Gửi thông tin thật từ Facebook lên Backend C# .NET 8 để cấp JWT Token
-      final result = await _callBackendSocialLogin(
-        provider: 'facebook',
-        email: response.email!,
-        name: response.name!,
-        avatarUrl: response.avatarUrl,
-      );
-
-      if (result.success && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Đã đăng nhập tài khoản Facebook (${response.name}) thành công!'),
-            backgroundColor: const Color(0xFF16A34A),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      } else if (!result.success && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message ?? 'Đăng nhập Facebook thất bại.'),
-            backgroundColor: Colors.red.shade700,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-
-      return result;
-    } catch (e) {
-      debugPrint('[Facebook Error] $e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi đăng nhập Facebook: $e'),
-            backgroundColor: Colors.red.shade700,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      return SocialAuthResult(success: false, message: e.toString());
-    }
-  }
-
-  /// =========================================================================
   /// HỘP THOẠI HƯỚNG DẪN GIẢI QUYẾT LỖI GOOGLE CODE 10 (DEVELOPER_ERROR)
   /// =========================================================================
   static Future<void> _showGoogleDevErrorDialog(BuildContext context) async {
@@ -314,7 +227,7 @@ class SocialAuthHelper {
                     child: OutlinedButton.icon(
                       onPressed: () {
                         const fullInfo = 'Package Name: $appPackageName\nSHA-1: $appDebugSha1\nSHA-256: $appDebugSha256';
-                        Clipboard.setData(ClipboardData(text: fullInfo));
+                        Clipboard.setData(const ClipboardData(text: fullInfo));
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('✅ Đã sao chép Package Name & SHA-1 vào bộ nhớ tạm!'),
@@ -405,151 +318,6 @@ class SocialAuthHelper {
         },
       ),
     );
-  }
-
-  /// =========================================================================
-  /// HỘP THOẠI CẤU HÌNH FACEBOOK APP ID
-  /// =========================================================================
-  static Future<bool> _showFacebookConfigDialog(BuildContext context) async {
-    final appIdController = TextEditingController(text: ApiConstants.facebookAppId);
-    bool confirmed = false;
-
-    await showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-        contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.facebook, color: Color(0xFF1877F2), size: 26),
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Cấu Hình Facebook Login',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textBlack),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Yêu cầu Meta App ID để hiện màn hình xác nhận',
-                    style: TextStyle(fontSize: 11, color: AppColors.textGray),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0F7FF),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
-                ),
-                child: const Text(
-                  'Facebook OAuth 2.0 bắt buộc phải có App ID để hiển thị giao diện Xác nhận ([Tiếp tục dưới tên bạn]) và cấp quyền truy cập vào NutriSnap.',
-                  style: TextStyle(fontSize: 11.5, height: 1.4, color: Color(0xFF1E40AF)),
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              const Text(
-                'NHẬP FACEBOOK APP ID:',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textGray),
-              ),
-              const SizedBox(height: 6),
-
-              TextField(
-                controller: appIdController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  hintText: 'Ví dụ: 104829182371928',
-                  prefixIcon: const Icon(Icons.vpn_key_rounded, size: 20, color: Color(0xFF1877F2)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Hướng dẫn lấy App ID
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('👉 Cách lấy Facebook App ID (Miễn phí):', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textBlack)),
-                    SizedBox(height: 6),
-                    Text('1. Truy cập developers.facebook.com/apps', style: TextStyle(fontSize: 11, color: Color(0xFF334155))),
-                    SizedBox(height: 4),
-                    Text('2. Tạo ứng dụng mới -> Chọn loại "Consumer / Xác thực"', style: TextStyle(fontSize: 11, color: Color(0xFF334155))),
-                    SizedBox(height: 4),
-                    Text('3. Bật sản phẩm "Facebook Login" -> Sao chép App ID dán vào ô trên.', style: TextStyle(fontSize: 11, color: Color(0xFF334155))),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final uri = Uri.parse('https://developers.facebook.com/apps/');
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-            },
-            child: const Text('Mở developers.facebook.com', style: TextStyle(fontSize: 12)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final id = appIdController.text.trim();
-              if (id.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Vui lòng nhập Facebook App ID!'),
-                    backgroundColor: Colors.red,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-                return;
-              }
-              await ApiConstants.saveFacebookAppId(id);
-              confirmed = true;
-              if (dialogCtx.mounted) Navigator.pop(dialogCtx);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1877F2),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            child: const Text('Lưu & Mở Màn Hình Xác Nhận', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-
-    return confirmed;
   }
 
   /// Widget dòng thông tin kèm nút sao chép tiện lợi
@@ -663,7 +431,15 @@ class SocialAuthHelper {
     if (provider.toLowerCase() == 'google') {
       return await signInWithGoogle(context);
     } else {
-      return await signInWithFacebook(context);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Phương thức đăng nhập này hiện không khả dụng. Vui lòng sử dụng Google!'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return const SocialAuthResult(success: false, message: 'Tính năng tạm thời ngừng hỗ trợ.');
     }
   }
 
@@ -673,9 +449,16 @@ class SocialAuthHelper {
     return result.success;
   }
 
-  /// Tương thích ngược: Đăng nhập / Liên kết Facebook (Trả về boolean)
+  /// Tương thích ngược: Facebook
   static Future<bool> showFacebookAuthDialog(BuildContext context) async {
-    final result = await signInWithFacebook(context);
-    return result.success;
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tính năng liên kết Facebook tạm ngưng, vui lòng dùng Google!'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    return false;
   }
 }

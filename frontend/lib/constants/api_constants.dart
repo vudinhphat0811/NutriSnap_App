@@ -40,34 +40,18 @@ class ApiConstants {
   static String get resetPassword => '$baseUrl/api/auth/reset-password-otp';
   static String get profile => '$baseUrl/api/user/profile';
 
-  // Cấu hình OAuth 2.0 Bên thứ ba (Google & Facebook)
+  // Cấu hình OAuth 2.0 Bên thứ ba (Google)
   // Web Client ID từ Google Cloud Console (nếu có dùng Web OAuth)
   static String googleServerClientId = '';
-
-  // App ID từ Meta for Developers (https://developers.facebook.com)
-  static String facebookAppId = '';
 
   /// Nạp các cấu hình OAuth được lưu trong SharedPreferences (nếu có)
   static Future<void> loadSocialConfigs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedFb = prefs.getString('custom_facebook_app_id');
-      if (savedFb != null && savedFb.trim().isNotEmpty) {
-        facebookAppId = savedFb.trim();
-      }
       final savedGg = prefs.getString('custom_google_client_id');
       if (savedGg != null && savedGg.trim().isNotEmpty) {
         googleServerClientId = savedGg.trim();
       }
-    } catch (_) {}
-  }
-
-  /// Lưu Facebook App ID vào SharedPreferences để dùng lâu dài
-  static Future<void> saveFacebookAppId(String id) async {
-    facebookAppId = id.trim();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('custom_facebook_app_id', facebookAppId);
     } catch (_) {}
   }
 

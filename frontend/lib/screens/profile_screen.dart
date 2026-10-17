@@ -1230,7 +1230,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final isGuest = appState.isGuestMode;
     final guestDays = appState.guestUsageDays;
     final googleLinked = profile.googleEmail != null && profile.googleEmail!.isNotEmpty;
-    final fbLinked = profile.facebookName != null && profile.facebookName!.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1315,23 +1314,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (ok && mounted) setState(() {});
             },
             onDisconnect: () => _confirmUnlink('Google', () => appState.unlinkGoogleAccount()),
-          ),
-
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          const SizedBox(height: 12),
-
-          // 2. Facebook
-          _buildSocialLinkRow(
-            title: 'Tài khoản Facebook',
-            detail: fbLinked ? profile.facebookName! : 'Chưa liên kết tài khoản Facebook',
-            isLinked: fbLinked,
-            iconWidget: const Icon(Icons.facebook, color: Color(0xFF1877F2), size: 24),
-            onConnect: () async {
-              final ok = await SocialAuthHelper.showFacebookAuthDialog(context);
-              if (ok && mounted) setState(() {});
-            },
-            onDisconnect: () => _confirmUnlink('Facebook', () => appState.unlinkFacebookAccount()),
           ),
 
           // 3. Khối kiểm thử ngày Khách (chỉ hiện khi đang ở chế độ khách)

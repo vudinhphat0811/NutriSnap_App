@@ -287,91 +287,51 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Nút Social Google & Facebook
-                      Row(
-                        children: [
-                          // Nút Google
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () async {
-                                final result = await SocialAuthHelper.signInWithSocial(context, provider: 'google');
-                                if (result.success && context.mounted) {
-                                  if (result.isNewUser || !AppStateService.instance.userProfile.hasProfile) {
-                                    Navigator.pushReplacement(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => OnboardingProfileScreen(initialEmail: result.email),
-                                      ),
-                                    );
-                                  } else {
-                                    Navigator.pushReplacement(
-                                      context,
-                                      MaterialPageRoute(builder: (_) => const MobileWrapper(child: MainShellScreen())),
-                                    );
-                                  }
-                                }
-                              },
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                side: const BorderSide(color: Color(0xFFE2E8F0)),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                backgroundColor: const Color(0xFFF8FAFC),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.network(
-                                    'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/480px-Google_%22G%22_logo.svg.png',
-                                    width: 18,
-                                    height: 18,
-                                    errorBuilder: (_, __, ___) => const Icon(Icons.g_mobiledata_rounded, color: Colors.red, size: 22),
+                      // Nút Social Google chính thức
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final result = await SocialAuthHelper.signInWithSocial(context, provider: 'google');
+                            if (result.success && context.mounted) {
+                              if (result.isNewUser || !AppStateService.instance.userProfile.hasProfile) {
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => OnboardingProfileScreen(initialEmail: result.email),
                                   ),
-                                  const SizedBox(width: 8),
-                                  const Text('Google', style: TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold, fontSize: 13)),
-                                ],
-                              ),
-                            ),
+                                );
+                              } else {
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const MobileWrapper(child: MainShellScreen())),
+                                );
+                              }
+                            }
+                          },
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            side: const BorderSide(color: Color(0xFFE2E8F0)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            backgroundColor: const Color(0xFFF8FAFC),
                           ),
-                          const SizedBox(width: 10),
-
-                          // Nút Facebook
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () async {
-                                final result = await SocialAuthHelper.signInWithSocial(context, provider: 'facebook');
-                                if (result.success && context.mounted) {
-                                  if (result.isNewUser || !AppStateService.instance.userProfile.hasProfile) {
-                                    Navigator.pushReplacement(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => OnboardingProfileScreen(initialEmail: result.email),
-                                      ),
-                                    );
-                                  } else {
-                                    Navigator.pushReplacement(
-                                      context,
-                                      MaterialPageRoute(builder: (_) => const MobileWrapper(child: MainShellScreen())),
-                                    );
-                                  }
-                                }
-                              },
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                side: const BorderSide(color: Color(0xFFBFDBFE)),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                backgroundColor: const Color(0xFFF0F7FF),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Image.network(
+                                'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/480px-Google_%22G%22_logo.svg.png',
+                                width: 20,
+                                height: 20,
+                                errorBuilder: (_, __, ___) => const Icon(Icons.g_mobiledata_rounded, color: Colors.red, size: 24),
                               ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.facebook, color: Color(0xFF1877F2), size: 20),
-                                  SizedBox(width: 8),
-                                  Text('Facebook', style: TextStyle(color: Color(0xFF1877F2), fontWeight: FontWeight.bold, fontSize: 13)),
-                                ],
+                              const SizedBox(width: 10),
+                              const Text(
+                                'Đăng ký nhanh với Google',
+                                style: TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold, fontSize: 13.5),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ],
                   ),

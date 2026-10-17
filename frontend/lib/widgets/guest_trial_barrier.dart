@@ -128,37 +128,7 @@ class GuestTrialBarrierModal extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
 
-                // Nút Liên kết Facebook
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final ok = await SocialAuthHelper.showFacebookAuthDialog(context);
-                      if (ok && context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('✅ Đã liên kết tài khoản Facebook thành công!'),
-                            backgroundColor: Color(0xFF1877F2),
-                          ),
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1877F2),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      elevation: 0,
-                    ),
-                    icon: const Icon(Icons.facebook, size: 22),
-                    label: const Text(
-                      'Tiếp tục với Facebook',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
                 const SizedBox(height: 10),
 
                 // Nút Đăng ký / Đăng nhập Email
