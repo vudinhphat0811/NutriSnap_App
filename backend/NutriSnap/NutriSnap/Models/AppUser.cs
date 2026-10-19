@@ -1,31 +1,46 @@
 using Microsoft.AspNetCore.Identity;
 using System.ComponentModel.DataAnnotations;
 
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace NutriSnap.Models;
 
 public class AppUser : IdentityUser<int>
 {
     [MaxLength(100)]
-    public string FullName { get; set; } = string.Empty;
+    public string? FullName { get; set; } = string.Empty;
 
     [MaxLength(500)]
     public string? AvatarUrl { get; set; }
 
-    public int Age { get; set; } = 22;
+    public int Age { get; set; } = 0;
 
     [MaxLength(10)]
-    public string Gender { get; set; } = "Nam";
+    public string? Gender { get; set; } = string.Empty;
 
-    public double HeightCm { get; set; } = 170.0;
-    public double WeightKg { get; set; } = 65.0;
+    public double HeightCm { get; set; } = 0.0;
+    public double WeightKg { get; set; } = 0.0;
+    public double TargetWeightKg { get; set; } = 0.0;
 
-    public int TargetCalories { get; set; } = 1950;
-    public double TargetProtein { get; set; } = 140.0;
-    public double TargetCarbs { get; set; } = 200.0;
-    public double TargetFat { get; set; } = 55.0;
+    [MaxLength(50)]
+    public string? Goal { get; set; } = "LoseWeight";
 
-    public int DailyWaterGoalMl { get; set; } = 2000;
+    [MaxLength(50)]
+    public string? DietType { get; set; } = "HighProtein";
+
+    [MaxLength(50)]
+    public string? ActivityLevel { get; set; } = "Moderate";
+
+    public int TargetCalories { get; set; } = 0;
+    public double TargetProtein { get; set; } = 0.0;
+    public double TargetCarbs { get; set; } = 0.0;
+    public double TargetFat { get; set; } = 0.0;
+
+    public int DailyWaterGoalMl { get; set; } = 0;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    [NotMapped]
+    public bool HasProfile => HeightCm > 0 && WeightKg > 0 && Age > 0;
 
     [MaxLength(200)]
     public string? GoogleEmail { get; set; }

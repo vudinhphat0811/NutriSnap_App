@@ -151,6 +151,57 @@ using (var scope = app.Services.CreateScope())
         {
             // Bảng đã được tạo từ trước hoặc cơ sở dữ liệu đã sẵn sàng
         }
+
+        // Tự động kiểm tra và bổ sung cột Goal, DietType, ActivityLevel, TargetWeightKg nếu chưa có
+        try
+        {
+            var providerName = db.Database.ProviderName ?? "";
+            if (providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase))
+            {
+                Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AspNetUsers') AND name = 'Goal')
+                        ALTER TABLE AspNetUsers ADD Goal NVARCHAR(50) NULL;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AspNetUsers') AND name = 'DietType')
+                        ALTER TABLE AspNetUsers ADD DietType NVARCHAR(50) NULL;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AspNetUsers') AND name = 'ActivityLevel')
+                        ALTER TABLE AspNetUsers ADD ActivityLevel NVARCHAR(50) NULL;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AspNetUsers') AND name = 'TargetWeightKg')
+                        ALTER TABLE AspNetUsers ADD TargetWeightKg FLOAT NOT NULL DEFAULT 0;
+                    UPDATE AspNetUsers SET ActivityLevel = 'Moderate' WHERE ActivityLevel IS NULL;
+                    UPDATE AspNetUsers SET Goal = 'LoseWeight' WHERE Goal IS NULL;
+                    UPDATE AspNetUsers SET DietType = 'HighProtein' WHERE DietType IS NULL;
+                    UPDATE AspNetUsers SET FullName = '' WHERE FullName IS NULL;
+                    UPDATE AspNetUsers SET Gender = '' WHERE Gender IS NULL;
+                ");
+            }
+            else if (providerName.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) || providerName.Contains("PostgreSQL", StringComparison.OrdinalIgnoreCase))
+            {
+                Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"
+                    ALTER TABLE ""AspNetUsers"" ADD COLUMN IF NOT EXISTS ""Goal"" VARCHAR(50);
+                    ALTER TABLE ""AspNetUsers"" ADD COLUMN IF NOT EXISTS ""DietType"" VARCHAR(50);
+                    ALTER TABLE ""AspNetUsers"" ADD COLUMN IF NOT EXISTS ""ActivityLevel"" VARCHAR(50);
+                    ALTER TABLE ""AspNetUsers"" ADD COLUMN IF NOT EXISTS ""TargetWeightKg"" DOUBLE PRECISION NOT NULL DEFAULT 0;
+                    UPDATE ""AspNetUsers"" SET ""ActivityLevel"" = 'Moderate' WHERE ""ActivityLevel"" IS NULL;
+                    UPDATE ""AspNetUsers"" SET ""Goal"" = 'LoseWeight' WHERE ""Goal"" IS NULL;
+                    UPDATE ""AspNetUsers"" SET ""DietType"" = 'HighProtein' WHERE ""DietType"" IS NULL;
+                    UPDATE ""AspNetUsers"" SET ""FullName"" = '' WHERE ""FullName"" IS NULL;
+                    UPDATE ""AspNetUsers"" SET ""Gender"" = '' WHERE ""Gender"" IS NULL;
+                ");
+            }
+            else if (providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+            {
+                try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN Goal TEXT;"); } catch {}
+                try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN DietType TEXT;"); } catch {}
+                try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN ActivityLevel TEXT;"); } catch {}
+                try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN TargetWeightKg REAL NOT NULL DEFAULT 0;"); } catch {}
+            }
+
+        }
+        catch (Exception colEx)
+        {
+            var log = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            log.LogInformation("Kiểm tra cột bổ sung AspNetUsers: {Message}", colEx.Message);
+        }
     }
     catch (Exception ex)
     {
@@ -160,17 +211,21 @@ using (var scope = app.Services.CreateScope())
 }
 
 // 7. Pipeline xử lý Request
-if (app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "NutriSnap API v1");
+    c.RoutePrefix = "swagger";
+});
 
 app.UseStaticFiles();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+// Khi truy cập http://localhost:5065/ thì tự động chuyển hướng sang giao diện Swagger API
+app.MapGet("/", () => Results.Redirect("/swagger"));
 
 // Tự động nạp trước cơ sở dữ liệu TheMealDB cục bộ chạy nền
 _ = Task.Run(async () =>

@@ -43,7 +43,30 @@ public class UserController : ControllerBase
         var user = await _context.Users.FindAsync(userId);
         if (user == null) return NotFound();
 
-        return Ok(user);
+        return Ok(new
+        {
+            id = user.Id,
+            email = user.Email,
+            fullName = user.FullName,
+            avatarUrl = user.AvatarUrl,
+            age = user.Age,
+            gender = user.Gender,
+            heightCm = user.HeightCm,
+            weightKg = user.WeightKg,
+            targetWeightKg = user.TargetWeightKg,
+            goal = user.Goal,
+            dietType = user.DietType,
+            activityLevel = user.ActivityLevel,
+            targetCalories = user.TargetCalories,
+            targetProtein = user.TargetProtein,
+            targetCarbs = user.TargetCarbs,
+            targetFat = user.TargetFat,
+            dailyWaterGoalMl = user.DailyWaterGoalMl,
+            googleEmail = user.GoogleEmail,
+            facebookName = user.FacebookName,
+            isGuest = user.IsGuest,
+            hasProfile = user.HasProfile
+        });
     }
 
     [HttpPost("avatar")]
@@ -104,57 +127,81 @@ public class UserController : ControllerBase
         user.Gender = dto.Gender;
         user.HeightCm = dto.HeightCm;
         user.WeightKg = dto.WeightKg;
+        user.TargetWeightKg = dto.TargetWeightKg > 0 ? dto.TargetWeightKg : dto.WeightKg;
+        user.Goal = !string.IsNullOrWhiteSpace(dto.Goal) ? dto.Goal : "LoseWeight";
+        user.DietType = !string.IsNullOrWhiteSpace(dto.DietType) ? dto.DietType : "HighProtein";
+        user.ActivityLevel = !string.IsNullOrWhiteSpace(dto.ActivityLevel) ? dto.ActivityLevel : "Moderate";
 
-        // --- BƯỚC 1: Tính BMR (Công thức Mifflin-St Jeor) ---
-        double bmr;
-        if (dto.Gender.Equals("Nam", StringComparison.OrdinalIgnoreCase))
+        if (dto.Age > 0 && dto.HeightCm > 0 && dto.WeightKg > 0)
         {
-            bmr = (10 * dto.WeightKg) + (6.25 * dto.HeightCm) - (5 * dto.Age) + 5;
+            // --- BƯỚC 1: Tính BMR (Công thức Mifflin-St Jeor) ---
+            double bmr;
+            if (dto.Gender.Equals("Nam", StringComparison.OrdinalIgnoreCase))
+            {
+                bmr = (10 * dto.WeightKg) + (6.25 * dto.HeightCm) - (5 * dto.Age) + 5;
+            }
+            else
+            {
+                bmr = (10 * dto.WeightKg) + (6.25 * dto.HeightCm) - (5 * dto.Age) - 161;
+            }
+
+            // TDEE: Năng lượng theo mức độ vận động
+            double activityMultiplier = 1.375;
+            if (user.ActivityLevel.Equals("Sedentary", StringComparison.OrdinalIgnoreCase)) activityMultiplier = 1.2;
+            else if (user.ActivityLevel.Equals("Active", StringComparison.OrdinalIgnoreCase)) activityMultiplier = 1.55;
+
+            double tdee = bmr * activityMultiplier;
+
+            // --- BƯỚC 2: Điều chỉnh theo Mục tiêu (Goal) ---
+            int targetCalories = (int)Math.Round(tdee);
+            if (user.Goal.Equals("LoseWeight", StringComparison.OrdinalIgnoreCase))
+            {
+                targetCalories -= 400; // Giảm cân: thâm hụt 400 kcal
+            }
+            else if (user.Goal.Equals("GainWeight", StringComparison.OrdinalIgnoreCase))
+            {
+                targetCalories += 400; // Tăng cân: thặng dư 400 kcal
+            }
+
+            user.TargetCalories = targetCalories;
+
+            // --- BƯỚC 3: Phân bổ Macro (Đạm, Carbs, Fat) chuẩn theo Frontend ---
+            if (user.DietType.Equals("HighProtein", StringComparison.OrdinalIgnoreCase))
+            {
+                user.TargetProtein = Math.Round((targetCalories * 0.35) / 4, 1);
+                user.TargetCarbs = Math.Round((targetCalories * 0.40) / 4, 1);
+                user.TargetFat = Math.Round((targetCalories * 0.25) / 9, 1);
+            }
+            else if (user.DietType.Equals("LowCarb", StringComparison.OrdinalIgnoreCase))
+            {
+                user.TargetProtein = Math.Round((targetCalories * 0.30) / 4, 1);
+                user.TargetCarbs = Math.Round((targetCalories * 0.15) / 4, 1);
+                user.TargetFat = Math.Round((targetCalories * 0.55) / 9, 1);
+            }
+            else if (user.DietType.Equals("Vegetarian", StringComparison.OrdinalIgnoreCase))
+            {
+                user.TargetProtein = Math.Round((targetCalories * 0.22) / 4, 1);
+                user.TargetCarbs = Math.Round((targetCalories * 0.55) / 4, 1);
+                user.TargetFat = Math.Round((targetCalories * 0.23) / 9, 1);
+            }
+            else // Balanced
+            {
+                user.TargetProtein = Math.Round((targetCalories * 0.25) / 4, 1);
+                user.TargetCarbs = Math.Round((targetCalories * 0.50) / 4, 1);
+                user.TargetFat = Math.Round((targetCalories * 0.25) / 9, 1);
+            }
+
+            // Nước: 35ml trên mỗi kg cân nặng
+            user.DailyWaterGoalMl = (int)(dto.WeightKg * 35);
         }
         else
         {
-            bmr = (10 * dto.WeightKg) + (6.25 * dto.HeightCm) - (5 * dto.Age) - 161;
+            user.TargetCalories = 0;
+            user.TargetProtein = 0;
+            user.TargetCarbs = 0;
+            user.TargetFat = 0;
+            user.DailyWaterGoalMl = 0;
         }
-
-        // TDEE: Năng lượng duy trì ở mức vận động nhẹ (BMR x 1.375)
-        double tdee = bmr * 1.375;
-
-        // --- BƯỚC 2: Điều chỉnh theo Mục tiêu (Goal) ---
-        int targetCalories = (int)tdee;
-        if (dto.Goal == "LoseWeight")
-        {
-            targetCalories -= 400; // Giảm cân: thâm hụt 400 kcal
-        }
-        else if (dto.Goal == "GainWeight")
-        {
-            targetCalories += 400; // Tăng cân: dư thừa 400 kcal
-        }
-
-        user.TargetCalories = targetCalories;
-
-        // --- BƯỚC 3: Phân bổ Macro (Đạm, Carbs, Fat) theo chế độ ăn ---
-        // 1g Protein = 4 kcal, 1g Carbs = 4 kcal, 1g Fat = 9 kcal
-        if (dto.DietType == "HighProtein") // Chế độ nhiều đạm (30% Protein, 45% Carbs, 25% Fat)
-        {
-            user.TargetProtein = Math.Round((targetCalories * 0.30) / 4, 1);
-            user.TargetCarbs = Math.Round((targetCalories * 0.45) / 4, 1);
-            user.TargetFat = Math.Round((targetCalories * 0.25) / 9, 1);
-        }
-        else if (dto.DietType == "LowCarb") // Ít tinh bột (25% Protein, 20% Carbs, 55% Fat)
-        {
-            user.TargetProtein = Math.Round((targetCalories * 0.25) / 4, 1);
-            user.TargetCarbs = Math.Round((targetCalories * 0.20) / 4, 1);
-            user.TargetFat = Math.Round((targetCalories * 0.55) / 9, 1);
-        }
-        else // Cân bằng mặc định (20% Protein, 55% Carbs, 25% Fat)
-        {
-            user.TargetProtein = Math.Round((targetCalories * 0.20) / 4, 1);
-            user.TargetCarbs = Math.Round((targetCalories * 0.55) / 4, 1);
-            user.TargetFat = Math.Round((targetCalories * 0.25) / 9, 1);
-        }
-
-        // Nước: 35ml trên mỗi kg cân nặng
-        user.DailyWaterGoalMl = (int)(dto.WeightKg * 35);
 
         await _context.SaveChangesAsync();
         return Ok(new
@@ -164,7 +211,12 @@ public class UserController : ControllerBase
             user.TargetProtein,
             user.TargetCarbs,
             user.TargetFat,
-            user.DailyWaterGoalMl
+            user.DailyWaterGoalMl,
+            user.Goal,
+            user.DietType,
+            user.ActivityLevel,
+            user.TargetWeightKg,
+            hasProfile = user.HasProfile
         });
     }
 

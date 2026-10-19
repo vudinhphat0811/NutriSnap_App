@@ -99,6 +99,15 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     super.dispose();
   }
 
+  void _handleBack(BuildContext context) {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+      return;
+    }
+    final prevIndex = AppStateService.instance.previousScreenIndex;
+    widget.onNavigate(prevIndex);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isVi = AppStateService.instance.currentLanguage == 'vi';
@@ -125,49 +134,56 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         ? (currentMeal.strMealVi ?? RecipeTranslator.translateDishName(currentMeal.strMeal))
         : currentMeal.strMeal;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // 1. Top App Bar
-            _buildTopAppBar(context, currentMeal),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleBack(context);
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // 1. Top App Bar
+              _buildTopAppBar(context, currentMeal),
 
-            // 2. Nội dung cuộn chính
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Banner ảnh lớn kèm tên món
-                    _buildHeroBanner(currentMeal, translatedMealName, isVi),
-                    const SizedBox(height: 16),
+              // 2. Nội dung cuộn chính
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Banner ảnh lớn kèm tên món
+                      _buildHeroBanner(currentMeal, translatedMealName, isVi),
+                      const SizedBox(height: 16),
 
-                    // Thẻ Năng lượng khẩu phần & Macro
-                    _buildNutritionCard(currentMeal),
-                    const SizedBox(height: 16),
+                      // Thẻ Năng lượng khẩu phần & Macro
+                      _buildNutritionCard(currentMeal),
+                      const SizedBox(height: 16),
 
-                    // Khối Video Hướng Dẫn YouTube Trực Tiếp Trên App (Không nhảy trang)
-                    _buildVideoSection(context, currentMeal, isVi),
-                    const SizedBox(height: 16),
+                      // Khối Video Hướng Dẫn YouTube Trực Tiếp Trên App (Không nhảy trang)
+                      _buildVideoSection(context, currentMeal, isVi),
+                      const SizedBox(height: 16),
 
-                    // Khối Nguyên liệu cần chuẩn bị (100% dịch theo ngôn ngữ đã chọn)
-                    _buildIngredientsSection(currentMeal, isVi),
-                    const SizedBox(height: 16),
+                      // Khối Nguyên liệu cần chuẩn bị (100% dịch theo ngôn ngữ đã chọn)
+                      _buildIngredientsSection(currentMeal, isVi),
+                      const SizedBox(height: 16),
 
-                    // Khối Hướng dẫn chế biến (100% dịch theo ngôn ngữ đã chọn)
-                    _buildCookingStepsSection(currentMeal, isVi),
-                    const SizedBox(height: 20),
-                  ],
+                      // Khối Hướng dẫn chế biến (100% dịch theo ngôn ngữ đã chọn)
+                      _buildCookingStepsSection(currentMeal, isVi),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-            // 3. Nút cố định ở đáy: "Đã nấu xong & Thêm vào nhật ký"
-            _buildBottomCta(context, currentMeal, isVi),
-          ],
+              // 3. Nút cố định ở đáy: "Đã nấu xong & Thêm vào nhật ký"
+              _buildBottomCta(context, currentMeal, isVi),
+            ],
+          ),
         ),
       ),
     );
@@ -180,7 +196,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           InkWell(
-            onTap: () => widget.onNavigate(0),
+            onTap: () => _handleBack(context),
             borderRadius: BorderRadius.circular(20),
             child: Container(
               padding: const EdgeInsets.all(8),

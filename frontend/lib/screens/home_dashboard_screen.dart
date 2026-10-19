@@ -439,7 +439,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(log.mealType, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                          Text(log.displayMealType, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.primary)),
                           const SizedBox(height: 2),
                           Text(
                             log.title,

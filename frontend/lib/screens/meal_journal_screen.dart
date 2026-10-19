@@ -473,7 +473,7 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
                 Expanded(
                   child: Text(
                     appState.remainingCalories >= 0
-                        ? '${AppTranslations.tr('remaining')}: ${appState.remainingCalories} kcal ${AppTranslations.tr('kcal_left')}'
+                        ? '${AppTranslations.tr('remaining')}: ${appState.remainingCalories} kcal'
                         : '${AppTranslations.tr('energy_today')}: Vượt ${-appState.remainingCalories} kcal',
                     style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
                   ),
@@ -647,7 +647,7 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              log.mealType,
+                              log.displayMealType.toUpperCase(),
                               style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: typeColor),
                             ),
                           ),

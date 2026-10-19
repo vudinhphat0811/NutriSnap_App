@@ -31,7 +31,7 @@ public class JwtService
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim("fullName", user.FullName),
+            new Claim("fullName", user.FullName ?? string.Empty),
         };
 
         // Thêm roles vào claims

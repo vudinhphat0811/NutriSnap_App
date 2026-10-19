@@ -57,19 +57,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
-        if (data['token'] != null) {
-          AppStateService.instance.authToken = data['token'].toString();
-        }
-        if (data['avatarUrl'] != null && data['avatarUrl'].toString().isNotEmpty) {
-          final rawAvatar = data['avatarUrl'].toString();
-          AppStateService.instance.userProfile.avatarPath =
-              rawAvatar.startsWith('http') ? rawAvatar : '${ApiConstants.baseUrl}$rawAvatar';
-        }
-        AppStateService.instance.userProfile.email = email;
-        await AppStateService.instance.saveToLocalStorage();
-
-        final bool hasProfile = data['hasProfile'] == true ||
-            (data['fullName'] != null && data['fullName'].toString().trim().isNotEmpty);
+        AppStateService.instance.applyLoginData(data);
+        final bool hasProfile = AppStateService.instance.userProfile.hasProfile;
 
         if (!mounted) return;
         await AppPopupDialog.show(
@@ -92,7 +81,10 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => OnboardingProfileScreen(initialEmail: email),
+              builder: (_) => OnboardingProfileScreen(
+                initialEmail: email,
+                initialName: data['fullName']?.toString(),
+              ),
             ),
           );
         }
@@ -126,10 +118,17 @@ class _LoginScreenState extends State<LoginScreen> {
         onConfirm: () {
           AppStateService.instance.setGuestMode(true);
           AppStateService.instance.setOffline(true);
+          final profile = AppStateService.instance.userProfile;
+          final bool hasValidMetrics = profile.hasProfile &&
+              profile.heightCm > 0 &&
+              profile.weightKg > 0 &&
+              profile.age > 0;
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => const MobileWrapper(child: MainShellScreen()),
+              builder: (_) => hasValidMetrics
+                  ? const MobileWrapper(child: MainShellScreen())
+                  : const OnboardingProfileScreen(),
             ),
           );
         },
@@ -338,11 +337,28 @@ class _LoginScreenState extends State<LoginScreen> {
                             onPressed: () async {
                               final result = await SocialAuthHelper.signInWithSocial(context, provider: 'google');
                               if (result.success && context.mounted) {
-                                if (result.isNewUser || !AppStateService.instance.userProfile.hasProfile) {
+                                final profile = AppStateService.instance.userProfile;
+                                final bool needsOnboarding = result.isNewUser ||
+                                    !profile.hasProfile ||
+                                    profile.fullName == 'Người dùng NutriSnap' ||
+                                    profile.fullName == 'Người dùng mới';
+
+                                if (needsOnboarding) {
+                                  await AppPopupDialog.show(
+                                    context: context,
+                                    title: 'Chào mừng bạn',
+                                    message: 'Đăng nhập Google thành công! Hãy cùng thiết lập các chỉ số sức khỏe ban đầu nhé.',
+                                    type: PopupType.success,
+                                    buttonText: 'Bắt đầu ngay',
+                                  );
+                                  if (!context.mounted) return;
                                   Navigator.pushReplacement(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => OnboardingProfileScreen(initialEmail: result.email),
+                                      builder: (_) => OnboardingProfileScreen(
+                                        initialEmail: result.email,
+                                        initialName: result.name,
+                                      ),
                                     ),
                                   );
                                 } else {
@@ -477,10 +493,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: TextButton.icon(
                       onPressed: () {
                         AppStateService.instance.setGuestMode(true);
+                        final profile = AppStateService.instance.userProfile;
+                        final bool hasValidMetrics = profile.hasProfile &&
+                            profile.heightCm > 0 &&
+                            profile.weightKg > 0 &&
+                            profile.age > 0;
                         Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const MobileWrapper(child: MainShellScreen()),
+                            builder: (_) => hasValidMetrics
+                                ? const MobileWrapper(child: MainShellScreen())
+                                : const OnboardingProfileScreen(),
                           ),
                         );
                       },

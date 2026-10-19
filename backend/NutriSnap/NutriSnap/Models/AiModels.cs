@@ -61,6 +61,8 @@ public class SocialAuthRequest
     public string Name { get; set; } = "";
     public string? ProviderId { get; set; }
     public string? AvatarUrl { get; set; }
+    public string? IdToken { get; set; }
+    public string? Token { get; set; }
 }
 
 public class LinkSocialRequest

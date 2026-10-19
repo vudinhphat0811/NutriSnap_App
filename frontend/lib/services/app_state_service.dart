@@ -27,29 +27,31 @@ class UserProfile {
   String? facebookName;
 
   UserProfile({
-    this.fullName = 'Người dùng NutriSnap',
-    this.email = 'user@nutrisnap.com',
-    this.age = 24,
-    this.gender = 'Nam',
-    this.heightCm = 172.0,
-    this.weightKg = 68.0,
-    this.targetWeightKg = 64.0,
+    this.fullName = '',
+    this.email = '',
+    this.age = 0,
+    this.gender = '',
+    this.heightCm = 0.0,
+    this.weightKg = 0.0,
+    this.targetWeightKg = 0.0,
     this.goal = 'LoseWeight',
     this.dietType = 'HighProtein',
     this.activityLevel = 'Moderate',
-    this.targetCalories = 1850,
-    this.targetProtein = 140.0,
-    this.targetCarbs = 180.0,
-    this.targetFat = 50.0,
-    this.dailyWaterGoalMl = 2400,
+    this.targetCalories = 0,
+    this.targetProtein = 0.0,
+    this.targetCarbs = 0.0,
+    this.targetFat = 0.0,
+    this.dailyWaterGoalMl = 0,
     this.hasProfile = false,
     this.avatarPath,
     this.googleEmail,
     this.facebookName,
   });
 
+  bool get isProfileCompleted => hasProfile && heightCm > 0 && weightKg > 0 && age > 0;
+
   double get bmi {
-    if (heightCm <= 0) return 22.0;
+    if (heightCm <= 0 || weightKg <= 0) return 0.0;
     final hM = heightCm / 100.0;
     return double.parse((weightKg / (hM * hM)).toStringAsFixed(1));
   }
@@ -57,6 +59,7 @@ class UserProfile {
   String get bmiCategory {
     final b = bmi;
     final isVi = AppStateService.instance.currentLanguage == 'vi';
+    if (b <= 0) return isVi ? 'Chưa thiết lập' : 'Not configured';
     if (b < 18.5) return isVi ? 'Gầy / Thiếu cân' : 'Underweight';
     if (b < 23.0) return isVi ? 'Chuẩn / Khỏe mạnh' : 'Normal / Healthy';
     if (b < 25.0) return isVi ? 'Tiền béo phì' : 'Overweight';
@@ -112,21 +115,21 @@ class UserProfile {
       };
 
   factory UserProfile.fromJson(Map<String, dynamic> map) => UserProfile(
-        fullName: map['fullName'] ?? 'Người dùng NutriSnap',
-        email: map['email'] ?? 'user@nutrisnap.com',
-        age: map['age'] ?? 24,
-        gender: map['gender'] ?? 'Nam',
-        heightCm: (map['heightCm'] as num?)?.toDouble() ?? 172.0,
-        weightKg: (map['weightKg'] as num?)?.toDouble() ?? 68.0,
-        targetWeightKg: (map['targetWeightKg'] as num?)?.toDouble() ?? 64.0,
+        fullName: map['fullName'] ?? '',
+        email: map['email'] ?? '',
+        age: map['age'] ?? 0,
+        gender: map['gender'] ?? '',
+        heightCm: (map['heightCm'] as num?)?.toDouble() ?? 0.0,
+        weightKg: (map['weightKg'] as num?)?.toDouble() ?? 0.0,
+        targetWeightKg: (map['targetWeightKg'] as num?)?.toDouble() ?? 0.0,
         goal: map['goal'] ?? 'LoseWeight',
         dietType: map['dietType'] ?? 'HighProtein',
         activityLevel: map['activityLevel'] ?? 'Moderate',
-        targetCalories: map['targetCalories'] ?? 1850,
-        targetProtein: (map['targetProtein'] as num?)?.toDouble() ?? 140.0,
-        targetCarbs: (map['targetCarbs'] as num?)?.toDouble() ?? 180.0,
-        targetFat: (map['targetFat'] as num?)?.toDouble() ?? 50.0,
-        dailyWaterGoalMl: map['dailyWaterGoalMl'] ?? 2400,
+        targetCalories: map['targetCalories'] ?? 0,
+        targetProtein: (map['targetProtein'] as num?)?.toDouble() ?? 0.0,
+        targetCarbs: (map['targetCarbs'] as num?)?.toDouble() ?? 0.0,
+        targetFat: (map['targetFat'] as num?)?.toDouble() ?? 0.0,
+        dailyWaterGoalMl: map['dailyWaterGoalMl'] ?? 0,
         hasProfile: map['hasProfile'] ?? false,
         avatarPath: map['avatarPath'],
         googleEmail: map['googleEmail'],
@@ -135,7 +138,7 @@ class UserProfile {
 }
 
 class MealLogEntry {
-  final String id;
+  String id;
   final String mealType; // Bữa sáng, Bữa trưa, Bữa tối, Ăn xế
   final String title;
   final int calories;
@@ -156,6 +159,17 @@ class MealLogEntry {
     required this.imageUrl,
     required this.time,
   });
+
+  /// Tên loại bữa ăn hiển thị tự động chuyển đổi theo ngôn ngữ Anh / Việt
+  String get displayMealType {
+    final isVi = AppStateService.instance.currentLanguage == 'vi';
+    final t = mealType.trim().toUpperCase();
+    if (t.contains('SÁNG') || t.contains('BREAKFAST')) return isVi ? 'Bữa sáng' : 'Breakfast';
+    if (t.contains('TRƯA') || t.contains('LUNCH')) return isVi ? 'Bữa trưa' : 'Lunch';
+    if (t.contains('TỐI') || t.contains('DINNER')) return isVi ? 'Bữa tối' : 'Dinner';
+    if (t.contains('XẾ') || t.contains('PHỤ') || t.contains('SNACK')) return isVi ? 'Ăn xế' : 'Snack';
+    return mealType;
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -198,6 +212,9 @@ class AppStateService extends ChangeNotifier {
   DateTime? guestCreatedAt;
   int? testGuestDaysOverride; // Dành cho việc test mô phỏng ngày thứ 7+
 
+  // Lưu chỉ số màn hình trước đó khi vào Chi tiết món ăn (để nút Back quay lại đúng nơi)
+  int previousScreenIndex = 0;
+
   int get guestUsageDays {
     if (!isGuestMode) return 0;
     if (testGuestDaysOverride != null) return testGuestDaysOverride!;
@@ -223,42 +240,62 @@ class AppStateService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Đồng bộ kết quả đăng nhập / liên kết mạng xã hội từ Backend C# (chứa JWT Token thật và thông tin DB)
-  void applySocialLoginData(Map<String, dynamic> data) {
+  /// Đồng bộ kết quả đăng nhập từ Backend C# (chứa JWT Token thật và thông tin DB)
+  void applyLoginData(Map<String, dynamic> data) {
     final token = data['token']?.toString();
     if (token != null && token.isNotEmpty) {
       authToken = token;
     }
-    final email = data['email']?.toString();
-    if (email != null && email.isNotEmpty) {
-      userProfile.email = email;
-    }
-    final fullName = data['fullName']?.toString();
-    if (fullName != null && fullName.isNotEmpty) {
-      userProfile.fullName = fullName;
-    }
-    final avatar = data['avatarUrl']?.toString();
-    if (avatar != null && avatar.isNotEmpty) {
-      userProfile.avatarPath = avatar;
-    }
-    final gEmail = data['googleEmail']?.toString();
-    if (gEmail != null && gEmail.isNotEmpty) {
-      userProfile.googleEmail = gEmail;
-    }
-    final fbName = data['facebookName']?.toString();
-    if (fbName != null && fbName.isNotEmpty) {
-      userProfile.facebookName = fbName;
-    }
+
     final bool isNew = data['isNewUser'] == true;
-    if (isNew && !userProfile.hasProfile) {
-      userProfile.hasProfile = false;
-    } else {
-      userProfile.hasProfile = true;
-    }
+    final bool serverHasProfile = data['hasProfile'] == true;
+
+    final rawAge = (data['age'] as num?)?.toInt() ?? 0;
+    final rawHeight = (data['heightCm'] as num?)?.toDouble() ?? 0.0;
+    final rawWeight = (data['weightKg'] as num?)?.toDouble() ?? 0.0;
+
+    final avatar = data['avatarUrl']?.toString();
+    final avatarFormatted = (avatar != null && avatar.isNotEmpty)
+        ? (avatar.startsWith('http') ? avatar : '${ApiConstants.baseUrl}$avatar')
+        : null;
+
+    // Tạo đối tượng UserProfile hoàn toàn mới cho tài khoản này,
+    // loại bỏ triệt để mọi số liệu từ phiên khách hoặc tài khoản trước đó lưu trong bộ nhớ tạm
+    userProfile = UserProfile(
+      email: data['email']?.toString() ?? '',
+      fullName: data['fullName']?.toString() ?? '',
+      avatarPath: avatarFormatted,
+      googleEmail: data['googleEmail']?.toString(),
+      facebookName: data['facebookName']?.toString(),
+      age: rawAge,
+      gender: data['gender']?.toString() ?? '',
+      heightCm: rawHeight,
+      weightKg: rawWeight,
+      targetWeightKg: (data['targetWeightKg'] as num?)?.toDouble() ?? 0.0,
+      goal: data['goal']?.toString() ?? 'LoseWeight',
+      dietType: data['dietType']?.toString() ?? 'HighProtein',
+      activityLevel: data['activityLevel']?.toString() ?? 'Moderate',
+      targetCalories: (data['targetCalories'] as num?)?.toInt() ?? 0,
+      targetProtein: (data['targetProtein'] as num?)?.toDouble() ?? 0.0,
+      targetCarbs: (data['targetCarbs'] as num?)?.toDouble() ?? 0.0,
+      targetFat: (data['targetFat'] as num?)?.toDouble() ?? 0.0,
+      dailyWaterGoalMl: (data['dailyWaterGoalMl'] as num?)?.toInt() ?? 0,
+      hasProfile: !isNew && serverHasProfile && rawHeight > 0 && rawWeight > 0 && rawAge > 0,
+    );
+
     isGuestMode = false; // Đã liên kết tài khoản -> Hết trạng thái Khách
     testGuestDaysOverride = null;
     saveToLocalStorage();
     notifyListeners();
+
+    // Tự động kéo nhật ký món ăn & nước uống từ Cloud Backend
+    syncMealLogsFromServer();
+    fetchDashboardToday();
+  }
+
+  /// Đồng bộ kết quả đăng nhập / liên kết mạng xã hội từ Backend C#
+  void applySocialLoginData(Map<String, dynamic> data) {
+    applyLoginData(data);
   }
 
   /// Liên kết tài khoản Google
@@ -454,6 +491,26 @@ class AppStateService extends ChangeNotifier {
     waterIntakeMl = (waterIntakeMl + amountMl).clamp(0, 6000);
     saveToLocalStorage();
     notifyListeners();
+
+    // Đồng bộ lên Cloud Backend C# nếu đã đăng nhập tài khoản thật
+    if (authToken != null && !isGuestMode && !authToken!.startsWith('guest_') && !authToken!.startsWith('mock_')) {
+      _syncAddWaterToServer(amountMl);
+    }
+  }
+
+  Future<void> _syncAddWaterToServer(int amountMl) async {
+    try {
+      final uri = Uri.parse(ApiConstants.addWater(amountMl));
+      await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+      ).timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('[_syncAddWaterToServer Error] $e');
+    }
   }
 
   void resetWater() {
@@ -513,9 +570,9 @@ class AppStateService extends ChangeNotifier {
     // 3. Target Calories theo Goal
     int targetCal = tdee.round();
     if (goal == 'LoseWeight') {
-      targetCal -= 450; // Thâm hụt calo an toàn
+      targetCal -= 400; // Thâm hụt calo an toàn (-400 kcal)
     } else if (goal == 'GainWeight') {
-      targetCal += 400; // Thặng dư calo xây cơ
+      targetCal += 400; // Thặng dư calo xây cơ (+400 kcal)
     }
     if (targetCal < 1200) targetCal = 1200;
 
@@ -566,6 +623,42 @@ class AppStateService extends ChangeNotifier {
 
     saveToLocalStorage();
     notifyListeners();
+
+    // Tự động đẩy chỉ số mới lên máy chủ Backend C#
+    syncProfileToServer();
+  }
+
+  /// Đồng bộ chỉ số cơ thể lên Backend C# khi có tài khoản thật
+  Future<void> syncProfileToServer() async {
+    final token = authToken;
+    if (token == null || token.isEmpty || token.startsWith('mock_') || token.startsWith('guest_')) {
+      return;
+    }
+    try {
+      final uri = Uri.parse(ApiConstants.profile);
+      await http
+          .put(
+            uri,
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              'fullName': userProfile.fullName,
+              'age': userProfile.age,
+              'gender': userProfile.gender,
+              'heightCm': userProfile.heightCm,
+              'weightKg': userProfile.weightKg,
+              'targetWeightKg': userProfile.targetWeightKg,
+              'goal': userProfile.goal,
+              'dietType': userProfile.dietType,
+              'activityLevel': userProfile.activityLevel,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('[syncProfileToServer Error] $e');
+    }
   }
 
   Future<void> updateAvatar(String? path) async {
@@ -616,6 +709,10 @@ class AppStateService extends ChangeNotifier {
     mealLogs.insert(0, entry);
     saveToLocalStorage();
     notifyListeners();
+
+    if (authToken != null && !isGuestMode && !authToken!.startsWith('guest_') && !authToken!.startsWith('mock_')) {
+      _addMealLogToServer(entry);
+    }
   }
 
   void addCustomEntry({
@@ -645,12 +742,158 @@ class AppStateService extends ChangeNotifier {
     mealLogs.insert(0, entry);
     saveToLocalStorage();
     notifyListeners();
+
+    if (authToken != null && !isGuestMode && !authToken!.startsWith('guest_') && !authToken!.startsWith('mock_')) {
+      _addMealLogToServer(entry);
+    }
   }
 
   void removeMealLog(String id) {
     mealLogs.removeWhere((item) => item.id == id);
     saveToLocalStorage();
     notifyListeners();
+
+    if (authToken != null && !isGuestMode && !authToken!.startsWith('guest_') && !authToken!.startsWith('mock_')) {
+      _deleteMealLogFromServer(id);
+    }
+  }
+
+  /// Gửi bản ghi món ăn lên Backend C# qua POST /api/meallogs/log
+  Future<void> _addMealLogToServer(MealLogEntry entry) async {
+    final token = authToken;
+    if (token == null || token.isEmpty || token.startsWith('mock_') || token.startsWith('guest_')) {
+      return;
+    }
+    try {
+      final uri = Uri.parse(ApiConstants.mealLogAdd);
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              'mealTitle': entry.title,
+              'mealType': entry.mealType,
+              'calories': entry.calories,
+              'proteinG': entry.protein.toDouble(),
+              'carbsG': entry.carbs.toDouble(),
+              'fatG': entry.fat.toDouble(),
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data['id'] != null) {
+          entry.id = data['id'].toString();
+          await saveToLocalStorage();
+        }
+      }
+    } catch (e) {
+      debugPrint('[_addMealLogToServer Error] $e');
+    }
+  }
+
+  /// Xóa bản ghi món ăn trên Backend C# qua DELETE /api/meallogs/{id}
+  Future<void> _deleteMealLogFromServer(String id) async {
+    final intId = int.tryParse(id);
+    if (intId == null) return;
+    final token = authToken;
+    if (token == null || token.isEmpty || token.startsWith('mock_') || token.startsWith('guest_')) {
+      return;
+    }
+    try {
+      final uri = Uri.parse(ApiConstants.mealLogDelete(intId));
+      await http.delete(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('[_deleteMealLogFromServer Error] $e');
+    }
+  }
+
+  /// Tải toàn bộ lịch sử món ăn từ Cloud Backend C# qua GET /api/meallogs/history
+  Future<void> syncMealLogsFromServer() async {
+    final token = authToken;
+    if (token == null || token.isEmpty || token.startsWith('mock_') || token.startsWith('guest_')) {
+      return;
+    }
+    try {
+      final uri = Uri.parse(ApiConstants.mealLogHistory);
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final List list = jsonDecode(utf8.decode(response.bodyBytes));
+        mealLogs.clear();
+        for (final item in list) {
+          final id = item['id']?.toString() ?? '';
+          final mealTitle = item['mealTitle']?.toString() ?? '';
+          final mealType = item['mealType']?.toString() ?? 'BỮA TỐI';
+          final calories = (item['calories'] as num?)?.toInt() ?? 0;
+          final protein = (item['proteinG'] as num?)?.toInt() ?? 25;
+          final carbs = (item['carbsG'] as num?)?.toInt() ?? 30;
+          final fat = (item['fatG'] as num?)?.toInt() ?? 10;
+
+          mealLogs.add(MealLogEntry(
+            id: id,
+            mealType: mealType,
+            title: mealTitle,
+            calories: calories,
+            protein: protein,
+            carbs: carbs,
+            fat: fat,
+            imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80',
+            time: 'Hôm nay',
+          ));
+        }
+        await saveToLocalStorage();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[syncMealLogsFromServer Error] $e');
+    }
+  }
+
+  /// Tải lượng nước và tổng quan hôm nay từ Cloud Backend C# qua GET /api/dashboard/today
+  Future<void> fetchDashboardToday() async {
+    final token = authToken;
+    if (token == null || token.isEmpty || token.startsWith('mock_') || token.startsWith('guest_')) {
+      return;
+    }
+    try {
+      final uri = Uri.parse(ApiConstants.dashboardToday);
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final consumedWater = (data['consumedWaterMl'] as num?)?.toInt();
+        if (consumedWater != null && consumedWater > 0) {
+          waterIntakeMl = consumedWater;
+        }
+        await saveToLocalStorage();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[fetchDashboardToday Error] $e');
+    }
   }
 
   void setSelectedMeal(MealItem meal) {
@@ -711,6 +954,11 @@ class AppStateService extends ChangeNotifier {
       }
       authToken = prefs.getString('nutrisnap_auth_token');
       notifyListeners();
+
+      if (authToken != null && !isGuestMode && !authToken!.startsWith('guest_') && !authToken!.startsWith('mock_')) {
+        syncMealLogsFromServer();
+        fetchDashboardToday();
+      }
     } catch (e) {
       debugPrint('Lỗi tải từ cục bộ (Local Storage): $e');
     }

@@ -134,41 +134,47 @@ public class RecipesController : ControllerBase
 
     /// <summary>
     /// PHÂN TÍCH NGUYÊN LIỆU TỪ ẢNH BẰNG AI VISION BACKEND (POST /api/recipes/analyze-image)
-    /// Hỗ trợ cả Multipart Form (file) lẫn JSON Base64
+    /// Nhận chuỗi JSON Base64 (Chuẩn gửi từ Flutter Frontend)
     /// </summary>
     [HttpPost("analyze-image")]
-    public async Task<IActionResult> AnalyzeImage([FromForm] IFormFile? file, [FromBody] AnalyzeImageRequest? jsonBody)
+    public async Task<IActionResult> AnalyzeImage([FromBody] AnalyzeImageRequest jsonBody)
     {
-        byte[]? bytes = null;
-        string contentType = "image/jpeg";
-
-        if (file != null && file.Length > 0)
+        if (jsonBody == null || string.IsNullOrWhiteSpace(jsonBody.ImageBase64))
         {
-            using var ms = new MemoryStream();
-            await file.CopyToAsync(ms);
-            bytes = ms.ToArray();
-            contentType = file.ContentType ?? "image/jpeg";
-        }
-        else if (jsonBody != null && !string.IsNullOrWhiteSpace(jsonBody.ImageBase64))
-        {
-            try
-            {
-                bytes = Convert.FromBase64String(jsonBody.ImageBase64);
-                if (!string.IsNullOrWhiteSpace(jsonBody.ContentType))
-                {
-                    contentType = jsonBody.ContentType;
-                }
-            }
-            catch
-            {
-                return BadRequest(new { message = "Chuỗi Base64 hình ảnh không hợp lệ." });
-            }
+            return BadRequest(new { message = "Vui lòng cung cấp chuỗi Base64 của ảnh." });
         }
 
-        if (bytes == null || bytes.Length == 0)
+        byte[] bytes;
+        try
         {
-            return BadRequest(new { message = "Vui lòng cung cấp file ảnh hoặc chuỗi base64 của ảnh." });
+            bytes = Convert.FromBase64String(jsonBody.ImageBase64);
         }
+        catch
+        {
+            return BadRequest(new { message = "Chuỗi Base64 hình ảnh không hợp lệ." });
+        }
+
+        string contentType = !string.IsNullOrWhiteSpace(jsonBody.ContentType) ? jsonBody.ContentType : "image/jpeg";
+        var result = await _aiVisionService.AnalyzeIngredientImageAsync(bytes, contentType);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// PHÂN TÍCH NGUYÊN LIỆU TỪ FILE TẢI LÊN (POST /api/recipes/analyze-image-upload)
+    /// Hỗ trợ kiểm thử trực tiếp trên giao diện Swagger UI
+    /// </summary>
+    [HttpPost("analyze-image-upload")]
+    public async Task<IActionResult> AnalyzeImageUpload(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest(new { message = "Vui lòng cung cấp file ảnh tải lên." });
+        }
+
+        using var ms = new MemoryStream();
+        await file.CopyToAsync(ms);
+        var bytes = ms.ToArray();
+        string contentType = file.ContentType ?? "image/jpeg";
 
         var result = await _aiVisionService.AnalyzeIngredientImageAsync(bytes, contentType);
         return Ok(result);

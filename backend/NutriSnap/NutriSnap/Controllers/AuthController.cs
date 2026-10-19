@@ -1,3 +1,4 @@
+using Google.Apis.Auth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
@@ -15,19 +16,25 @@ public class AuthController : ControllerBase
     private readonly JwtService _jwtService;
     private readonly IMemoryCache _cache;
     private readonly IEmailSender<AppUser> _emailSender;
+    private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration _configuration;
 
     public AuthController(
         UserManager<AppUser> userManager,
         SignInManager<AppUser> signInManager,
         JwtService jwtService,
         IMemoryCache cache,
-        IEmailSender<AppUser> emailSender)
+        IEmailSender<AppUser> emailSender,
+        IWebHostEnvironment env,
+        IConfiguration configuration)
     {
         _userManager = userManager;
         _signInManager = signInManager;
         _jwtService = jwtService;
         _cache = cache;
         _emailSender = emailSender;
+        _env = env;
+        _configuration = configuration;
     }
 
     // POST /api/auth/register
@@ -89,7 +96,21 @@ public class AuthController : ControllerBase
             email = user.Email,
             userId = user.Id,
             fullName = user.FullName,
-            avatarUrl = user.AvatarUrl
+            avatarUrl = user.AvatarUrl,
+            hasProfile = user.HasProfile,
+            age = user.Age,
+            gender = user.Gender,
+            heightCm = user.HeightCm,
+            weightKg = user.WeightKg,
+            targetWeightKg = user.TargetWeightKg,
+            goal = user.Goal,
+            dietType = user.DietType,
+            activityLevel = user.ActivityLevel,
+            targetCalories = user.TargetCalories,
+            targetProtein = user.TargetProtein,
+            targetCarbs = user.TargetCarbs,
+            targetFat = user.TargetFat,
+            dailyWaterGoalMl = user.DailyWaterGoalMl
         });
     }
 
@@ -97,7 +118,54 @@ public class AuthController : ControllerBase
     [HttpPost("social-login")]
     public async Task<IActionResult> SocialLogin([FromBody] SocialAuthRequest req)
     {
-        if (string.IsNullOrWhiteSpace(req.Email))
+        if (req.Provider.Equals("google", StringComparison.OrdinalIgnoreCase))
+        {
+            string? idToken = !string.IsNullOrWhiteSpace(req.IdToken) ? req.IdToken : req.Token;
+            if (!string.IsNullOrWhiteSpace(idToken))
+            {
+                try
+                {
+                    var googleClientId = _configuration["Authentication:Google:ClientId"];
+                    GoogleJsonWebSignature.ValidationSettings? settings = !string.IsNullOrWhiteSpace(googleClientId)
+                        ? new GoogleJsonWebSignature.ValidationSettings { Audience = new[] { googleClientId } }
+                        : null;
+                    var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, settings);
+                    if (payload == null || string.IsNullOrWhiteSpace(payload.Email))
+                    {
+                        return Unauthorized(new { message = "Google ID Token không hợp lệ." });
+                    }
+
+                    req.Email = payload.Email;
+                    if (!string.IsNullOrWhiteSpace(payload.Name) && string.IsNullOrWhiteSpace(req.Name))
+                    {
+                        req.Name = payload.Name;
+                    }
+                    if (!string.IsNullOrWhiteSpace(payload.Picture) && string.IsNullOrWhiteSpace(req.AvatarUrl))
+                    {
+                        req.AvatarUrl = payload.Picture;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (!_env.IsDevelopment())
+                    {
+                        return Unauthorized(new { message = "Xác thực Google ID Token thất bại: " + ex.Message });
+                    }
+                }
+            }
+            else if (!_env.IsDevelopment())
+            {
+                return BadRequest(new { message = "Thiếu Google ID Token để xác thực." });
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(req.Email))
+                {
+                    return BadRequest(new { message = "Email từ tài khoản Google không được để trống." });
+                }
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(req.Email))
         {
             return BadRequest(new { message = "Email từ tài khoản mạng xã hội không được để trống." });
         }
@@ -159,7 +227,21 @@ public class AuthController : ControllerBase
             googleEmail = user.GoogleEmail,
             facebookName = user.FacebookName,
             isGuest = user.IsGuest,
-            isNewUser
+            isNewUser,
+            hasProfile = user.HasProfile,
+            age = user.Age,
+            gender = user.Gender,
+            heightCm = user.HeightCm,
+            weightKg = user.WeightKg,
+            targetWeightKg = user.TargetWeightKg,
+            goal = user.Goal,
+            dietType = user.DietType,
+            activityLevel = user.ActivityLevel,
+            targetCalories = user.TargetCalories,
+            targetProtein = user.TargetProtein,
+            targetCarbs = user.TargetCarbs,
+            targetFat = user.TargetFat,
+            dailyWaterGoalMl = user.DailyWaterGoalMl
         });
     }
 

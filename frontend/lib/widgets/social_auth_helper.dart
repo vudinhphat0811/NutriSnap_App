@@ -77,12 +77,17 @@ class SocialAuthHelper {
       final name = account.displayName ?? email.split('@').first;
       final photo = account.photoUrl;
 
-      // Gửi tài khoản Google thật lên Backend C# .NET 8 để cấp JWT Token và lưu DB
+      // Lấy Google ID Token thật do Google cấp để gửi lên Backend xác thực
+      final GoogleSignInAuthentication auth = await account.authentication;
+      final String? idToken = auth.idToken;
+
+      // Gửi tài khoản Google thật và ID Token lên Backend C# .NET 8 để xác thực an toàn, cấp JWT Token và lưu DB
       final result = await _callBackendSocialLogin(
         provider: 'google',
         email: email,
         name: name,
         avatarUrl: photo,
+        idToken: idToken,
       );
 
       if (result.success && context.mounted) {
@@ -375,6 +380,7 @@ class SocialAuthHelper {
     required String email,
     required String name,
     String? avatarUrl,
+    String? idToken,
   }) async {
     try {
       final uri = Uri.parse('${ApiConstants.baseUrl}/api/auth/social-login');
@@ -390,7 +396,8 @@ class SocialAuthHelper {
               'email': email,
               'name': name,
               'avatarUrl': avatar,
-              'token': 'oauth_${provider}_${DateTime.now().millisecondsSinceEpoch}',
+              'idToken': idToken,
+              'token': idToken ?? '',
             }),
           )
           .timeout(const Duration(seconds: 15));

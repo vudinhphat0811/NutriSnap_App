@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace NutriSnap.Models;
 
@@ -22,15 +22,19 @@ public class LoginDto
 public class UpdateProfileDto
 {
     public string FullName { get; set; } = string.Empty;
-    public int Age { get; set; } = 22;
-    public string Gender { get; set; } = "Nam"; // "Nam" hoặc "Nu"
-    public double HeightCm { get; set; } = 170.0;
-    public double WeightKg { get; set; } = 65.0;
+    public int Age { get; set; } = 0;
+    public string Gender { get; set; } = string.Empty; // "Nam" hoặc "Nu"
+    public double HeightCm { get; set; } = 0.0;
+    public double WeightKg { get; set; } = 0.0;
+    public double TargetWeightKg { get; set; } = 0.0;
 
     // Người dùng chọn trên App:
     // "LoseWeight" (Giảm cân), "Maintain" (Giữ cân), "GainWeight" (Tăng cân)
     public string Goal { get; set; } = "LoseWeight";
 
-    // "Balanced" (Cân bằng), "HighProtein" (Nhiều đạm), "LowCarb" (Ít tinh bột)
+    // "Balanced" (Cân bằng), "HighProtein" (Nhiều đạm), "LowCarb" (Ít tinh bột), "Vegetarian" (Ăn chay)
     public string DietType { get; set; } = "HighProtein";
+
+    // "Sedentary" (Ít vận động), "Moderate" (Vừa phải), "Active" (Nhiều)
+    public string ActivityLevel { get; set; } = "Moderate";
 }

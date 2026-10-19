@@ -78,15 +78,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final profile = appState.userProfile;
 
     final nameController = TextEditingController(text: profile.fullName);
-    final ageController = TextEditingController(text: profile.age.toString());
-    final heightController = TextEditingController(text: profile.heightCm.toString());
-    final weightController = TextEditingController(text: profile.weightKg.toString());
-    final targetWeightController = TextEditingController(text: profile.targetWeightKg.toString());
+    final ageController = TextEditingController(text: profile.age > 0 ? profile.age.toString() : '');
+    final heightController = TextEditingController(text: profile.heightCm > 0 ? profile.heightCm.toString() : '');
+    final weightController = TextEditingController(text: profile.weightKg > 0 ? profile.weightKg.toString() : '');
+    final targetWeightController = TextEditingController(text: profile.targetWeightKg > 0 ? profile.targetWeightKg.toString() : '');
 
-    String gender = profile.gender;
-    String goal = profile.goal;
-    String dietType = profile.dietType;
-    String activity = profile.activityLevel;
+    String gender = profile.gender.isNotEmpty ? profile.gender : 'Nam';
+    String goal = profile.goal.isNotEmpty ? profile.goal : 'LoseWeight';
+    String dietType = profile.dietType.isNotEmpty ? profile.dietType : 'HighProtein';
+    String activity = profile.activityLevel.isNotEmpty ? profile.activityLevel : 'Moderate';
 
     showModalBottomSheet(
       context: context,
@@ -222,7 +222,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   width: double.infinity,
                   height: 48,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       final name = nameController.text.trim();
                       final age = int.tryParse(ageController.text) ?? 24;
                       final h = double.tryParse(heightController.text) ?? 170;
@@ -241,14 +241,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         activityLevel: activity,
                       );
 
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('✅ Đã cập nhật mục tiêu & tự động tính toán lại dinh dưỡng!'),
-                          backgroundColor: AppColors.primaryDark,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
+                      await appState.syncProfileToServer();
+
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('✅ Đã cập nhật mục tiêu & đồng bộ lên máy chủ thành công!'),
+                            backgroundColor: AppColors.primaryDark,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,

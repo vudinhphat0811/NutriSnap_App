@@ -179,10 +179,6 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
     }
   }
 
-  Future<void> _fetchMealsFromMealDB(String ingredientKeyword) async {
-    _fetchMealsForSelectedIngredients();
-  }
-
   void _showImageSourcePicker() {
     showModalBottomSheet(
       context: context,

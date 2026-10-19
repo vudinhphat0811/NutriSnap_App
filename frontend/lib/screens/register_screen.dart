@@ -7,7 +7,6 @@ import '../services/app_state_service.dart';
 import '../widgets/app_popup_dialog.dart';
 import 'onboarding_profile_screen.dart';
 import '../widgets/social_auth_helper.dart';
-import '../main.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -294,19 +293,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           onPressed: () async {
                             final result = await SocialAuthHelper.signInWithSocial(context, provider: 'google');
                             if (result.success && context.mounted) {
-                              if (result.isNewUser || !AppStateService.instance.userProfile.hasProfile) {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => OnboardingProfileScreen(initialEmail: result.email),
+                              await AppPopupDialog.show(
+                                context: context,
+                                title: 'Đăng ký thành công',
+                                message: 'Đăng nhập Google thành công! Hãy cùng thiết lập các chỉ số sức khỏe ban đầu nhé.',
+                                type: PopupType.success,
+                                buttonText: 'Bắt đầu ngay',
+                              );
+
+                              if (!context.mounted) return;
+                              Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => OnboardingProfileScreen(
+                                    initialEmail: result.email,
+                                    initialName: result.name,
                                   ),
-                                );
-                              } else {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => const MobileWrapper(child: MainShellScreen())),
-                                );
-                              }
+                                ),
+                              );
                             }
                           },
                           style: OutlinedButton.styleFrom(

@@ -11,6 +11,7 @@ import 'screens/ingredient_scan_screen.dart';
 import 'screens/shake_recipe_screen.dart';
 import 'screens/recipe_detail_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/onboarding_profile_screen.dart';
 import 'services/app_state_service.dart';
 import 'constants/api_constants.dart';
 import 'widgets/guest_trial_barrier.dart';
@@ -25,6 +26,31 @@ void main() async {
 
 class NutriSnapApp extends StatelessWidget {
   const NutriSnapApp({super.key});
+
+  Widget _getInitialScreen() {
+    final appState = AppStateService.instance;
+    final profile = appState.userProfile;
+    final bool hasValidMetrics = profile.hasProfile &&
+        profile.heightCm > 0 &&
+        profile.weightKg > 0 &&
+        profile.age > 0;
+
+    // 1. Nếu đã có tài khoản hoặc ở chế độ Khách nhưng CHƯA có thông tin sức khỏe -> Luôn hiện bảng nhập thông tin
+    if ((appState.authToken != null || appState.isGuestMode) && !hasValidMetrics) {
+      return OnboardingProfileScreen(
+        initialEmail: profile.email.isNotEmpty ? profile.email : null,
+        initialName: profile.fullName.isNotEmpty ? profile.fullName : null,
+      );
+    }
+
+    // 2. Nếu đã đăng nhập / khách và ĐÃ CÓ đầy đủ thông tin -> Vào thẳng màn hình chính
+    if ((appState.authToken != null || appState.isGuestMode) && hasValidMetrics) {
+      return const MobileWrapper(child: MainShellScreen());
+    }
+
+    // 3. Chưa đăng nhập -> Vào màn hình Đăng nhập
+    return const LoginScreen();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,12 +92,7 @@ class NutriSnapApp extends StatelessWidget {
           ),
         );
       },
-      home: (AppStateService.instance.authToken != null ||
-              AppStateService.instance.isGuestMode ||
-              (AppStateService.instance.userProfile.hasProfile &&
-                  AppStateService.instance.userProfile.fullName.isNotEmpty))
-          ? const MobileWrapper(child: MainShellScreen())
-          : const LoginScreen(),
+      home: _getInitialScreen(),
     );
   }
 }
@@ -137,6 +158,27 @@ class _MainShellScreenState extends State<MainShellScreen> with SingleTickerProv
         reverseCurve: Curves.easeInOutCubic,
       ),
     );
+
+    // Kiểm tra an toàn: Nếu người dùng vào MainShellScreen nhưng chưa thiết lập chỉ số, chuyển ngay sang OnboardingProfileScreen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final profile = AppStateService.instance.userProfile;
+      final bool hasValidMetrics = profile.hasProfile &&
+          profile.heightCm > 0 &&
+          profile.weightKg > 0 &&
+          profile.age > 0;
+
+      if (!hasValidMetrics && mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OnboardingProfileScreen(
+              initialEmail: profile.email.isNotEmpty ? profile.email : null,
+              initialName: profile.fullName.isNotEmpty ? profile.fullName : null,
+            ),
+          ),
+        );
+      }
+    });
   }
 
   @override
@@ -154,6 +196,9 @@ class _MainShellScreenState extends State<MainShellScreen> with SingleTickerProv
   void _navigateTo(int index) {
     if (_isMenuOpen) {
       _closeFabMenu();
+    }
+    if (_activeScreenIndex != 6 && index == 6) {
+      AppStateService.instance.previousScreenIndex = _activeScreenIndex;
     }
     setState(() {
       _activeScreenIndex = index;

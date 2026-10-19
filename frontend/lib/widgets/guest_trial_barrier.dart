@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../services/app_state_service.dart';
@@ -156,41 +157,43 @@ class GuestTrialBarrierModal extends StatelessWidget {
                   ),
                 ),
 
-                const SizedBox(height: 16),
-                const Divider(height: 1),
-                const SizedBox(height: 12),
+                if (kDebugMode) ...[
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
 
-                // Dành cho kiểm thử (Demo Test Switcher)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('Kiểm thử:', style: TextStyle(fontSize: 11, color: AppColors.textGray)),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () => appState.setTestGuestDays(1),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFDCFCE7),
-                          borderRadius: BorderRadius.circular(8),
+                  // Dành cho kiểm thử nội bộ (Chỉ hiển thị khi chạy Debug)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Kiểm thử:', style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => appState.setTestGuestDays(1),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('Mở khóa (Ngày 1)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
                         ),
-                        child: const Text('Mở khóa (Ngày 1)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    InkWell(
-                      onTap: () => appState.setTestGuestDays(7),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEE2E2),
-                          borderRadius: BorderRadius.circular(8),
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: () => appState.setTestGuestDays(7),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEE2E2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('Khóa (Ngày 7)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.red)),
                         ),
-                        child: const Text('Khóa (Ngày 7)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.red)),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),

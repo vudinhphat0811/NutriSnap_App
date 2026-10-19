@@ -2,11 +2,17 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../services/app_state_service.dart';
 import '../main.dart';
+import 'login_screen.dart';
 
 class OnboardingProfileScreen extends StatefulWidget {
   final String? initialEmail;
+  final String? initialName;
 
-  const OnboardingProfileScreen({super.key, this.initialEmail});
+  const OnboardingProfileScreen({
+    super.key,
+    this.initialEmail,
+    this.initialName,
+  });
 
   @override
   State<OnboardingProfileScreen> createState() => _OnboardingProfileScreenState();
@@ -25,6 +31,21 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
   String _goal = 'LoseWeight';
   String _dietType = 'HighProtein';
   String _activityLevel = 'Moderate';
+
+  @override
+  void initState() {
+    super.initState();
+    final profile = AppStateService.instance.userProfile;
+    final candidateName = widget.initialName?.trim() ??
+        (profile.fullName.isNotEmpty &&
+                profile.fullName != 'Người dùng NutriSnap' &&
+                profile.fullName != 'Người dùng mới'
+            ? profile.fullName
+            : '');
+    if (candidateName.isNotEmpty) {
+      _nameController.text = candidateName;
+    }
+  }
 
   @override
   void dispose() {
@@ -56,9 +77,14 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final name = _nameController.text.trim();
-    final age = int.tryParse(_ageController.text.trim()) ?? 24;
-    final height = double.tryParse(_heightController.text.trim()) ?? 170.0;
-    final weight = double.tryParse(_weightController.text.trim()) ?? 65.0;
+    final effectiveName = name.isNotEmpty
+        ? name
+        : (widget.initialName?.trim().isNotEmpty == true
+            ? widget.initialName!.trim()
+            : 'Người dùng NutriSnap');
+    final age = int.parse(_ageController.text.trim());
+    final height = double.parse(_heightController.text.trim());
+    final weight = double.parse(_weightController.text.trim());
     final targetWeight = double.tryParse(_targetWeightController.text.trim()) ?? weight;
 
     // Reset nhật ký và nước uống về 0 cho người dùng mới
@@ -68,7 +94,7 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
 
     // Cập nhật số liệu vào AppStateService
     AppStateService.instance.updateProfileMetrics(
-      fullName: name.isNotEmpty ? name : 'Người dùng mới',
+      fullName: effectiveName,
       gender: _gender,
       age: age,
       heightCm: height,
@@ -79,9 +105,13 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
       activityLevel: _activityLevel,
     );
 
-    if (widget.initialEmail != null) {
-      AppStateService.instance.userProfile.email = widget.initialEmail!;
+    if (widget.initialEmail != null && widget.initialEmail!.trim().isNotEmpty) {
+      AppStateService.instance.userProfile.email = widget.initialEmail!.trim();
+      AppStateService.instance.saveToLocalStorage();
     }
+
+    // Đồng bộ chỉ số lên máy chủ backend C# nếu có phiên đăng nhập
+    AppStateService.instance.syncProfileToServer();
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -100,6 +130,52 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
     );
   }
 
+  Future<void> _handleExitOrLogout(BuildContext context) async {
+    final bool? shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Row(
+          children: [
+            Icon(Icons.logout_rounded, color: Colors.red, size: 24),
+            SizedBox(width: 10),
+            Text('Đăng Xuất / Đổi Tài Khoản', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Bạn có chắc chắn muốn thoát về màn hình Đăng nhập không? Thông tin đang nhập sẽ không được lưu.',
+          style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Ở lại', style: TextStyle(color: AppColors.textGray, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Đăng Xuất', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldExit == true && context.mounted) {
+      await AppStateService.instance.clearLocalStorage();
+      if (context.mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -113,6 +189,45 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Top Bar: Nút Đăng xuất / Quay lại
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    InkWell(
+                      onTap: () => _handleExitOrLogout(context),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.arrow_back_rounded, size: 16, color: AppColors.textGray),
+                            SizedBox(width: 4),
+                            Text(
+                              'Đăng nhập',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textGray),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => _handleExitOrLogout(context),
+                      icon: const Icon(Icons.logout_rounded, size: 16, color: Colors.red),
+                      label: const Text(
+                        'Đăng xuất',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
                 // Header
                 Center(
                   child: Container(
@@ -175,6 +290,12 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
                         controller: _ageController,
                         icon: Icons.cake_outlined,
                         keyboardType: TextInputType.number,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return 'Nhập tuổi';
+                          final n = int.tryParse(v.trim());
+                          if (n == null || n < 10 || n > 120) return 'Từ 10-120';
+                          return null;
+                        },
                       ),
                     ),
                   ],
@@ -194,7 +315,12 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
                         icon: Icons.height,
                         keyboardType: TextInputType.number,
                         onChanged: (_) => setState(() {}),
-                        validator: (v) => v == null || v.trim().isEmpty ? 'Nhập chiều cao' : null,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return 'Nhập chiều cao';
+                          final n = double.tryParse(v.trim());
+                          if (n == null || n < 80 || n > 250) return 'Từ 80-250cm';
+                          return null;
+                        },
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -206,7 +332,12 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
                         icon: Icons.monitor_weight_outlined,
                         keyboardType: TextInputType.number,
                         onChanged: (_) => setState(() {}),
-                        validator: (v) => v == null || v.trim().isEmpty ? 'Nhập cân nặng' : null,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return 'Nhập cân nặng';
+                          final n = double.tryParse(v.trim());
+                          if (n == null || n < 25 || n > 250) return 'Từ 25-250kg';
+                          return null;
+                        },
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -217,6 +348,13 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
                         controller: _targetWeightController,
                         icon: Icons.flag_outlined,
                         keyboardType: TextInputType.number,
+                        validator: (v) {
+                          if (v != null && v.trim().isNotEmpty) {
+                            final n = double.tryParse(v.trim());
+                            if (n == null || n < 25 || n > 250) return 'Từ 25-250kg';
+                          }
+                          return null;
+                        },
                       ),
                     ),
                   ],
@@ -306,6 +444,19 @@ class _OnboardingProfileScreenState extends State<OnboardingProfileScreen> {
                     child: const Text(
                       'Hoàn Tất & Bắt Đầu Trải Nghiệm 🚀',
                       style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // NÚT ĐĂNG XUẤT / ĐỔI TÀI KHOẢN PHỤ
+                Center(
+                  child: TextButton.icon(
+                    onPressed: () => _handleExitOrLogout(context),
+                    icon: const Icon(Icons.logout_rounded, size: 16, color: AppColors.textGray),
+                    label: const Text(
+                      'Đăng xuất hoặc Đổi tài khoản khác',
+                      style: TextStyle(fontSize: 13, color: AppColors.textGray, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
