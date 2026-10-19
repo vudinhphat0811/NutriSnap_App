@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using NutriSnap.Models;
@@ -12,6 +12,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<int>, int>
     public DbSet<SavedRecipe> SavedRecipes => Set<SavedRecipe>();
     public DbSet<MealLog> MealLogs => Set<MealLog>();
     public DbSet<DailyWaterLog> DailyWaterLogs => Set<DailyWaterLog>();
+    public DbSet<DailyAiReview> DailyAiReviews => Set<DailyAiReview>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -25,5 +26,10 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<int>, int>
         // Index cho MealLog phục vụ truy vấn 30 ngày và xóa tự động
         builder.Entity<MealLog>()
             .HasIndex(m => new { m.UserId, m.LoggedDate });
+
+        // Index Unique cho Đánh giá AI cố định theo User, Ngày, Mốc thời gian và Ngôn ngữ
+        builder.Entity<DailyAiReview>()
+            .HasIndex(r => new { r.UserId, r.ReviewDate, r.Period, r.Lang })
+            .IsUnique();
     }
 }

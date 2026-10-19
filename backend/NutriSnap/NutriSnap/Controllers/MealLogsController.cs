@@ -1,8 +1,9 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NutriSnap.Data;
 using NutriSnap.Models;
+using NutriSnap.Services;
 using System.Security.Claims;
 
 namespace NutriSnap.Controllers;
@@ -13,10 +14,12 @@ namespace NutriSnap.Controllers;
 public class MealLogsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly AiNutritionAdvisorService _advisorService;
 
-    public MealLogsController(AppDbContext context)
+    public MealLogsController(AppDbContext context, AiNutritionAdvisorService advisorService)
     {
         _context = context;
+        _advisorService = advisorService;
     }
 
     [HttpPost("log")]
@@ -42,7 +45,7 @@ public class MealLogsController : ControllerBase
             ProteinG = dto.ProteinG,
             CarbsG = dto.CarbsG,
             FatG = dto.FatG,
-            LoggedDate = DateOnly.FromDateTime(DateTime.Now),
+            LoggedDate = dto.LoggedDate ?? DateOnly.FromDateTime(DateTime.Now),
             CreatedAt = DateTime.UtcNow
         };
 
@@ -100,5 +103,19 @@ public class MealLogsController : ControllerBase
             .ToListAsync();
 
         return Ok(history);
+    }
+
+    [HttpGet("ai-review")]
+    public async Task<IActionResult> GetAiReview(
+        [FromQuery] string period = "yesterday",
+        [FromQuery] bool forceRefresh = false,
+        [FromQuery] string lang = "vi")
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
+        int userId = int.Parse(userIdStr);
+
+        var review = await _advisorService.GetNutritionReviewAsync(userId, period, forceRefresh, lang);
+        return Ok(review);
     }
 }

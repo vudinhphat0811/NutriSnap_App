@@ -1,22 +1,29 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Mail;
+using System.Text;
+using System.Text.Json;
+using System.Web;
 using Microsoft.AspNetCore.Identity;
 using NutriSnap.Models;
-using System.Net;
-using System.Net.Mail;
-using System.Web;
 
 namespace NutriSnap.Services;
 
 public class EmailSender : IEmailSender<AppUser>
 {
     private readonly IConfiguration _config;
+    private readonly HttpClient _httpClient;
 
-    public EmailSender(IConfiguration config)
+    public EmailSender(IConfiguration config, HttpClient? httpClient = null)
     {
         _config = config;
+        _httpClient = httpClient ?? new HttpClient();
     }
 
     public Task SendConfirmationLinkAsync(AppUser user, string email, string confirmationLink)
     {
+        Console.WriteLine($"[EmailSender] LINK XÁC THỰC CHO {email}: {confirmationLink}");
+
         string body = $@"
             <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
                 <h2 style='color: #2e7d32;'>NutriSnap - Xác nhận tài khoản</h2>
@@ -45,6 +52,8 @@ public class EmailSender : IEmailSender<AppUser>
             // Nếu không parse được URL thì giữ nguyên chuỗi
         }
 
+        Console.WriteLine($"[EmailSender] MÃ RESET CHO {email}: {code}");
+
         string body = $@"
             <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
                 <h2 style='color: #2e7d32;'>NutriSnap - Đặt lại mật khẩu</h2>
@@ -61,6 +70,8 @@ public class EmailSender : IEmailSender<AppUser>
     // Dùng cho trường hợp tự sinh OTP ngắn (4 số / 6 số)
     public Task SendPasswordResetCodeAsync(AppUser user, string email, string resetCode)
     {
+        Console.WriteLine($"[EmailSender] MÃ OTP QUÊN MẬT KHẨU CHO {email}: {resetCode}");
+
         string body = $@"
             <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
                 <h2 style='color: #2e7d32;'>NutriSnap - Mã OTP đặt lại mật khẩu</h2>
@@ -103,12 +114,57 @@ public class EmailSender : IEmailSender<AppUser>
 
     private async Task SendEmailAsync(string toEmail, string subject, string message)
     {
+        var smtpSection = _config.GetSection("SmtpSettings");
+        var senderEmail = _config["SMTP_SENDER_EMAIL"]
+            ?? Environment.GetEnvironmentVariable("SMTP_SENDER_EMAIL")
+            ?? smtpSection["SenderEmail"]
+            ?? "vphat544@gmail.com";
+        var senderName = smtpSection["SenderName"] ?? "NutriSnap Support";
+
+        // 1. ƯU TIÊN GỬI QUA BREVO REST API (HTTPS PORT 443 - HOẠT ĐỘNG HOÀN HẢO TRÊN RENDER CLOUD)
+        var brevoApiKey = _config["BREVO_API_KEY"]
+            ?? Environment.GetEnvironmentVariable("BREVO_API_KEY")
+            ?? smtpSection["BrevoApiKey"]
+            ?? "";
+
+        if (!string.IsNullOrWhiteSpace(brevoApiKey))
+        {
+            try
+            {
+                var payload = new
+                {
+                    sender = new { name = senderName, email = senderEmail },
+                    to = new[] { new { email = toEmail } },
+                    subject = subject,
+                    htmlContent = message
+                };
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.brevo.com/v3/smtp/email");
+                request.Headers.Add("api-key", brevoApiKey);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[Brevo HTTP API] Đã gửi email thành công tới {toEmail} (Status {response.StatusCode})");
+                    return;
+                }
+
+                var errorBody = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"[Brevo HTTP API Warning] ({response.StatusCode}): {errorBody}. Chuyển sang fallback SMTP...");
+            }
+            catch (Exception brevoEx)
+            {
+                Console.WriteLine($"[Brevo HTTP API Exception]: {brevoEx.Message}. Chuyển sang fallback SMTP...");
+            }
+        }
+
+        // 2. FALLBACK: GỬI QUA SMTP CLIENT TRUYỀN THỐNG (DÙNG CHO MÁY LOCALHOST)
         try
         {
-            var smtpSection = _config.GetSection("SmtpSettings");
             var host = _config["SMTP_SERVER"] ?? Environment.GetEnvironmentVariable("SMTP_SERVER") ?? smtpSection["Server"] ?? "smtp.gmail.com";
             var port = int.Parse(_config["SMTP_PORT"] ?? Environment.GetEnvironmentVariable("SMTP_PORT") ?? smtpSection["Port"] ?? "587");
-            var senderEmail = _config["SMTP_SENDER_EMAIL"] ?? Environment.GetEnvironmentVariable("SMTP_SENDER_EMAIL") ?? smtpSection["SenderEmail"];
             var password = _config["SMTP_PASSWORD"] ?? Environment.GetEnvironmentVariable("SMTP_PASSWORD") ?? smtpSection["Password"];
 
             if (string.IsNullOrEmpty(senderEmail) || string.IsNullOrEmpty(password))
@@ -120,12 +176,13 @@ public class EmailSender : IEmailSender<AppUser>
             using var client = new SmtpClient(host, port)
             {
                 Credentials = new NetworkCredential(senderEmail, password),
-                EnableSsl = true
+                EnableSsl = true,
+                Timeout = 10000 // 10s timeout để tránh treo server trên Render
             };
 
             var mailMessage = new MailMessage
             {
-                From = new MailAddress(senderEmail, smtpSection["SenderName"] ?? "NutriSnap Support"),
+                From = new MailAddress(senderEmail, senderName),
                 Subject = subject,
                 Body = message,
                 IsBodyHtml = true
@@ -133,6 +190,7 @@ public class EmailSender : IEmailSender<AppUser>
 
             mailMessage.To.Add(toEmail);
             await client.SendMailAsync(mailMessage);
+            Console.WriteLine($"[SMTP] Đã gửi email thành công tới {toEmail}");
         }
         catch (Exception ex)
         {

@@ -39,6 +39,7 @@ class ApiConstants {
   static String get mealLogHistory => '$baseUrl/api/meallogs/history';
   static String get mealLogAdd => '$baseUrl/api/meallogs/log';
   static String mealLogDelete(int id) => '$baseUrl/api/meallogs/$id';
+  static String get aiNutritionReview => '$baseUrl/api/meallogs/ai-review';
   static String get dashboardToday => '$baseUrl/api/dashboard/today';
   static String addWater(int amountMl) => '$baseUrl/api/dashboard/water/add?amountMl=$amountMl';
 

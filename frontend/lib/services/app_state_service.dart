@@ -196,6 +196,118 @@ class MealLogEntry {
       );
 }
 
+class AiNutritionReview {
+  final int score;
+  final String period;
+  final String periodLabel;
+  final bool hasData;
+  final String summary;
+  final List<String> strengths;
+  final List<String> improvements;
+  final List<String> actionableAdvice;
+  final NutritionReviewMetrics metrics;
+
+  AiNutritionReview({
+    required this.score,
+    required this.period,
+    required this.periodLabel,
+    required this.hasData,
+    required this.summary,
+    required this.strengths,
+    required this.improvements,
+    required this.actionableAdvice,
+    required this.metrics,
+  });
+
+  factory AiNutritionReview.fromJson(Map<String, dynamic> json) {
+    return AiNutritionReview(
+      score: (json['score'] as num?)?.toInt() ?? 0,
+      period: json['period']?.toString() ?? 'yesterday',
+      periodLabel: json['periodLabel']?.toString() ?? 'Hôm qua',
+      hasData: json['hasData'] as bool? ?? true,
+      summary: json['summary']?.toString() ?? '',
+      strengths: (json['strengths'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      improvements: (json['improvements'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      actionableAdvice: (json['actionableAdvice'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      metrics: NutritionReviewMetrics.fromJson(json['metrics'] as Map<String, dynamic>? ?? {}),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'score': score,
+        'period': period,
+        'periodLabel': periodLabel,
+        'hasData': hasData,
+        'summary': summary,
+        'strengths': strengths,
+        'improvements': improvements,
+        'actionableAdvice': actionableAdvice,
+        'metrics': metrics.toJson(),
+      };
+}
+
+class NutritionReviewMetrics {
+  final int totalCalories;
+  final int targetCalories;
+  final int deltaCalories;
+  final int avgCaloriesPerDay;
+  final int avgProteinG;
+  final int targetProteinG;
+  final int avgCarbsG;
+  final int targetCarbsG;
+  final int avgFatG;
+  final int targetFatG;
+  final int mealsCount;
+  final int daysCount;
+
+  NutritionReviewMetrics({
+    this.totalCalories = 0,
+    this.targetCalories = 2000,
+    this.deltaCalories = 0,
+    this.avgCaloriesPerDay = 0,
+    this.avgProteinG = 0,
+    this.targetProteinG = 90,
+    this.avgCarbsG = 0,
+    this.targetCarbsG = 220,
+    this.avgFatG = 0,
+    this.targetFatG = 50,
+    this.mealsCount = 0,
+    this.daysCount = 1,
+  });
+
+  factory NutritionReviewMetrics.fromJson(Map<String, dynamic> json) {
+    return NutritionReviewMetrics(
+      totalCalories: (json['totalCalories'] as num?)?.toInt() ?? 0,
+      targetCalories: (json['targetCalories'] as num?)?.toInt() ?? 2000,
+      deltaCalories: (json['deltaCalories'] as num?)?.toInt() ?? 0,
+      avgCaloriesPerDay: (json['avgCaloriesPerDay'] as num?)?.toInt() ?? 0,
+      avgProteinG: (json['avgProteinG'] as num?)?.toInt() ?? 0,
+      targetProteinG: (json['targetProteinG'] as num?)?.toInt() ?? 90,
+      avgCarbsG: (json['avgCarbsG'] as num?)?.toInt() ?? 0,
+      targetCarbsG: (json['targetCarbsG'] as num?)?.toInt() ?? 220,
+      avgFatG: (json['avgFatG'] as num?)?.toInt() ?? 0,
+      targetFatG: (json['targetFatG'] as num?)?.toInt() ?? 50,
+      mealsCount: (json['mealsCount'] as num?)?.toInt() ?? 0,
+      daysCount: (json['daysCount'] as num?)?.toInt() ?? 1,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'totalCalories': totalCalories,
+        'targetCalories': targetCalories,
+        'deltaCalories': deltaCalories,
+        'avgCaloriesPerDay': avgCaloriesPerDay,
+        'avgProteinG': avgProteinG,
+        'targetProteinG': targetProteinG,
+        'avgCarbsG': avgCarbsG,
+        'targetCarbsG': targetCarbsG,
+        'avgFatG': avgFatG,
+        'targetFatG': targetFatG,
+        'mealsCount': mealsCount,
+        'daysCount': daysCount,
+      };
+}
+
 /// Quản lý trạng thái động toàn bộ ứng dụng NutriSnap (hỗ trợ lưu cục bộ SharedPreferences)
 class AppStateService extends ChangeNotifier {
   static final AppStateService instance = AppStateService._internal();
@@ -894,6 +1006,227 @@ class AppStateService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[fetchDashboardToday Error] $e');
     }
+  }
+
+  /// Lấy báo cáo đánh giá dinh dưỡng từ AI (qua Cloud Backend C# hoặc bộ thuật toán nội bộ)
+  /// Cố định 1 lần duy nhất trong ngày, không đổi câu chữ mỗi lần mở app
+  Future<AiNutritionReview> fetchAiNutritionReview(String period, {bool forceRefresh = false}) async {
+    final token = authToken;
+    final normalizedPeriod = period.toLowerCase();
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    final localKey = 'nutrisnap_ai_fixed_review_${normalizedPeriod}_${currentLanguage}_$todayStr';
+
+    // 1. Kiểm tra Cache cố định trên thiết bị nếu không bấm 'Tải lại'
+    if (!forceRefresh) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedJson = prefs.getString(localKey);
+        if (cachedJson != null && cachedJson.isNotEmpty) {
+          final map = jsonDecode(cachedJson);
+          if (map is Map<String, dynamic>) {
+            return AiNutritionReview.fromJson(map);
+          }
+        }
+      } catch (e) {
+        debugPrint('[Local Review Cache Error] $e');
+      }
+    }
+
+    // 2. Thử gọi qua Backend C# nếu đã đăng nhập tài khoản thực
+    if (token != null &&
+        token.isNotEmpty &&
+        !token.startsWith('mock_') &&
+        !token.startsWith('guest_')) {
+      try {
+        final uri = Uri.parse(
+            '${ApiConstants.aiNutritionReview}?period=$normalizedPeriod&forceRefresh=$forceRefresh&lang=$currentLanguage');
+        final response = await http.get(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        ).timeout(const Duration(seconds: 12));
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(utf8.decode(response.bodyBytes));
+          if (data is Map<String, dynamic>) {
+            final hasData = data['hasData'] as bool? ?? true;
+            // CHỈ lưu cố định vào thiết bị nếu ĐÃ CÓ dữ liệu bữa ăn thực tế
+            // Đối với tài khoản mới chưa ghi món nào, không khóa để khi vừa thêm món là AI nhận diện ngay!
+            if (hasData) {
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setString(localKey, jsonEncode(data));
+              } catch (_) {}
+            }
+
+            return AiNutritionReview.fromJson(data);
+          }
+        }
+      } catch (e) {
+        debugPrint('[fetchAiNutritionReview Remote Error] $e');
+      }
+    }
+
+    // 3. Chế độ ngoại tuyến hoặc Tài khoản Khách: Dùng bộ thuật toán dinh dưỡng nội bộ thông minh
+    final localReview = _generateLocalReview(normalizedPeriod);
+    if (localReview.hasData) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(localKey, jsonEncode(localReview.toJson()));
+      } catch (_) {}
+    }
+    return localReview;
+  }
+
+  AiNutritionReview _generateLocalReview(String period) {
+    final isVi = currentLanguage == 'vi';
+    final targetCalo = dailyCalorieGoal > 0 ? dailyCalorieGoal : 2000;
+    final targetProt = userProfile.targetProtein > 0 ? userProfile.targetProtein.round() : 90;
+    final targetCarb = userProfile.targetCarbs > 0 ? userProfile.targetCarbs.round() : 220;
+    final targetFatG = userProfile.targetFat > 0 ? userProfile.targetFat.round() : 50;
+
+    String periodLabel = isVi ? 'Hôm qua' : 'Yesterday';
+    int daysCount = 1;
+    if (period == '7days' || period == 'week') {
+      periodLabel = isVi ? '7 ngày qua' : 'Last 7 days';
+      daysCount = 7;
+    } else if (period == 'month' || period == '30days') {
+      periodLabel = isVi ? 'Tháng trước' : 'Last month';
+      daysCount = 30;
+    }
+
+    if (mealLogs.isEmpty) {
+      return AiNutritionReview(
+        score: 0,
+        period: period,
+        periodLabel: periodLabel,
+        hasData: false,
+        summary: isVi
+            ? 'Bạn chưa ghi lại bữa ăn nào trong khoảng thời gian này.'
+            : 'No meals logged yet for this period.',
+        strengths: [],
+        improvements: [],
+        actionableAdvice: [
+          isVi
+              ? 'Hãy bắt đầu chụp ảnh hoặc ghi chép bữa ăn mỗi ngày để Huấn luyện viên AI phân tích chi tiết cho bạn!'
+              : 'Start logging your meals to receive personalized AI nutritional insights!',
+        ],
+        metrics: NutritionReviewMetrics(
+          totalCalories: 0,
+          targetCalories: targetCalo,
+          deltaCalories: -targetCalo,
+          avgCaloriesPerDay: 0,
+          avgProteinG: 0,
+          targetProteinG: targetProt,
+          avgCarbsG: 0,
+          targetCarbsG: targetCarb,
+          avgFatG: 0,
+          targetFatG: targetFatG,
+          mealsCount: 0,
+          daysCount: daysCount,
+        ),
+      );
+    }
+
+    final totalCalo = totalCaloriesLogged;
+    final totalProt = totalProteinLogged;
+    final totalCarb = totalCarbsLogged;
+    final totalFatG = totalFatLogged;
+
+    final avgCalo = daysCount > 1 ? (totalCalo / daysCount).round() : totalCalo;
+    final avgProt = daysCount > 1 ? (totalProt / daysCount).round() : totalProt;
+    final avgCarb = daysCount > 1 ? (totalCarb / daysCount).round() : totalCarb;
+    final avgFat = daysCount > 1 ? (totalFatG / daysCount).round() : totalFatG;
+    final deltaCalo = avgCalo - targetCalo;
+
+    int score = 75;
+    final strengths = <String>[];
+    final improvements = <String>[];
+    final advice = <String>[];
+
+    final ratio = targetCalo > 0 ? avgCalo / targetCalo : 1.0;
+    if (ratio >= 0.85 && ratio <= 1.10) {
+      score += 15;
+      strengths.add(isVi
+          ? 'Kiểm soát calo rất tốt ($avgCalo / $targetCalo kcal).'
+          : 'Great calorie control ($avgCalo / $targetCalo kcal).');
+    } else if (ratio > 1.20) {
+      score -= 15;
+      improvements.add(isVi
+          ? 'Lượng calo vượt mục tiêu +$deltaCalo kcal.'
+          : 'Calorie intake exceeded goal by +$deltaCalo kcal.');
+      advice.add(isVi
+          ? 'Hạn chế đồ uống ngọt và thức ăn vặt trong bữa tiếp theo.'
+          : 'Cut back on sugary drinks and high-calorie snacks.');
+    } else if (ratio < 0.75) {
+      score -= 10;
+      improvements.add(isVi
+          ? 'Năng lượng nạp vào còn khá thấp so với mục tiêu.'
+          : 'Calorie intake was quite low compared to goal.');
+      advice.add(isVi
+          ? 'Bổ sung thêm các loại hạt hoặc sữa chua để bù năng lượng lành mạnh.'
+          : 'Add healthy nuts or Greek yogurt for clean energy.');
+    }
+
+    if (avgProt >= (targetProt * 0.85)) {
+      score += 10;
+      strengths.add(isVi
+          ? 'Lượng protein đạt chuẩn ($avgProt / $targetProt g).'
+          : 'Excellent protein intake ($avgProt / $targetProt g).');
+    } else {
+      score -= 5;
+      improvements.add(isVi
+          ? 'Đạm còn thiếu nhẹ ($avgProt / $targetProt g).'
+          : 'Protein was slightly below target ($avgProt / $targetProt g).');
+      advice.add(isVi
+          ? 'Tăng cường ức gà, trứng, cá hoặc đậu phụ vào thực đơn.'
+          : 'Add lean poultry, eggs, fish or tofu to your meals.');
+    }
+
+    score = score.clamp(45, 98);
+
+    final summary = isVi
+        ? (score >= 85
+            ? '$periodLabel bạn ăn uống rất xuất sắc, vóc dáng và sức khỏe đang đi đúng lộ trình!'
+            : score >= 70
+                ? '$periodLabel chế độ ăn tương đối ổn định, chỉ cần điều chỉnh nhẹ theo lời khuyên bên dưới.'
+                : '$periodLabel chế độ ăn có sự chênh lệch so với mục tiêu. Hãy xem các gợi ý điều chỉnh!')
+        : (score >= 85
+            ? '$periodLabel you maintained an excellent diet, right on track with your goals!'
+            : '$periodLabel your nutrition is decent, with room for minor adjustments below.');
+
+    if (advice.isEmpty) {
+      advice.add(isVi
+          ? 'Uống đủ ít nhất 2L nước mỗi ngày để hỗ trợ tiêu hóa và trao đổi chất.'
+          : 'Drink at least 2L of water daily to support metabolism.');
+    }
+
+    return AiNutritionReview(
+      score: score,
+      period: period,
+      periodLabel: periodLabel,
+      hasData: true,
+      summary: summary,
+      strengths: strengths,
+      improvements: improvements,
+      actionableAdvice: advice,
+      metrics: NutritionReviewMetrics(
+        totalCalories: totalCalo,
+        targetCalories: targetCalo,
+        deltaCalories: deltaCalo,
+        avgCaloriesPerDay: avgCalo,
+        avgProteinG: avgProt,
+        targetProteinG: targetProt,
+        avgCarbsG: avgCarb,
+        targetCarbsG: targetCarb,
+        avgFatG: avgFat,
+        targetFatG: targetFatG,
+        mealsCount: mealLogs.length,
+        daysCount: daysCount,
+      ),
+    );
   }
 
   void setSelectedMeal(MealItem meal) {

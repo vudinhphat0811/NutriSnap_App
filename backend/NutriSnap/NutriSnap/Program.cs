@@ -81,14 +81,15 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 // 4. Đăng ký các Services
-builder.Services.AddTransient<IEmailSender<AppUser>, EmailSender>();
-builder.Services.AddTransient<EmailSender>();
+builder.Services.AddHttpClient<EmailSender>();
+builder.Services.AddTransient<IEmailSender<AppUser>>(sp => sp.GetRequiredService<EmailSender>());
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddHttpClient<MealDbSyncService>();
 builder.Services.AddHttpClient<RecipeService>();
 builder.Services.AddHttpClient<RecipeCrawlerService>();
 builder.Services.AddHttpClient<TranslationService>();
 builder.Services.AddHttpClient<AiVisionService>();
+builder.Services.AddHttpClient<AiNutritionAdvisorService>();
 builder.Services.AddMemoryCache();
 
 // 5. Cấu hình CORS
@@ -186,6 +187,20 @@ using (var scope = app.Services.CreateScope())
                     UPDATE ""AspNetUsers"" SET ""DietType"" = 'HighProtein' WHERE ""DietType"" IS NULL;
                     UPDATE ""AspNetUsers"" SET ""FullName"" = '' WHERE ""FullName"" IS NULL;
                     UPDATE ""AspNetUsers"" SET ""Gender"" = '' WHERE ""Gender"" IS NULL;
+
+                    CREATE TABLE IF NOT EXISTS ""DailyAiReviews"" (
+                        ""Id"" SERIAL PRIMARY KEY,
+                        ""UserId"" INT NOT NULL,
+                        ""ReviewDate"" DATE NOT NULL,
+                        ""Period"" VARCHAR(20) NOT NULL,
+                        ""Lang"" VARCHAR(10) NOT NULL DEFAULT 'vi',
+                        ""Score"" INT NOT NULL,
+                        ""ReviewJson"" TEXT NOT NULL,
+                        ""CreatedAt"" TIMESTAMP NOT NULL DEFAULT NOW()
+                    );
+                    ALTER TABLE ""DailyAiReviews"" ADD COLUMN IF NOT EXISTS ""Lang"" VARCHAR(10) NOT NULL DEFAULT 'vi';
+                    DROP INDEX IF EXISTS ""IX_DailyAiReviews_User_Date_Period"";
+                    CREATE UNIQUE INDEX IF NOT EXISTS ""IX_DailyAiReviews_User_Date_Period_Lang"" ON ""DailyAiReviews"" (""UserId"", ""ReviewDate"", ""Period"", ""Lang"");
                 ");
             }
             else if (providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))

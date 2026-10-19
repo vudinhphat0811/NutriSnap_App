@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace NutriSnap.Models;
 
@@ -16,4 +16,6 @@ public class CreateMealLogDto
     public double CarbsG { get; set; } = 0;
 
     public double FatG { get; set; } = 0;
+
+    public DateOnly? LoggedDate { get; set; }
 }

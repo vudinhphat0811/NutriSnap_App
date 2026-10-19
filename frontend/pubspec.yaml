@@ -1,6 +1,6 @@
 name: flutter_application_1
 description: NutriSnap Modern Health & Nutrition Flutter Application
-version: 1.0.0+1
+version: 1.0.4+4
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

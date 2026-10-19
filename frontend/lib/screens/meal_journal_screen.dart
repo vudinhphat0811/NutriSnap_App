@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_translations.dart';
+import '../widgets/ai_nutrition_report_sheet.dart';
 import '../services/app_state_service.dart';
 
 class MealJournalScreen extends StatefulWidget {
@@ -325,6 +326,17 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
             ],
           ),
         ),
+        IconButton(
+          onPressed: () => AiNutritionReportSheet.show(context),
+          style: IconButton.styleFrom(
+            backgroundColor: AppColors.accentMint,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            padding: const EdgeInsets.all(10),
+          ),
+          icon: const Icon(Icons.auto_awesome_rounded, color: AppColors.primary, size: 20),
+          tooltip: appState.currentLanguage == 'vi' ? 'Báo cáo AI' : 'AI Report',
+        ),
+        const SizedBox(width: 8),
         ElevatedButton.icon(
           onPressed: _showAddMealBottomSheet,
           style: ElevatedButton.styleFrom(
@@ -479,6 +491,36 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Nút bấm mở báo cáo AI Dinh Dưỡng
+          InkWell(
+            onTap: () => AiNutritionReportSheet.show(context),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.auto_awesome_rounded, size: 14, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    appState.currentLanguage == 'vi'
+                        ? 'Báo cáo AI: Đánh giá hôm qua, tuần & tháng'
+                        : 'AI Review: Yesterday, Week & Month',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.arrow_forward_ios_rounded, size: 10, color: Colors.white70),
+                ],
+              ),
             ),
           ),
         ],

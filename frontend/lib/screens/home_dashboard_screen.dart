@@ -3,6 +3,7 @@ import '../constants/app_colors.dart';
 import '../constants/app_translations.dart';
 import '../widgets/calorie_ring_painter.dart';
 import '../widgets/user_avatar_widget.dart';
+import '../widgets/ai_nutrition_report_sheet.dart';
 import '../services/app_state_service.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
@@ -52,6 +53,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             _buildHeader(),
             const SizedBox(height: 16),
             _buildCalorieCard(),
+            const SizedBox(height: 16),
+            _buildAiNutritionBanner(),
             const SizedBox(height: 16),
             _buildQuickActions(),
             const SizedBox(height: 16),
@@ -209,6 +212,99 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAiNutritionBanner() {
+    final isVi = appState.currentLanguage == 'vi';
+    return InkWell(
+      onTap: () => AiNutritionReportSheet.show(context, initialPeriod: 'yesterday'),
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                color: AppColors.accentMint,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.auto_awesome_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        isVi ? 'Đánh giá AI hôm qua' : 'AI Yesterday Review',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textBlack,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentMint,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          isVi ? 'Xem lời khuyên' : 'See tips',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primaryDark,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isVi
+                        ? 'Chạm để xem điểm số & lời khuyên từ Bác sĩ Dinh dưỡng AI'
+                        : 'Tap to view your score & AI dietitian recommendations',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textGray,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textLightGray,
+              size: 20,
+            ),
+          ],
+        ),
+      ),
     );
   }
 

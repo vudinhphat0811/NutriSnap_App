@@ -49,7 +49,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         Uri.parse(ApiConstants.forgotPassword),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email}),
-      );
+      ).timeout(const Duration(seconds: 15));
 
       setState(() => _isLoading = false);
 
@@ -105,14 +105,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse(ApiConstants.forgotPassword),
+        Uri.parse(ApiConstants.resetPassword),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': _emailController.text.trim(),
           'code': code,
           'newPassword': newPassword,
         }),
-      );
+      ).timeout(const Duration(seconds: 15));
 
       setState(() => _isLoading = false);
 
