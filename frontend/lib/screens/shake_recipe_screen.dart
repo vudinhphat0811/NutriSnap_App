@@ -41,8 +41,12 @@ class _ShakeRecipeScreenState extends State<ShakeRecipeScreen> with TickerProvid
   late AnimationController _bouncingPlatesController;
 
   // Cảm biến gia tốc lắc điện thoại
+  StreamSubscription<UserAccelerometerEvent>? _userSensorSub;
   StreamSubscription<AccelerometerEvent>? _sensorSubscription;
   DateTime _lastShakeTime = DateTime.now();
+  double _lastX = 0.0;
+  double _lastY = 0.0;
+  double _lastZ = 0.0;
 
   @override
   void initState() {
@@ -86,49 +90,73 @@ class _ShakeRecipeScreenState extends State<ShakeRecipeScreen> with TickerProvid
     _loadInitialData();
   }
 
-  /// Lắng nghe chuyển động lắc điện thoại thật
+  /// Lắng nghe chuyển động lắc trên cả máy thật và máy ảo Android Virtual Sensors
   void _initAccelerometer() {
-    // 1. Chỉ kích hoạt cảm biến gia tốc phần cứng trên thiết bị di động thật (Android / iOS).
-    // Trên Windows / Desktop / Web: Không có cảm biến gia tốc, bỏ qua để tránh lỗi và đơ ứng dụng.
     if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) {
       debugPrint('[Shake Sensors] Chế độ Desktop/Web: Sử dụng nút bấm, không kích hoạt cảm biến phần cứng.');
       return;
     }
 
+    // 1. Kênh UserAccelerometer (Đã lọc bỏ trọng lực g = 9.8) - Cực nhạy cho máy ảo và máy thật
     try {
-      _sensorSubscription = accelerometerEventStream().listen(
+      _userSensorSub = userAccelerometerEventStream(samplingPeriod: SensorInterval.uiInterval).listen(
+        (UserAccelerometerEvent event) {
+          final double force = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+          // Trên máy ảo khi kéo Virtual Sensors hoặc lắc máy thật: force vượt ngưỡng 4.2 m/s²
+          if (force > 4.2) {
+            _triggerShake();
+          }
+        },
+        onError: (err) {
+          debugPrint('[UserAccelerometer Error] $err');
+        },
+      );
+    } catch (e) {
+      debugPrint('[UserAccelerometer Exception] $e');
+    }
+
+    // 2. Kênh Accelerometer tiêu chuẩn kết hợp đo biến thiên gia tốc (Delta Jerk)
+    try {
+      _sensorSubscription = accelerometerEventStream(samplingPeriod: SensorInterval.uiInterval).listen(
         (AccelerometerEvent event) {
           final double gX = event.x;
           final double gY = event.y;
           final double gZ = event.z;
           final double gForce = sqrt(gX * gX + gY * gY + gZ * gZ);
 
-          // Trọng lực bình thường là ~9.8 m/s^2. Lắc mạnh tay đẩy gForce > 19.5
-          if (gForce > 19.5) {
-            final now = DateTime.now();
-            if (now.difference(_lastShakeTime).inMilliseconds > 1800) {
-              _lastShakeTime = now;
-              _performShake();
-            }
+          final double delta = (gX - _lastX).abs() + (gY - _lastY).abs() + (gZ - _lastZ).abs();
+          _lastX = gX;
+          _lastY = gY;
+          _lastZ = gZ;
+
+          // Nhận diện khi:
+          // - Lực lắc mạnh gForce > 14.0 m/s² (hạ từ 19.5 để máy ảo / lắc nhẹ tay nhận ngay)
+          // - Hoặc biến thiên gia tốc delta > 7.0 m/s² (khi di chuyển thanh trượt trong Emulator Virtual Sensors)
+          if (gForce > 14.0 || delta > 7.0) {
+            _triggerShake();
           }
         },
         onError: (err) {
-          debugPrint('[Shake Sensors] Cảm biến không khả dụng hoặc lỗi: $err');
-          // Tự động hủy stream khi gặp lỗi phần cứng để giải phóng thread
-          _sensorSubscription?.cancel();
-          _sensorSubscription = null;
+          debugPrint('[Accelerometer Error] $err');
         },
-        cancelOnError: true,
       );
     } catch (e) {
-      debugPrint('[Shake Sensors Exception] $e');
-      _sensorSubscription?.cancel();
-      _sensorSubscription = null;
+      debugPrint('[Accelerometer Exception] $e');
+    }
+  }
+
+  void _triggerShake() {
+    final now = DateTime.now();
+    if (now.difference(_lastShakeTime).inMilliseconds > 1800) {
+      _lastShakeTime = now;
+      _performShake();
     }
   }
 
   @override
   void dispose() {
+    _userSensorSub?.cancel();
+    _userSensorSub = null;
     _sensorSubscription?.cancel();
     _sensorSubscription = null;
     _wobbleController.dispose();
