@@ -581,7 +581,9 @@ class _RecipeSuggestionsScreenState extends State<RecipeSuggestionsScreen> {
 
   Widget _buildMealCard(MealItem meal, int matchScore, int remainingCal) {
     final isVi = AppStateService.instance.currentLanguage == 'vi';
-    final displayName = isVi ? RecipeTranslator.translateDishName(meal.strMeal) : meal.strMeal;
+    final displayName = isVi && meal.strMealVi != null && meal.strMealVi!.trim().isNotEmpty
+        ? meal.strMealVi!
+        : (isVi ? RecipeTranslator.translateDishName(meal.strMeal) : meal.strMeal);
 
     return InkWell(
       onTap: () async {

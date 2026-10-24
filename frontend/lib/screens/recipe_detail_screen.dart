@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_translations.dart';
@@ -21,25 +22,43 @@ class RecipeDetailScreen extends StatefulWidget {
 class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   YoutubePlayerController? _youtubeController;
   String? _currentMealId;
+  String? _currentVideoId;
   bool _isLoadingDetail = false;
 
   @override
   void initState() {
     super.initState();
-    _initYoutubePlayer();
-    _ensureDetailLoaded();
+    AppStateService.instance.addListener(_handleAppStateChanged);
+    _syncMealAndVideo(force: true);
   }
 
-  void _initYoutubePlayer() {
-    final meal = AppStateService.instance.selectedMeal;
-    _currentMealId = meal?.idMeal;
-    final url = meal?.strYoutube;
+  void _handleAppStateChanged() {
+    // Nếu người dùng chuyển tab sang màn hình khác ngoài RecipeDetail (index != 6), tạm dừng video
+    if (AppStateService.instance.currentScreenIndex != 6) {
+      _youtubeController?.pauseVideo();
+    }
+    _syncMealAndVideo();
+  }
 
-    if (url != null && url.trim().isNotEmpty) {
-      final videoId = YoutubePlayerController.convertUrlToId(url);
-      if (videoId != null && videoId.isNotEmpty) {
+  void _syncMealAndVideo({bool force = false}) {
+    final meal = AppStateService.instance.selectedMeal;
+    if (meal == null) return;
+
+    final bool mealChanged = (meal.idMeal != _currentMealId);
+    final currentYtUrl = meal.strYoutube?.trim() ?? '';
+    final String? newVideoId = currentYtUrl.isNotEmpty ? YoutubePlayerController.convertUrlToId(currentYtUrl) : null;
+    final bool videoChanged = (newVideoId != _currentVideoId);
+
+    if (mealChanged || videoChanged || force) {
+      _currentMealId = meal.idMeal;
+      _currentVideoId = newVideoId;
+
+      _youtubeController?.close();
+      _youtubeController = null;
+
+      if (newVideoId != null && newVideoId.isNotEmpty) {
         _youtubeController = YoutubePlayerController.fromVideoId(
-          videoId: videoId,
+          videoId: newVideoId,
           autoPlay: false,
           params: const YoutubePlayerParams(
             showControls: true,
@@ -47,6 +66,14 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           ),
         );
       }
+
+      if (mounted) {
+        setState(() {});
+      }
+    }
+
+    if (mealChanged) {
+      _ensureDetailLoaded();
     }
   }
 
@@ -67,11 +94,6 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       final fullDetail = await TheMealDbService.getMealDetail(meal.idMeal, lang: lang);
       if (mounted && fullDetail != null) {
         AppStateService.instance.setSelectedMeal(fullDetail);
-        if (fullDetail.strYoutube != null && fullDetail.strYoutube!.trim().isNotEmpty) {
-          _youtubeController?.close();
-          _youtubeController = null;
-          _initYoutubePlayer();
-        }
         setState(() {
           _isLoadingDetail = false;
         });
@@ -82,24 +104,14 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final meal = AppStateService.instance.selectedMeal;
-    if (meal?.idMeal != _currentMealId) {
-      _youtubeController?.close();
-      _youtubeController = null;
-      _initYoutubePlayer();
-      _ensureDetailLoaded();
-    }
-  }
-
-  @override
   void dispose() {
+    AppStateService.instance.removeListener(_handleAppStateChanged);
     _youtubeController?.close();
     super.dispose();
   }
 
   void _handleBack(BuildContext context) {
+    _youtubeController?.pauseVideo();
     if (Navigator.canPop(context)) {
       Navigator.pop(context);
       return;
@@ -112,11 +124,18 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   Widget build(BuildContext context) {
     final isVi = AppStateService.instance.currentLanguage == 'vi';
 
-    final currentMeal = AppStateService.instance.selectedMeal ??
+    final selected = AppStateService.instance.selectedMeal;
+    if (selected != null && selected.idMeal != _currentMealId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncMealAndVideo();
+      });
+    }
+
+    final currentMeal = selected ??
         MealItem(
           idMeal: '52772',
           strMeal: 'Teriyaki Chicken Casserole',
-          strMealThumb: 'https://www.themealdb.com/images/media/meals/wvpsxx1468256321.jpg',
+          strMealThumb: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
           strCategory: 'Chicken',
           strArea: 'Japanese',
           strInstructions:
@@ -372,21 +391,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
 
   /// Khối Video Hướng Dẫn Nấu Ăn: Phát TRỰC TIẾP TRONG APP qua YoutubePlayer
   Widget _buildVideoSection(BuildContext context, MealItem meal, bool isVi) {
-    if (_youtubeController == null && meal.strYoutube != null && meal.strYoutube!.trim().isNotEmpty) {
-      final videoId = YoutubePlayerController.convertUrlToId(meal.strYoutube!);
-      if (videoId != null && videoId.isNotEmpty) {
-        _youtubeController = YoutubePlayerController.fromVideoId(
-          videoId: videoId,
-          autoPlay: false,
-          params: const YoutubePlayerParams(
-            showControls: true,
-            showFullscreenButton: true,
-          ),
-        );
-      }
-    }
+    final bool hasValidVideo = _youtubeController != null && _currentVideoId != null && _currentVideoId!.isNotEmpty;
 
-    if (_youtubeController != null) {
+    if (hasValidVideo) {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -445,12 +452,44 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Player trực tiếp trong app
+            // Player trực tiếp trong app với ValueKey độc lập theo từng món & video ID
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: YoutubePlayer(
+                key: ValueKey('yt_${meal.idMeal}_$_currentVideoId'),
                 controller: _youtubeController!,
                 aspectRatio: 16 / 9,
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Tùy chọn mở xem trên ứng dụng YouTube ngoài
+            InkWell(
+              onTap: () async {
+                final url = meal.strYoutube?.trim();
+                if (url != null && url.isNotEmpty) {
+                  final uri = Uri.tryParse(url);
+                  if (uri != null) {
+                    try {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    } catch (_) {}
+                  }
+                }
+              },
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    const Icon(Icons.open_in_new_rounded, size: 14, color: Color(0xFFDC2626)),
+                    const SizedBox(width: 4),
+                    Text(
+                      isVi ? 'Xem trên ứng dụng YouTube' : 'Open in YouTube App',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFDC2626)),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -458,9 +497,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       );
     }
 
-    // Nếu không có video YouTube chính thức
+    // Nếu không có video YouTube chính thức thì hiển thị nút tìm kiếm video nấu trên YouTube
+    final dishName = (isVi && meal.strMealVi != null && meal.strMealVi!.isNotEmpty) ? meal.strMealVi! : meal.strMeal;
+    final searchUrl = 'https://www.youtube.com/results?search_query=${Uri.encodeComponent('$dishName recipe tutorial')}';
+
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -472,24 +513,56 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           ),
         ],
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              shape: BoxShape.circle,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () async {
+            final uri = Uri.parse(searchUrl);
+            try {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            } catch (_) {}
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFE4E6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.play_arrow_rounded, color: Color(0xFFDC2626), size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppTranslations.tr('video_guide'),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        AppTranslations.tr('video_tap_to_search'),
+                        style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.open_in_new_rounded, color: Color(0xFFDC2626), size: 18),
+              ],
             ),
-            child: const Icon(Icons.videocam_off_rounded, color: AppColors.textGray, size: 22),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              AppTranslations.tr('no_video_available'),
-              style: const TextStyle(fontSize: 11, color: AppColors.textGray),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -554,28 +627,26 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                 String displayMeasure;
 
                 if (isVi) {
-                  if (meal.ingredientsVi.isNotEmpty && index < meal.ingredientsVi.length && meal.ingredientsVi[index].trim().isNotEmpty) {
-                    displayIng = meal.ingredientsVi[index];
-                  } else if (rawIng.isNotEmpty) {
-                    displayIng = RecipeTranslator.translateIngredient(rawIng);
-                  } else {
+                  final candidateIng = (meal.ingredientsVi.isNotEmpty && index < meal.ingredientsVi.length && meal.ingredientsVi[index].trim().isNotEmpty)
+                      ? meal.ingredientsVi[index]
+                      : rawIng;
+                  displayIng = RecipeTranslator.translateIngredient(candidateIng, rawIng);
+                  if (displayIng.isEmpty) {
                     displayIng = 'Nguyên liệu ${index + 1}';
                   }
 
-                  if (meal.measuresVi.isNotEmpty && index < meal.measuresVi.length && meal.measuresVi[index].trim().isNotEmpty) {
-                    displayMeasure = meal.measuresVi[index];
-                  } else if (rawMeasure.isNotEmpty) {
-                    displayMeasure = RecipeTranslator.translateMeasure(rawMeasure);
-                  } else {
-                    displayMeasure = '';
-                  }
+                  final candidateMeasure = (meal.measuresVi.isNotEmpty && index < meal.measuresVi.length && meal.measuresVi[index].trim().isNotEmpty)
+                      ? meal.measuresVi[index]
+                      : rawMeasure;
+                  displayMeasure = RecipeTranslator.translateMeasure(candidateMeasure, displayIng, index);
                 } else {
                   displayIng = rawIng.isNotEmpty
                       ? rawIng
                       : (index < meal.ingredientsVi.length ? meal.ingredientsVi[index] : 'Ingredient ${index + 1}');
-                  displayMeasure = rawMeasure.isNotEmpty
-                      ? rawMeasure
+                  final candidateMeasure = (meal.measures.isNotEmpty && index < meal.measures.length && meal.measures[index].trim().isNotEmpty)
+                      ? meal.measures[index]
                       : (index < meal.measuresVi.length ? meal.measuresVi[index] : '');
+                  displayMeasure = RecipeTranslator.translateMeasure(candidateMeasure, displayIng, index);
                 }
 
                 return Row(
@@ -609,12 +680,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   /// Khối Các bước nấu: Đảm bảo 100% Tiếng Việt khi chọn Tiếng Việt, 100% Tiếng Anh khi chọn Tiếng Anh
   Widget _buildCookingStepsSection(MealItem meal, bool isVi) {
     String instructions;
-    bool alreadyTranslated = false;
 
     if (isVi) {
       if (meal.strInstructionsVi != null && meal.strInstructionsVi!.trim().isNotEmpty) {
         instructions = meal.strInstructionsVi!;
-        alreadyTranslated = true;
       } else {
         instructions = meal.strInstructions ??
             'Làm sạch nguyên liệu và nấu chín theo nhiệt độ thích hợp. Thưởng thức khi còn nóng.';
@@ -624,11 +693,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           'Prepare ingredients and cook thoroughly over appropriate heat. Serve hot.';
     }
 
-    // Tách theo dòng hoặc câu nếu chỉ là một đoạn văn dài
-    List<String> rawSteps = instructions.split(RegExp(r'\r\n|\n|\r')).where((s) => s.trim().isNotEmpty).toList();
-    if (rawSteps.length <= 1) {
-      rawSteps = instructions.split(RegExp(r'\.\s+')).where((s) => s.trim().isNotEmpty).toList();
-    }
+    // Bóc tách chuẩn xác các bước nấu bằng RecipeTranslator.parseCookingSteps
+    final List<String> rawSteps = RecipeTranslator.parseCookingSteps(instructions);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -658,9 +724,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           if (rawSteps.isNotEmpty)
             ...rawSteps.asMap().entries.map((entry) {
               final stepText = entry.value.trim();
-              final displayStep = (isVi && !alreadyTranslated)
-                  ? RecipeTranslator.translateInstructionStep(stepText, entry.key)
-                  : stepText;
+              final displayStep = RecipeTranslator.translateInstructionStep(stepText, entry.key);
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12.0),

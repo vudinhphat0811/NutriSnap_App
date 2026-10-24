@@ -147,6 +147,7 @@ class MealLogEntry {
   final int fat;
   final String imageUrl;
   final String time;
+  final String loggedDate; // Định dạng YYYY-MM-DD (Ví dụ: 2026-10-24)
 
   MealLogEntry({
     required this.id,
@@ -158,7 +159,12 @@ class MealLogEntry {
     this.fat = 10,
     required this.imageUrl,
     required this.time,
-  });
+    String? loggedDate,
+  }) : loggedDate = (loggedDate != null && loggedDate.isNotEmpty)
+            ? (loggedDate.length >= 10 ? loggedDate.substring(0, 10) : loggedDate)
+            : AppStateService.getTodayDateString();
+
+  bool get isToday => loggedDate == AppStateService.getTodayDateString();
 
   /// Tên loại bữa ăn hiển thị tự động chuyển đổi theo ngôn ngữ Anh / Việt
   String get displayMealType {
@@ -171,6 +177,111 @@ class MealLogEntry {
     return mealType;
   }
 
+  /// Hiển thị thời gian thân thiện (Hôm nay, Hôm qua, hoặc ngày/tháng cụ thể)
+  String get displayTime {
+    final today = AppStateService.getTodayDateString();
+    if (loggedDate == today) {
+      return time.isNotEmpty && time != 'Hôm nay' ? time : 'Hôm nay';
+    }
+    final yesterday = AppStateService.getYesterdayDateString();
+    if (loggedDate == yesterday) {
+      return time.isNotEmpty && time != 'Hôm nay' ? 'Hôm qua $time' : 'Hôm qua';
+    }
+    final parts = loggedDate.split('-');
+    if (parts.length == 3) {
+      return '${parts[2]}/${parts[1]} ${time.isNotEmpty && time != 'Hôm nay' ? time : ''}'.trim();
+    }
+    return loggedDate;
+  }
+
+  /// Phân giải ảnh đại diện thông minh chính xác theo tên món ăn hoặc tên nguyên liệu
+  static String resolveImageForTitle(String title, [String? fallbackUrl]) {
+    if (fallbackUrl != null &&
+        fallbackUrl.isNotEmpty &&
+        !fallbackUrl.contains('photo-1546069901-ba9599a7e63c') &&
+        (fallbackUrl.startsWith('http://') || fallbackUrl.startsWith('https://'))) {
+      return fallbackUrl;
+    }
+
+    final lower = title.toLowerCase();
+
+    // 1. Tinh bột & Ngũ cốc
+    if (lower.contains('gạo') || lower.contains('cơm') || lower.contains('rice')) {
+      return 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('yến mạch') || lower.contains('oat')) {
+      return 'https://images.unsplash.com/photo-1586444248902-2f64eddc13df?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('khoai lang') || lower.contains('sweet potato')) {
+      return 'https://images.unsplash.com/photo-1596097635121-14b63b7a0c19?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('khoai tây') || lower.contains('potato')) {
+      return 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('bánh mì') || lower.contains('bread') || lower.contains('toast')) {
+      return 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('mì') || lower.contains('bún') || lower.contains('phở') || lower.contains('pasta') || lower.contains('noodle') || lower.contains('spaghetti')) {
+      return 'https://images.unsplash.com/photo-1612927601601-6638404737ce?auto=format&fit=crop&w=400&q=80';
+    }
+
+    // 2. Thịt & Trứng
+    if (lower.contains('ức gà') || lower.contains('chicken breast')) {
+      return 'https://images.unsplash.com/photo-1604503468506-a8da13d82791?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('đùi gà') || lower.contains('má đùi') || lower.contains('cánh gà') || lower.contains('gà') || lower.contains('chicken')) {
+      return 'https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('bò') || lower.contains('beef') || lower.contains('steak')) {
+      return 'https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('heo') || lower.contains('lợn') || lower.contains('pork') || lower.contains('ba chỉ')) {
+      return 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('trứng') || lower.contains('egg')) {
+      return 'https://images.unsplash.com/photo-1506976785307-8732e854ad03?auto=format&fit=crop&w=400&q=80';
+    }
+
+    // 3. Hải sản
+    if (lower.contains('cá hồi') || lower.contains('salmon')) {
+      return 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('tôm') || lower.contains('shrimp') || lower.contains('prawn')) {
+      return 'https://images.unsplash.com/photo-1565680018434-b513d5e5fd47?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('cá') || lower.contains('fish') || lower.contains('tuna') || lower.contains('mực')) {
+      return 'https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&w=400&q=80';
+    }
+
+    // 4. Sữa, Trái cây & Rau củ
+    if (lower.contains('sữa chua') || lower.contains('yogurt')) {
+      return 'https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('sữa') || lower.contains('milk') || lower.contains('whey')) {
+      return 'https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('chuối') || lower.contains('banana')) {
+      return 'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('táo') || lower.contains('apple')) {
+      return 'https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('bơ') || lower.contains('avocado')) {
+      return 'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('salad') || lower.contains('rau') || lower.contains('bông cải') || lower.contains('broccoli')) {
+      return 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80';
+    }
+    if (lower.contains('cà phê') || lower.contains('coffee') || lower.contains('trà') || lower.contains('tea')) {
+      return 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=400&q=80';
+    }
+
+    return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80';
+  }
+
+  /// Ảnh hiển thị thực tế (tự động thay thế nếu là placeholder cũ)
+  String get displayImageUrl => resolveImageForTitle(title, imageUrl);
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'mealType': mealType,
@@ -179,21 +290,27 @@ class MealLogEntry {
         'protein': protein,
         'carbs': carbs,
         'fat': fat,
-        'imageUrl': imageUrl,
+        'imageUrl': displayImageUrl,
         'time': time,
+        'loggedDate': loggedDate,
       };
 
-  factory MealLogEntry.fromJson(Map<String, dynamic> map) => MealLogEntry(
-        id: map['id'] ?? '',
-        mealType: map['mealType'] ?? '',
-        title: map['title'] ?? '',
-        calories: map['calories'] ?? 0,
-        protein: map['protein'] ?? 25,
-        carbs: map['carbs'] ?? 30,
-        fat: map['fat'] ?? 10,
-        imageUrl: map['imageUrl'] ?? '',
-        time: map['time'] ?? '',
-      );
+  factory MealLogEntry.fromJson(Map<String, dynamic> map) {
+    final title = map['title']?.toString() ?? '';
+    final rawImg = map['imageUrl']?.toString() ?? '';
+    return MealLogEntry(
+      id: map['id']?.toString() ?? '',
+      mealType: map['mealType']?.toString() ?? '',
+      title: title,
+      calories: (map['calories'] as num?)?.toInt() ?? 0,
+      protein: (map['protein'] as num?)?.toInt() ?? 25,
+      carbs: (map['carbs'] as num?)?.toInt() ?? 30,
+      fat: (map['fat'] as num?)?.toInt() ?? 10,
+      imageUrl: resolveImageForTitle(title, rawImg),
+      time: map['time']?.toString() ?? '',
+      loggedDate: map['loggedDate']?.toString() ?? map['LoggedDate']?.toString() ?? map['date']?.toString(),
+    );
+  }
 }
 
 class AiNutritionReview {
@@ -313,6 +430,27 @@ class AppStateService extends ChangeNotifier {
   static final AppStateService instance = AppStateService._internal();
   AppStateService._internal();
 
+  static String getTodayDateString() {
+    final now = DateTime.now();
+    final y = now.year.toString().padLeft(4, '0');
+    final m = now.month.toString().padLeft(2, '0');
+    final d = now.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  static String getYesterdayDateString() {
+    final now = DateTime.now();
+    final yest = DateTime(now.year, now.month, now.day - 1);
+    final y = yest.year.toString().padLeft(4, '0');
+    final m = yest.month.toString().padLeft(2, '0');
+    final d = yest.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  // Theo dõi ngày hoạt động và chuyển ngày
+  String? lastActiveDate;
+  String? lastWaterDate;
+
   // 1. Hồ sơ người dùng & Mục tiêu dinh dưỡng động
   UserProfile userProfile = UserProfile();
 
@@ -326,6 +464,14 @@ class AppStateService extends ChangeNotifier {
 
   // Lưu chỉ số màn hình trước đó khi vào Chi tiết món ăn (để nút Back quay lại đúng nơi)
   int previousScreenIndex = 0;
+  int currentScreenIndex = 0;
+
+  void setCurrentScreenIndex(int index) {
+    if (currentScreenIndex != index) {
+      currentScreenIndex = index;
+      notifyListeners();
+    }
+  }
 
   int get guestUsageDays {
     if (!isGuestMode) return 0;
@@ -600,6 +746,11 @@ class AppStateService extends ChangeNotifier {
   int get waterGoalMl => userProfile.dailyWaterGoalMl;
 
   void addWater(int amountMl) {
+    final today = getTodayDateString();
+    if (lastWaterDate != today) {
+      waterIntakeMl = 0;
+      lastWaterDate = today;
+    }
     waterIntakeMl = (waterIntakeMl + amountMl).clamp(0, 6000);
     saveToLocalStorage();
     notifyListeners();
@@ -627,8 +778,61 @@ class AppStateService extends ChangeNotifier {
 
   void resetWater() {
     waterIntakeMl = 0;
+    lastWaterDate = getTodayDateString();
     saveToLocalStorage();
     notifyListeners();
+  }
+
+  /// Kiểm tra chuyển ngày mới và tự động reset trạng thái Hôm Nay:
+  /// - Lượng nước uống trở về 0ml
+  /// - Nhật ký Hôm nay bắt đầu ngày mới (0 kcal đã nạp)
+  /// - Cập nhật chuỗi Streak đăng nhập
+  /// - Đồng bộ lại Dashboard từ Backend nếu online
+  Future<void> checkAndResetForNewDay() async {
+    final today = getTodayDateString();
+    if (lastActiveDate == null) {
+      lastActiveDate = today;
+      lastWaterDate = today;
+      await saveToLocalStorage();
+      return;
+    }
+
+    if (lastActiveDate != today) {
+      debugPrint('[AppStateService] ☀️ Phát hiện chuyển sang ngày mới: $today (Ngày trước: $lastActiveDate)');
+
+      // 1. Cập nhật Streak
+      final last = DateTime.tryParse(lastActiveDate!);
+      final now = DateTime.now();
+      if (last != null) {
+        final lastDayMidnight = DateTime(last.year, last.month, last.day);
+        final todayMidnight = DateTime(now.year, now.month, now.day);
+        final diffDays = todayMidnight.difference(lastDayMidnight).inDays;
+
+        if (diffDays == 1) {
+          streakDays += 1;
+        } else if (diffDays > 1) {
+          streakDays = 1;
+        }
+      }
+
+      // 2. Tự động reset nước của ngày mới về 0
+      waterIntakeMl = 0;
+      lastWaterDate = today;
+
+      // 3. Cập nhật ngày hoạt động mới
+      lastActiveDate = today;
+
+      // 4. Lưu lại LocalStorage ngay lập tức
+      await saveToLocalStorage();
+
+      // 5. Nếu có tài khoản online, gọi fetchDashboardToday để lấy dữ liệu trắng của ngày mới từ server
+      if (authToken != null && !isGuestMode && !authToken!.startsWith('guest_') && !authToken!.startsWith('mock_')) {
+        await fetchDashboardToday();
+        await syncMealLogsFromServer();
+      }
+
+      notifyListeners();
+    }
   }
 
   // Ngôn ngữ ứng dụng: 'vi' (Mặc định) hoặc 'en'
@@ -644,13 +848,19 @@ class AppStateService extends ChangeNotifier {
   // 4. Danh sách nhật ký bữa ăn - Bắt đầu rỗng cho tài khoản mới
   final List<MealLogEntry> mealLogs = [];
 
-  int get totalCaloriesLogged => mealLogs.fold(0, (sum, item) => sum + item.calories);
+  /// Danh sách bữa ăn của HÔM NAY
+  List<MealLogEntry> get todayMealLogs {
+    final today = getTodayDateString();
+    return mealLogs.where((item) => item.loggedDate == today).toList();
+  }
+
+  int get totalCaloriesLogged => todayMealLogs.fold(0, (sum, item) => sum + item.calories);
   int get dailyCalorieGoal => userProfile.targetCalories;
   int get remainingCalories => (dailyCalorieGoal - totalCaloriesLogged).clamp(0, dailyCalorieGoal);
 
-  int get totalProteinLogged => mealLogs.fold(0, (sum, item) => sum + item.protein);
-  int get totalCarbsLogged => mealLogs.fold(0, (sum, item) => sum + item.carbs);
-  int get totalFatLogged => mealLogs.fold(0, (sum, item) => sum + item.fat);
+  int get totalProteinLogged => todayMealLogs.fold(0, (sum, item) => sum + item.protein);
+  int get totalCarbsLogged => todayMealLogs.fold(0, (sum, item) => sum + item.carbs);
+  int get totalFatLogged => todayMealLogs.fold(0, (sum, item) => sum + item.fat);
 
   /// Cập nhật hồ sơ và tự động tính toán lại dinh dưỡng
   void updateProfileMetrics({
@@ -805,6 +1015,7 @@ class AppStateService extends ChangeNotifier {
   void addMealLogFromMeal(MealItem meal, {String mealType = 'BỮA TỐI'}) {
     final now = DateTime.now();
     final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final todayStr = getTodayDateString();
 
     final entry = MealLogEntry(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -816,6 +1027,7 @@ class AppStateService extends ChangeNotifier {
       fat: meal.estimatedFat,
       imageUrl: meal.strMealThumb,
       time: timeStr,
+      loggedDate: todayStr,
     );
 
     mealLogs.insert(0, entry);
@@ -838,6 +1050,7 @@ class AppStateService extends ChangeNotifier {
   }) {
     final now = DateTime.now();
     final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final todayStr = getTodayDateString();
 
     final entry = MealLogEntry(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -847,8 +1060,9 @@ class AppStateService extends ChangeNotifier {
       protein: protein ?? (calories * 0.08).round(),
       carbs: carbs ?? (calories * 0.11).round(),
       fat: fat ?? (calories * 0.03).round(),
-      imageUrl: imageUrl ?? 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80',
+      imageUrl: MealLogEntry.resolveImageForTitle(title, imageUrl),
       time: timeStr,
+      loggedDate: todayStr,
     );
 
     mealLogs.insert(0, entry);
@@ -949,6 +1163,9 @@ class AppStateService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final List list = jsonDecode(utf8.decode(response.bodyBytes));
         mealLogs.clear();
+        final todayStr = getTodayDateString();
+        final yesterdayStr = getYesterdayDateString();
+
         for (final item in list) {
           final id = item['id']?.toString() ?? '';
           final mealTitle = item['mealTitle']?.toString() ?? '';
@@ -957,6 +1174,22 @@ class AppStateService extends ChangeNotifier {
           final protein = (item['proteinG'] as num?)?.toInt() ?? 25;
           final carbs = (item['carbsG'] as num?)?.toInt() ?? 30;
           final fat = (item['fatG'] as num?)?.toInt() ?? 10;
+          final rawDate = item['loggedDate']?.toString() ?? item['LoggedDate']?.toString() ?? todayStr;
+          final loggedDate = rawDate.length >= 10 ? rawDate.substring(0, 10) : rawDate;
+
+          String friendlyTime = 'Hôm nay';
+          if (loggedDate == todayStr) {
+            friendlyTime = 'Hôm nay';
+          } else if (loggedDate == yesterdayStr) {
+            friendlyTime = 'Hôm qua';
+          } else {
+            final parts = loggedDate.split('-');
+            if (parts.length == 3) {
+              friendlyTime = '${parts[2]}/${parts[1]}';
+            } else {
+              friendlyTime = loggedDate;
+            }
+          }
 
           mealLogs.add(MealLogEntry(
             id: id,
@@ -966,8 +1199,9 @@ class AppStateService extends ChangeNotifier {
             protein: protein,
             carbs: carbs,
             fat: fat,
-            imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80',
-            time: 'Hôm nay',
+            imageUrl: MealLogEntry.resolveImageForTitle(mealTitle),
+            time: friendlyTime,
+            loggedDate: loggedDate,
           ));
         }
         await saveToLocalStorage();
@@ -997,9 +1231,10 @@ class AppStateService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         final consumedWater = (data['consumedWaterMl'] as num?)?.toInt();
-        if (consumedWater != null && consumedWater > 0) {
+        if (consumedWater != null) {
           waterIntakeMl = consumedWater;
         }
+        lastWaterDate = getTodayDateString();
         await saveToLocalStorage();
         notifyListeners();
       }
@@ -1238,7 +1473,10 @@ class AppStateService extends ChangeNotifier {
   Future<void> saveToLocalStorage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final todayStr = getTodayDateString();
       await prefs.setString('nutrisnap_user_profile', jsonEncode(userProfile.toJson()));
+      await prefs.setString('nutrisnap_last_active_date', lastActiveDate ?? todayStr);
+      await prefs.setString('nutrisnap_water_date', lastWaterDate ?? todayStr);
       await prefs.setInt('nutrisnap_water_intake', waterIntakeMl);
       await prefs.setInt('nutrisnap_streak_days', streakDays);
       await prefs.setString('nutrisnap_language', currentLanguage);
@@ -1269,7 +1507,19 @@ class AppStateService extends ChangeNotifier {
         final Map<String, dynamic> map = jsonDecode(profileStr);
         userProfile = UserProfile.fromJson(map);
       }
-      waterIntakeMl = prefs.getInt('nutrisnap_water_intake') ?? 0;
+
+      final todayStr = getTodayDateString();
+      lastActiveDate = prefs.getString('nutrisnap_last_active_date');
+      lastWaterDate = prefs.getString('nutrisnap_water_date');
+
+      // Kiểm tra lượng nước: Nếu ngày lưu khác hôm nay -> Reset về 0
+      if (lastWaterDate == todayStr) {
+        waterIntakeMl = prefs.getInt('nutrisnap_water_intake') ?? 0;
+      } else {
+        waterIntakeMl = 0;
+        lastWaterDate = todayStr;
+      }
+
       streakDays = prefs.getInt('nutrisnap_streak_days') ?? 1;
       currentLanguage = prefs.getString('nutrisnap_language') ?? 'vi';
       isGuestMode = prefs.getBool('nutrisnap_is_guest_mode') ?? false;
@@ -1277,15 +1527,41 @@ class AppStateService extends ChangeNotifier {
       if (guestCreatedStr != null && guestCreatedStr.isNotEmpty) {
         guestCreatedAt = DateTime.tryParse(guestCreatedStr);
       }
+
       final logsStr = prefs.getString('nutrisnap_meal_logs');
       if (logsStr != null && logsStr.isNotEmpty) {
         final List list = jsonDecode(logsStr);
         mealLogs.clear();
         for (final item in list) {
-          mealLogs.add(MealLogEntry.fromJson(item as Map<String, dynamic>));
+          if (item is Map<String, dynamic>) {
+            final entry = MealLogEntry.fromJson(item);
+            // Nếu bản ghi cũ chưa có loggedDate trong SharedPreferences:
+            // Nếu lastActiveDate lưu trước đó khác today -> bản ghi này thuộc ngày cũ!
+            if (item['loggedDate'] == null && lastActiveDate != null && lastActiveDate != todayStr) {
+              mealLogs.add(MealLogEntry(
+                id: entry.id,
+                mealType: entry.mealType,
+                title: entry.title,
+                calories: entry.calories,
+                protein: entry.protein,
+                carbs: entry.carbs,
+                fat: entry.fat,
+                imageUrl: entry.imageUrl,
+                time: entry.time,
+                loggedDate: lastActiveDate!,
+              ));
+            } else {
+              mealLogs.add(entry);
+            }
+          }
         }
       }
+
       authToken = prefs.getString('nutrisnap_auth_token');
+
+      // Tự động kiểm tra reset chuyển ngày và cập nhật streak
+      await checkAndResetForNewDay();
+
       notifyListeners();
 
       if (authToken != null && !isGuestMode && !authToken!.startsWith('guest_') && !authToken!.startsWith('mock_')) {
@@ -1302,6 +1578,8 @@ class AppStateService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('nutrisnap_user_profile');
+      await prefs.remove('nutrisnap_last_active_date');
+      await prefs.remove('nutrisnap_water_date');
       await prefs.remove('nutrisnap_water_intake');
       await prefs.remove('nutrisnap_meal_logs');
       await prefs.remove('nutrisnap_auth_token');
@@ -1314,6 +1592,8 @@ class AppStateService extends ChangeNotifier {
       authToken = null;
       isGuestMode = false;
       guestCreatedAt = null;
+      lastActiveDate = null;
+      lastWaterDate = null;
       testGuestDaysOverride = null;
       notifyListeners();
     } catch (e) {

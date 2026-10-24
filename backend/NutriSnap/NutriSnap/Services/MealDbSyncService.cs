@@ -61,12 +61,54 @@ public class MealDbSyncService
                 var list = JsonSerializer.Deserialize<List<RecommendedMealDto>>(jsonText, options);
                 if (list != null && list.Count > 50)
                 {
+                    // 1. Khởi tạo danh sách sạch từ file
+                    var dict = list
+                        .Where(x => !x.IdMeal.StartsWith("vn_combo_", StringComparison.OrdinalIgnoreCase))
+                        .ToDictionary(x => x.IdMeal, StringComparer.OrdinalIgnoreCase);
+
+                    // 2. Bổ sung các món ăn gia đình quen thuộc (Thịt bò xào hành tây, Rau xào, Salad trộn...) 100% ảnh độc bản
+                    foreach (var hr in MultiSourceCatalogService.GetAllRecipes())
+                    {
+                        dict[hr.IdMeal] = hr;
+                    }
+
+                    // 3. Lọc và loại bỏ triệt để 100% các món có ảnh trùng lặp trong cơ sở dữ liệu
+                    var duplicateImageUrls = dict.Values
+                        .Where(x => !string.IsNullOrWhiteSpace(x.StrMealThumb))
+                        .GroupBy(x => x.StrMealThumb.Trim(), StringComparer.OrdinalIgnoreCase)
+                        .Where(g => g.Count() > 1)
+                        .Select(g => g.Key)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                    var cleanList = dict.Values
+                        .Where(x => !string.IsNullOrWhiteSpace(x.StrMealThumb) &&
+                                    !duplicateImageUrls.Contains(x.StrMealThumb.Trim()))
+                        .ToList();
+
+                    // Chuẩn hóa định lượng thực tế 100% cho toàn bộ công thức trong toàn bộ cơ sở dữ liệu
+                    foreach (var r in cleanList)
+                    {
+                        RecipeService.SanitizeMealMeasures(r);
+                    }
+
+                    try
+                    {
+                        var saveOptions = new JsonSerializerOptions
+                        {
+                            WriteIndented = true,
+                            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                        };
+                        var json = JsonSerializer.Serialize(cleanList, saveOptions);
+                        await File.WriteAllTextAsync(filePath, json);
+                    }
+                    catch {}
+
                     lock (_lock)
                     {
-                        _memoryCache = list;
+                        _memoryCache = cleanList;
                     }
-                    _logger.LogInformation("Đã nạp {Count} công thức TheMealDB từ cơ sở dữ liệu cục bộ.", list.Count);
-                    return list;
+                    _logger.LogInformation("Đã nạp {Count} công thức chuẩn xác (0 trùng ảnh) từ cơ sở dữ liệu cục bộ.", cleanList.Count);
+                    return cleanList;
                 }
             }
             catch (Exception ex)
@@ -80,13 +122,145 @@ public class MealDbSyncService
     }
 
     /// <summary>
-    /// Thực hiện đồng bộ hàng loạt các món ăn từ TheMealDB với đầy đủ 20 nguyên liệu
+    /// Thực hiện đồng bộ hàng loạt các món ăn từ tất cả các nguồn (TheMealDB, DummyJSON, Vietnamese, Fitness)
     /// </summary>
-    public async Task<List<RecommendedMealDto>> SyncFromMealDbAsync(string? targetFilePath = null)
+    public Task<List<RecommendedMealDto>> SyncFromMealDbAsync(string? targetFilePath = null)
     {
-        _logger.LogInformation("Bắt đầu đồng bộ cơ sở dữ liệu món ăn TheMealDB...");
-        var letters = new[] { 'b', 'c', 's', 'p', 't', 'm', 'e', 'f' };
+        return SyncAllSourcesAsync(targetFilePath);
+    }
+
+    /// <summary>
+    /// Đồng bộ công thức đa nguồn (Multi-Source Recipe Aggregator):
+    /// - Nguồn 1: TheMealDB (A-Z) ~790 món
+    /// - Nguồn 2: DummyJSON Modern Recipes API ~50 món
+    /// - Nguồn 3: NutriSnap Vietnamese Culinary Heritage & Eat Clean ~190 món
+    /// - Nguồn 4: Combination Recipe Catalog ~30 món
+    /// - Nguồn 5: MasterChef Vietnam & Quốc Tế ~21 món
+    /// Tổng cộng: Hơn 1,080+ món ăn đầy đủ nguyên liệu, hướng dẫn và chỉ số dinh dưỡng.
+    /// </summary>
+    public async Task<List<RecommendedMealDto>> SyncAllSourcesAsync(string? targetFilePath = null)
+    {
+        Console.WriteLine("======================================================================");
+        Console.WriteLine("NutriSnap - BẮT ĐẦU CÀO VÀ ĐỒNG BỘ DỮ LIỆU ĐA NGUỒN (1,000+ MÓN)");
+        Console.WriteLine("  1. TheMealDB API (790 món quốc tế từ A-Z)");
+        Console.WriteLine("  2. DummyJSON Recipes API (50 món Âu - Mỹ - Ý hiện đại)");
+        Console.WriteLine("  3. NutriSnap VN Culinary Heritage (190 món Việt Nam & Eat Clean)");
+        Console.WriteLine("  4. Combination Recipe Catalog (30 món kết hợp đa nguyên liệu)");
+        Console.WriteLine("  5. MasterChef Vietnam & International (21 món Vua Đầu Bếp đỉnh cao)");
+        Console.WriteLine("======================================================================");
+
         var allMeals = new Dictionary<string, RecommendedMealDto>(StringComparer.OrdinalIgnoreCase);
+
+        // Pre-seed từ file JSON database nếu đã tồn tại để duy trì dữ liệu và tăng tốc độ đồng bộ
+        string savePath = targetFilePath ?? GetDatabaseFilePath();
+        if (File.Exists(savePath))
+        {
+            try
+            {
+                var jsonText = await File.ReadAllTextAsync(savePath);
+                var existing = JsonSerializer.Deserialize<List<RecommendedMealDto>>(jsonText);
+                if (existing != null)
+                {
+                    foreach (var m in existing)
+                    {
+                        allMeals[m.IdMeal] = m;
+                    }
+                    Console.WriteLine($">> Đã nạp trước {existing.Count} món có sẵn từ file database.");
+                }
+            }
+            catch {}
+        }
+
+        // 1. Cào từ TheMealDB A-Z
+        await CrawlMealDbInternalAsync(allMeals);
+
+        // 2. Cào từ DummyJSON API
+        var dummyRecipes = await SyncFromDummyJsonAsync();
+        foreach (var r in dummyRecipes)
+        {
+            if (!allMeals.ContainsKey(r.IdMeal))
+            {
+                allMeals[r.IdMeal] = r;
+            }
+        }
+
+        // 3. Nạp kho công thức Việt Nam & Eat Clean Fitness
+        var vnRecipes = MultiSourceCatalogService.GetAllRecipes();
+        foreach (var r in vnRecipes)
+        {
+            allMeals[r.IdMeal] = r;
+        }
+
+        // 4. Nạp kho công thức kết hợp đa nguyên liệu
+        foreach (var r in CombinationRecipeCatalog.Recipes)
+        {
+            allMeals[r.IdMeal] = r;
+        }
+
+        // 5. Nạp bộ sưu tập Vua Đầu Bếp Việt Nam & MasterChef Quốc Tế
+        var masterChefRecipes = MasterChefRecipeCatalog.GetRecipes();
+        foreach (var r in masterChefRecipes)
+        {
+            allMeals[r.IdMeal] = r;
+        }
+
+        // Lọc và loại bỏ hoàn toàn các món có ảnh trùng lặp trong cơ sở dữ liệu
+        var duplicateImageUrls = allMeals.Values
+            .Where(x => !string.IsNullOrWhiteSpace(x.StrMealThumb))
+            .GroupBy(x => x.StrMealThumb.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var resultList = allMeals.Values
+            .Where(x => !x.IdMeal.StartsWith("vn_combo_", StringComparison.OrdinalIgnoreCase) &&
+                        !string.IsNullOrWhiteSpace(x.StrMealThumb) &&
+                        !duplicateImageUrls.Contains(x.StrMealThumb.Trim()))
+            .ToList();
+
+        Console.WriteLine($"\n[TỔNG HỢP] Đã thu thập thành công {resultList.Count} công thức độc nhất (100% ảnh độc bản, 0 trùng lặp)!");
+        _logger.LogInformation("Đã thu thập thành công {Count} món ăn độc nhất (0 trùng ảnh).", resultList.Count);
+
+        // 5. Lưu vào file cơ sở dữ liệu JSON cục bộ
+        savePath = targetFilePath ?? GetDatabaseFilePath();
+        try
+        {
+            var dir = Path.GetDirectoryName(savePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+            var json = JsonSerializer.Serialize(resultList, options);
+            await File.WriteAllTextAsync(savePath, json);
+            _logger.LogInformation("Đã lưu cơ sở dữ liệu công thức vào: {Path}", savePath);
+            Console.WriteLine($"[JSON Database] Đã lưu {resultList.Count} món vào file: {savePath}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi khi ghi file database cục bộ.");
+        }
+
+        // 6. Đồng bộ vào SQL Server / PostgreSQL AppDbContext
+        await SyncToDatabaseAsync(resultList);
+
+        lock (_lock)
+        {
+            _memoryCache = resultList;
+        }
+
+        return resultList;
+    }
+
+    private async Task CrawlMealDbInternalAsync(Dictionary<string, RecommendedMealDto> allMeals)
+    {
+        Console.WriteLine(">> [Nguồn 1] Đang cào dữ liệu TheMealDB (A-Z)...");
+        var letters = "abcdefghijklmnopqrstuvwxyz".ToCharArray();
 
         foreach (var letter in letters)
         {
@@ -97,6 +271,7 @@ public class MealDbSyncService
                 var node = JsonNode.Parse(response);
                 var mealsArray = node?["meals"]?.AsArray();
 
+                int countAdded = 0;
                 if (mealsArray != null)
                 {
                     foreach (var item in mealsArray)
@@ -137,95 +312,166 @@ public class MealDbSyncService
                             Ingredients = ings,
                             Measures = meas,
                             IngredientsVi = ingsVi,
-                            MeasuresVi = meas
+                            MeasuresVi = meas.Select(m => TranslationService.TranslateMeasure(m)).ToList()
                         };
 
                         CalculateNutrition(meal);
                         allMeals[id] = meal;
+                        countAdded++;
                     }
                 }
+                Console.WriteLine($"   [TheMealDB] Chữ cái '{letter.ToString().ToUpper()}': +{countAdded} món (Tổng hiện tại: {allMeals.Count} món)");
+                await Task.Delay(80);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Lỗi khi đồng bộ chữ cái '{Letter}' từ TheMealDB", letter);
             }
         }
+    }
 
-        var resultList = allMeals.Values.ToList();
-        _logger.LogInformation("Đã thu thập thành công {Count} món ăn đầy đủ nguyên liệu từ TheMealDB.", resultList.Count);
-
-        // 3. Lưu vào file cơ sở dữ liệu JSON cục bộ
-        string savePath = targetFilePath ?? GetDatabaseFilePath();
+    private async Task<List<RecommendedMealDto>> SyncFromDummyJsonAsync()
+    {
+        var list = new List<RecommendedMealDto>();
         try
         {
-            var dir = Path.GetDirectoryName(savePath);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            Console.WriteLine(">> [Nguồn 2] Đang cào dữ liệu DummyJSON Recipes API...");
+            var json = await _httpClient.GetStringAsync("https://dummyjson.com/recipes?limit=50");
+            var root = JsonNode.Parse(json);
+            var recipesArr = root?["recipes"]?.AsArray();
+            if (recipesArr != null)
             {
-                Directory.CreateDirectory(dir);
-            }
+                foreach (var r in recipesArr)
+                {
+                    if (r == null) continue;
+                    string id = "dummy_" + (r["id"]?.ToString() ?? Guid.NewGuid().ToString());
+                    string name = r["name"]?.ToString() ?? "";
+                    string cuisine = r["cuisine"]?.ToString() ?? "International";
+                    string image = r["image"]?.ToString() ?? "";
+                    int cal = r["caloriesPerServing"]?.GetValue<int>() ?? 350;
 
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            };
-            var json = JsonSerializer.Serialize(resultList, options);
-            await File.WriteAllTextAsync(savePath, json);
-            _logger.LogInformation("Đã lưu cơ sở dữ liệu công thức vào: {Path}", savePath);
+                    var ings = new List<string>();
+                    var ingsVi = new List<string>();
+                    if (r["ingredients"] is JsonArray ingArr)
+                    {
+                        foreach (var i in ingArr)
+                        {
+                            var s = i?.ToString()?.Trim() ?? "";
+                            if (!string.IsNullOrEmpty(s))
+                            {
+                                ings.Add(s);
+                                ingsVi.Add(TranslateIngredientQuick(s));
+                            }
+                        }
+                    }
+
+                    var steps = new List<string>();
+                    if (r["instructions"] is JsonArray instArr)
+                    {
+                        foreach (var step in instArr)
+                        {
+                            if (step != null) steps.Add(step.ToString());
+                        }
+                    }
+                    string instructions = string.Join("\n", steps);
+
+                    int p = 25, c = 35, f = 12;
+                    if (cal > 0)
+                    {
+                        p = Math.Max(15, (int)(cal * 0.25 / 4));
+                        c = Math.Max(20, (int)(cal * 0.45 / 4));
+                        f = Math.Max(8, (int)(cal * 0.30 / 9));
+                    }
+
+                    list.Add(new RecommendedMealDto
+                    {
+                        IdMeal = id,
+                        StrMeal = name,
+                        StrMealVi = TranslateTitleQuick(name, cuisine),
+                        StrMealThumb = image,
+                        StrCategory = cuisine,
+                        StrArea = cuisine,
+                        StrInstructions = instructions,
+                        StrInstructionsVi = instructions,
+                        Ingredients = ings,
+                        IngredientsVi = ingsVi,
+                        Measures = ings.Select((ing, idx) => TranslationService.GenerateDefaultMeasure(ing, idx)).ToList(),
+                        MeasuresVi = ingsVi.Select((ing, idx) => TranslationService.GenerateDefaultMeasure(ingsVi.Count > idx ? ingsVi[idx] : ing, idx)).ToList(),
+                        EstimatedCalories = cal,
+                        EstimatedProtein = p,
+                        EstimatedCarbs = c,
+                        EstimatedFat = f,
+                        MatchScore = 95,
+                        Badges = new List<string> { "🍕 DummyJSON", "🌍 Quốc tế", $"⏱️ {r["cookTimeMinutes"]}p nấu" }
+                    });
+                }
+                Console.WriteLine($"   [DummyJSON] Đã cào thành công {list.Count} công thức quốc tế!");
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi khi ghi file database cục bộ.");
+            _logger.LogWarning("Không thể tải công thức từ DummyJSON: {Message}", ex.Message);
+            Console.WriteLine($"   [DummyJSON] Lưu ý: {ex.Message}");
         }
+        return list;
+    }
 
-        // 4. Đồng bộ vào SQL Server AppDbContext nếu kết nối thành công
-        _ = Task.Run(async () =>
+    private async Task SyncToDatabaseAsync(List<RecommendedMealDto> resultList)
+    {
+        try
         {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var existingIds = await db.SavedRecipes
-                    .Where(r => r.ExternalMealId != null)
-                    .Select(r => r.ExternalMealId)
-                    .ToListAsync();
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var existingIds = await db.SavedRecipes
+                .Where(r => r.ExternalMealId != null)
+                .Select(r => r.ExternalMealId!)
+                .ToListAsync();
 
-                var toAdd = resultList
-                    .Where(r => !existingIds.Contains(r.IdMeal))
-                    .Take(150)
-                    .Select(r => new SavedRecipe
-                    {
-                        ExternalMealId = r.IdMeal,
-                        Title = r.StrMealVi ?? r.StrMeal,
-                        ImageUrl = r.StrMealThumb,
-                        YoutubeUrl = r.StrYoutube,
-                        TotalCalories = r.EstimatedCalories,
-                        ProteinG = r.EstimatedProtein,
-                        CarbsG = r.EstimatedCarbs,
-                        FatG = r.EstimatedFat,
-                        Instructions = r.StrInstructionsVi ?? r.StrInstructions
-                    })
-                    .ToList();
+            var existingSet = new HashSet<string>(existingIds, StringComparer.OrdinalIgnoreCase);
 
-                if (toAdd.Count > 0)
+            var toAdd = resultList
+                .Where(r => !string.IsNullOrEmpty(r.IdMeal) && !existingSet.Contains(r.IdMeal))
+                .Select(r => new SavedRecipe
                 {
-                    db.SavedRecipes.AddRange(toAdd);
-                    await db.SaveChangesAsync();
-                    _logger.LogInformation("Đã lưu {Count} món vào SQL Server SavedRecipes.", toAdd.Count);
-                }
-            }
-            catch (Exception ex)
+                    ExternalMealId = r.IdMeal,
+                    Title = Truncate(r.StrMealVi ?? r.StrMeal, 200),
+                    ImageUrl = Truncate(r.StrMealThumb, 500),
+                    YoutubeUrl = Truncate(r.StrYoutube, 500),
+                    TotalCalories = r.EstimatedCalories,
+                    ProteinG = r.EstimatedProtein,
+                    CarbsG = r.EstimatedCarbs,
+                    FatG = r.EstimatedFat,
+                    Instructions = r.StrInstructionsVi ?? r.StrInstructions
+                })
+                .ToList();
+
+            if (toAdd.Count > 0)
             {
-                _logger.LogWarning("Không thể lưu vào SQL Server (sử dụng JSON Database cục bộ): {Message}", ex.Message);
+                foreach (var chunk in toAdd.Chunk(50))
+                {
+                    db.SavedRecipes.AddRange(chunk);
+                    await db.SaveChangesAsync();
+                }
+                _logger.LogInformation("Đã lưu {Count} món mới vào Database SavedRecipes.", toAdd.Count);
+                Console.WriteLine($"[Database] Đã lưu bổ sung {toAdd.Count} món vào Database (SavedRecipes)!");
             }
-        });
-
-        lock (_lock)
-        {
-            _memoryCache = resultList;
+            else
+            {
+                _logger.LogInformation("Database SavedRecipes đã đồng bộ đầy đủ các món.");
+                Console.WriteLine("[Database] Database SavedRecipes đã có đầy đủ các món.");
+            }
         }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Không thể lưu vào SQL Database (Dữ liệu đã được lưu trữ an toàn trong JSON Database cục bộ): {Message}", ex.Message);
+            Console.WriteLine($"[Database] Lưu ý: Chưa kết nối Database ({ex.Message}). Dữ liệu đã lưu an toàn trong file JSON cục bộ.");
+        }
+    }
 
-        return resultList;
+    private static string Truncate(string? val, int maxLen)
+    {
+        if (string.IsNullOrEmpty(val)) return string.Empty;
+        return val.Length <= maxLen ? val : val[..maxLen];
     }
 
     private string GetDatabaseFilePath()
@@ -285,72 +531,7 @@ public class MealDbSyncService
 
     private static string TranslateIngredientQuick(string raw)
     {
-        string lower = raw.Trim().ToLower();
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["chicken stock"] = "Nước dùng gà",
-            ["chicken broth"] = "Nước hầm gà",
-            ["chicken bouillon"] = "Hạt nêm gà",
-            ["beef stock"] = "Nước dùng bò",
-            ["beef broth"] = "Nước hầm bò",
-            ["beef bouillon"] = "Hạt nêm bò",
-            ["fish sauce"] = "Nước mắm",
-            ["oyster sauce"] = "Dầu hào",
-            ["soy sauce"] = "Nước tương",
-            ["minced beef"] = "Thịt bò băm",
-            ["beef steak"] = "Thịt bò bít tết",
-            ["beef"] = "Thịt bò",
-            ["chicken breast"] = "Ức gà",
-            ["chicken thighs"] = "Đùi gà",
-            ["chicken"] = "Thịt gà",
-            ["pork chops"] = "Sườn heo",
-            ["pork"] = "Thịt heo",
-            ["bacon"] = "Thịt xông khói",
-            ["egg"] = "Trứng",
-            ["eggs"] = "Trứng gà",
-            ["tomato puree"] = "Sốt cà chua",
-            ["tomato paste"] = "Cà chua cô đặc",
-            ["tomato"] = "Cà chua",
-            ["tomatoes"] = "Cà chua",
-            ["broccoli"] = "Bông cải xanh",
-            ["carrot"] = "Cà rốt",
-            ["carrots"] = "Cà rốt",
-            ["onion"] = "Hành tây",
-            ["onions"] = "Hành tây",
-            ["red onion"] = "Hành tím",
-            ["garlic clove"] = "Tép tỏi",
-            ["garlic"] = "Tỏi",
-            ["ginger"] = "Gừng",
-            ["mushroom"] = "Nấm tươi",
-            ["mushrooms"] = "Nấm",
-            ["potato"] = "Khoai tây",
-            ["potatoes"] = "Khoai tây",
-            ["salmon"] = "Cá hồi",
-            ["fish"] = "Cá tươi",
-            ["prawns"] = "Tôm tươi",
-            ["shrimp"] = "Tôm",
-            ["tofu"] = "Đậu phụ",
-            ["rice"] = "Gạo / Cơm",
-            ["pasta"] = "Mì Ý / Pasta",
-            ["spaghetti"] = "Mì Ý",
-            ["olive oil"] = "Dầu ô liu",
-            ["butter"] = "Bơ",
-            ["cheese"] = "Phô mai",
-            ["milk"] = "Sữa tươi",
-            ["sugar"] = "Đường",
-            ["salt"] = "Muối",
-            ["black pepper"] = "Tiêu đen",
-            ["pepper"] = "Tiêu"
-        };
-
-        foreach (var entry in map.OrderByDescending(x => x.Key.Length))
-        {
-            if (lower == entry.Key || lower.Contains(entry.Key))
-            {
-                return entry.Value;
-            }
-        }
-        return raw;
+        return TranslationService.SanitizeIngredient(raw, null);
     }
 
     private static string TranslateTitleQuick(string title, string category)

@@ -9,10 +9,10 @@ class ApiConstants {
 
   // Đặt true để sử dụng máy chủ đám mây Render 24/7 (Khuyên dùng khi build APK)
   // Đặt false nếu muốn chạy thử nghiệm với backend cục bộ trên máy tính
-  static const bool useCloudApi = true;
+  static const bool useCloudApi = false;
 
   // Địa chỉ IP của máy tính trong mạng Wi-Fi (cho trường hợp test local)
-  static const String localHostIp = '192.168.1.16';
+  static const String localHostIp = '192.168.1.14';
 
   // Đặt true nếu cắm cáp USB và đã chạy lệnh `adb reverse tcp:5065 tcp:5065`
   static const bool useAdbReverse = true;

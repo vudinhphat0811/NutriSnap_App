@@ -15,11 +15,13 @@ class MealJournalScreen extends StatefulWidget {
 class _MealJournalScreenState extends State<MealJournalScreen> {
   final appState = AppStateService.instance;
   String _selectedFilter = 'ALL'; // 'ALL', 'BỮA SÁNG', 'BỮA TRƯA', 'BỮA TỐI', 'ĂN XẾ'
+  String _selectedDateScope = 'TODAY'; // 'TODAY' (Hôm nay), 'ALL' (Tất cả lịch sử)
 
   @override
   void initState() {
     super.initState();
     appState.addListener(_onStateChanged);
+    appState.checkAndResetForNewDay();
   }
 
   @override
@@ -233,14 +235,93 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
     );
   }
 
+  Widget _buildDateScopeSelector() {
+    final todayCount = appState.todayMealLogs.length;
+    final allCount = appState.mealLogs.length;
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedDateScope = 'TODAY'),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: _selectedDateScope == 'TODAY' ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: _selectedDateScope == 'TODAY'
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  'Hôm nay ($todayCount)',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: _selectedDateScope == 'TODAY' ? FontWeight.bold : FontWeight.w500,
+                    color: _selectedDateScope == 'TODAY' ? AppColors.primary : AppColors.textGray,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedDateScope = 'ALL'),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: _selectedDateScope == 'ALL' ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: _selectedDateScope == 'ALL'
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  'Tất cả lịch sử ($allCount)',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: _selectedDateScope == 'ALL' ? FontWeight.bold : FontWeight.w500,
+                    color: _selectedDateScope == 'ALL' ? AppColors.primary : AppColors.textGray,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final logs = appState.mealLogs;
+    final baseLogs = _selectedDateScope == 'TODAY' ? appState.todayMealLogs : appState.mealLogs;
 
     // Lọc theo MealType
     final filteredLogs = _selectedFilter == 'ALL'
-        ? logs
-        : logs.where((item) {
+        ? baseLogs
+        : baseLogs.where((item) {
             final typeUpper = item.mealType.toUpperCase();
             if (_selectedFilter == 'BỮA SÁNG') return typeUpper.contains('SÁNG') || typeUpper.contains('BREAKFAST');
             if (_selectedFilter == 'BỮA TRƯA') return typeUpper.contains('TRƯA') || typeUpper.contains('LUNCH');
@@ -252,32 +333,46 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 1. Top Bar
-              _buildTopBar(),
-              const SizedBox(height: 16),
+        child: RefreshIndicator(
+          color: AppColors.primary,
+          onRefresh: () async {
+            await appState.checkAndResetForNewDay();
+            if (appState.authToken != null && !appState.isGuestMode) {
+              await appState.syncMealLogsFromServer();
+              await appState.fetchDashboardToday();
+            }
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 1. Top Bar
+                _buildTopBar(),
+                const SizedBox(height: 14),
 
-              // 2. Thẻ Hero Dashboard Tổng Hợp Dinh Dưỡng Cao Cấp
-              _buildNutritionHeroCard(),
-              const SizedBox(height: 20),
+                // 2. Chuyển đổi Hôm Nay / Tất Cả Lịch Sử
+                _buildDateScopeSelector(),
+                const SizedBox(height: 16),
 
-              // 3. Thanh Lọc Theo Bữa Ăn (Tabs / Filter Chips)
-              _buildMealTypeFilters(logs),
-              const SizedBox(height: 16),
+                // 3. Thẻ Hero Dashboard Tổng Hợp Dinh Dưỡng Cao Cấp
+                _buildNutritionHeroCard(),
+                const SizedBox(height: 20),
 
-              // 4. Danh Sách Món Ăn Trong Ngày
-              if (filteredLogs.isEmpty)
-                _buildEmptyState()
-              else
-                _buildMealLogsList(filteredLogs),
+                // 4. Thanh Lọc Theo Bữa Ăn (Tabs / Filter Chips)
+                _buildMealTypeFilters(baseLogs),
+                const SizedBox(height: 16),
 
-              const SizedBox(height: 24),
-            ],
+                // 5. Danh Sách Món Ăn Trong Ngày
+                if (filteredLogs.isEmpty)
+                  _buildEmptyState()
+                else
+                  _buildMealLogsList(filteredLogs),
+
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
       ),
@@ -358,17 +453,26 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
 
   /// Thẻ Hero Dashboard: Vòng tròn tiến độ Calo & Thanh Macro chi tiết
   Widget _buildNutritionHeroCard() {
-    final int totalCal = appState.totalCaloriesLogged;
+    final bool isToday = _selectedDateScope == 'TODAY';
+    final int totalCal = isToday
+        ? appState.totalCaloriesLogged
+        : appState.mealLogs.fold(0, (sum, i) => sum + i.calories);
     final int goalCal = appState.dailyCalorieGoal > 0 ? appState.dailyCalorieGoal : 2000;
     final double calPercent = (totalCal / goalCal).clamp(0.0, 1.0);
 
-    final int pro = appState.totalProteinLogged;
+    final int pro = isToday
+        ? appState.totalProteinLogged
+        : appState.mealLogs.fold(0, (sum, i) => sum + i.protein);
     final int targetPro = appState.userProfile.targetProtein > 0 ? appState.userProfile.targetProtein.round() : 130;
 
-    final int carb = appState.totalCarbsLogged;
+    final int carb = isToday
+        ? appState.totalCarbsLogged
+        : appState.mealLogs.fold(0, (sum, i) => sum + i.carbs);
     final int targetCarb = appState.userProfile.targetCarbs > 0 ? appState.userProfile.targetCarbs.round() : 180;
 
-    final int fat = appState.totalFatLogged;
+    final int fat = isToday
+        ? appState.totalFatLogged
+        : appState.mealLogs.fold(0, (sum, i) => sum + i.fat);
     final int targetFat = appState.userProfile.targetFat > 0 ? appState.userProfile.targetFat.round() : 50;
 
     return Container(
@@ -661,7 +765,7 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(16),
                   child: Image.network(
-                    log.imageUrl,
+                    log.displayImageUrl,
                     width: 65,
                     height: 65,
                     fit: BoxFit.cover,
@@ -695,7 +799,7 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            log.time,
+                            log.displayTime,
                             style: const TextStyle(fontSize: 11, color: AppColors.textGray),
                           ),
                         ],

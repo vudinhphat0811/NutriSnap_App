@@ -28,27 +28,46 @@ public class RecipeService
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "NutriSnapApp/1.0");
     }
 
-    /// 1. Lấy món ngẫu nhiên cho tính năng lắc điện thoại (hỗ trợ dịch thuật và thuật toán tính điểm)
+    /// <summary>
+    /// Lấy toàn bộ kho công thức món ăn từ Cơ sở dữ liệu cục bộ (1,100+ món đã đồng bộ đa nguồn)
+    /// </summary>
+    public async Task<List<RecommendedMealDto>> GetAllDatabaseRecipesAsync()
+    {
+        try
+        {
+            var local = await _mealDbSyncService.GetOrSyncLocalRecipesAsync(false);
+            if (local != null && local.Count > 0)
+            {
+                return local;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lỗi khi nạp cơ sở dữ liệu món ăn cục bộ, chuyển sang danh mục dự phòng");
+        }
+
+        return MultiSourceCatalogService.GetAllRecipes();
+    }
+
+    /// 1. Lấy món ngẫu nhiên cho tính năng lắc điện thoại từ Database cục bộ 1,100+ món
     public async Task<RecommendedMealDto?> GetRandomMealAsync(string lang = "vi")
     {
         try
         {
-            var res = await _httpClient.GetStringAsync("https://www.themealdb.com/api/json/v1/1/random.php");
-            var node = JsonNode.Parse(res);
-            var rawMeal = node?["meals"]?[0]?.AsObject();
-            if (rawMeal == null) return null;
+            var all = await GetAllDatabaseRecipesAsync();
+            if (all == null || all.Count == 0) return null;
 
-            string idMeal = rawMeal["idMeal"]?.ToString() ?? "";
-            if (string.IsNullOrEmpty(idMeal)) return null;
+            int randomIndex = Random.Shared.Next(all.Count);
+            var chosen = all[randomIndex];
 
-            var mealDto = await GetMealDetailAsync(idMeal, lang);
+            var mealDto = await GetMealDetailAsync(chosen.IdMeal, lang);
             if (mealDto != null)
             {
                 // Thêm huy hiệu lắc rớt món may mắn
                 var badges = mealDto.Badges.ToList();
                 badges.Insert(0, lang == "vi" ? "🎲 Món lắc may mắn" : "🎲 Lucky Shake");
                 mealDto.Badges = badges;
-                mealDto.MatchScore = new Random().Next(88, 99);
+                mealDto.MatchScore = Random.Shared.Next(88, 99);
             }
             return mealDto;
         }
@@ -66,6 +85,15 @@ public class RecipeService
     /// - Mỗi lần reload / refresh (refreshCount) sẽ đưa ra các món mới mẻ phù hợp tiếp theo.
     public async Task<List<RecommendedMealDto>> GetDailyRecommendationsAsync(RecommendationRequest req)
     {
+        DateTime targetDate = DateTime.TryParse(req.Date, out var parsedDate) ? parsedDate.Date : DateTime.UtcNow.Date;
+        int dayOfYear = targetDate.DayOfYear;
+
+        string cacheKey = $"daily_recom_{req.DietType}_{req.Goal}_{req.RemainingCalories}_{req.Category}_{req.RefreshCount}_{req.Limit}_{dayOfYear}";
+        if (_cache.TryGetValue(cacheKey, out List<RecommendedMealDto>? cachedList) && cachedList != null)
+        {
+            return cachedList;
+        }
+
         // Xác định danh mục phù hợp theo Chế độ ăn (DietType) hoặc Danh mục người dùng chọn
         List<string> categories = new();
         if (!string.IsNullOrWhiteSpace(req.Category))
@@ -105,14 +133,6 @@ public class RecipeService
         {
             candidateMeals.RemoveAll(m => IsMeatRecipe(m));
 
-            // Đồng thời nạp toàn bộ các món chay đặc sắc từ CombinationRecipeCatalog
-            foreach (var r in CombinationRecipeCatalog.Recipes)
-            {
-                if (!IsMeatRecipe(r) && !candidateMeals.Any(x => x.IdMeal == r.IdMeal))
-                {
-                    candidateMeals.Add(r);
-                }
-            }
         }
 
         // Lọc trùng theo IdMeal
@@ -126,10 +146,11 @@ public class RecipeService
             return new List<RecommendedMealDto>();
         }
 
-        // Tính toán dinh dưỡng, điểm phù hợp MatchScore và Gắn Badges cho từng món
+        // Tính toán dinh dưỡng, chuẩn hóa định lượng, điểm phù hợp MatchScore và Gắn Badges cho từng món
         foreach (var meal in candidateMeals)
         {
             CalculateNutrition(meal);
+            SanitizeMealMeasures(meal);
             meal.MatchScore = CalculateMatchScore(meal, req.Goal, req.DietType, req.RemainingCalories);
             meal.Badges = GenerateBadges(meal, req.RemainingCalories);
         }
@@ -140,26 +161,27 @@ public class RecipeService
             .ToList();
 
         // Áp dụng thuật toán xoay vòng theo ngày và lượt refresh
-        DateTime targetDate = DateTime.TryParse(req.Date, out var parsedDate) ? parsedDate.Date : DateTime.UtcNow.Date;
-        int dayOfYear = targetDate.DayOfYear;
-
         var rotatedList = ApplyDailyRotationAlgorithm(sortedByScore, req.Limit, dayOfYear, req.RefreshCount);
 
-        // Tự động dịch tên món sang Tiếng Việt cho danh sách trả về
-        foreach (var meal in rotatedList)
-        {
-            meal.StrMealVi = await _translationService.TranslateAsync(meal.StrMeal, "vi", "en");
-        }
+        // Tự động dịch tên món sang Tiếng Việt cho danh sách trả về (chạy song song siêu tốc)
+        var transTasks = rotatedList
+            .Where(m => string.IsNullOrWhiteSpace(m.StrMealVi) || m.StrMealVi == m.StrMeal)
+            .Select(async meal =>
+            {
+                meal.StrMealVi = await _translationService.TranslateAsync(meal.StrMeal, "vi", "en");
+            });
+        await Task.WhenAll(transTasks);
 
+        _cache.Set(cacheKey, rotatedList, TimeSpan.FromMinutes(30));
         return rotatedList;
     }
 
     /// <summary>
-    /// Lấy chi tiết món ăn đầy đủ và tự động dịch 100% sang Tiếng Việt bằng TranslationService
+    /// Lấy chi tiết món ăn đầy đủ từ Cơ sở dữ liệu cục bộ và tự động dịch 100% sang Tiếng Việt bằng TranslationService
     /// </summary>
     public async Task<RecommendedMealDto?> GetMealDetailAsync(string idMeal, string lang = "vi")
     {
-        string cacheKey = $"meal_detail_{idMeal}_{lang}";
+        string cacheKey = $"local_meal_detail_{idMeal}_{lang}";
         if (_cache.TryGetValue(cacheKey, out RecommendedMealDto? cached) && cached != null)
         {
             return cached;
@@ -167,50 +189,80 @@ public class RecipeService
 
         try
         {
-            string url = $"https://www.themealdb.com/api/json/v1/1/lookup.php?i={idMeal}";
-            var response = await _httpClient.GetStringAsync(url);
-            var node = JsonNode.Parse(response);
-            var rawMeal = node?["meals"]?[0]?.AsObject();
-            if (rawMeal == null) return null;
+            var all = await GetAllDatabaseRecipesAsync();
+            var rawMeal = all.FirstOrDefault(m => string.Equals(m.IdMeal, idMeal, StringComparison.OrdinalIgnoreCase));
 
-            var ings = new List<string>();
-            var meas = new List<string>();
-
-            for (int i = 1; i <= 20; i++)
+            if (rawMeal == null)
             {
-                var ing = rawMeal[$"strIngredient{i}"]?.ToString()?.Trim();
-                var mea = rawMeal[$"strMeasure{i}"]?.ToString()?.Trim();
-                if (!string.IsNullOrEmpty(ing))
-                {
-                    ings.Add(ing);
-                    meas.Add(mea ?? "");
-                }
+                return null;
             }
 
+            // Nhân bản đối tượng DTO để an toàn với bộ nhớ đệm
             var meal = new RecommendedMealDto
             {
-                IdMeal = rawMeal["idMeal"]?.ToString() ?? idMeal,
-                StrMeal = rawMeal["strMeal"]?.ToString() ?? "",
-                StrMealThumb = rawMeal["strMealThumb"]?.ToString() ?? "",
-                StrCategory = rawMeal["strCategory"]?.ToString(),
-                StrArea = rawMeal["strArea"]?.ToString(),
-                StrInstructions = rawMeal["strInstructions"]?.ToString(),
-                StrYoutube = rawMeal["strYoutube"]?.ToString(),
-                Ingredients = ings,
-                Measures = meas,
+                IdMeal = rawMeal.IdMeal,
+                StrMeal = rawMeal.StrMeal,
+                StrMealVi = rawMeal.StrMealVi,
+                StrMealThumb = rawMeal.StrMealThumb,
+                StrCategory = rawMeal.StrCategory,
+                StrArea = rawMeal.StrArea,
+                StrInstructions = rawMeal.StrInstructions,
+                StrInstructionsVi = rawMeal.StrInstructionsVi,
+                StrYoutube = rawMeal.StrYoutube,
+                Ingredients = rawMeal.Ingredients != null ? new List<string>(rawMeal.Ingredients) : new List<string>(),
+                IngredientsVi = rawMeal.IngredientsVi != null ? new List<string>(rawMeal.IngredientsVi) : new List<string>(),
+                Measures = rawMeal.Measures != null ? new List<string>(rawMeal.Measures) : new List<string>(),
+                MeasuresVi = rawMeal.MeasuresVi != null ? new List<string>(rawMeal.MeasuresVi) : new List<string>(),
+                EstimatedCalories = rawMeal.EstimatedCalories,
+                EstimatedProtein = rawMeal.EstimatedProtein,
+                EstimatedCarbs = rawMeal.EstimatedCarbs,
+                EstimatedFat = rawMeal.EstimatedFat,
+                MatchScore = rawMeal.MatchScore,
+                Badges = rawMeal.Badges != null ? new List<string>(rawMeal.Badges) : new List<string>()
             };
 
-            CalculateNutrition(meal);
+            if (meal.EstimatedCalories == 0)
+            {
+                CalculateNutrition(meal);
+            }
 
             if (lang.Equals("vi", StringComparison.OrdinalIgnoreCase))
             {
-                meal.StrMealVi = await _translationService.TranslateAsync(meal.StrMeal, "vi", "en");
-                if (!string.IsNullOrEmpty(meal.StrInstructions))
+                var taskTitle = (string.IsNullOrWhiteSpace(meal.StrMealVi) || meal.StrMealVi == meal.StrMeal)
+                    ? _translationService.TranslateAsync(meal.StrMeal, "vi", "en")
+                    : Task.FromResult(meal.StrMealVi!);
+
+                var taskInstructions = (string.IsNullOrWhiteSpace(meal.StrInstructionsVi) && !string.IsNullOrWhiteSpace(meal.StrInstructions))
+                    ? _translationService.TranslateAsync(meal.StrInstructions, "vi", "en")
+                    : Task.FromResult(meal.StrInstructionsVi ?? "");
+
+                await Task.WhenAll(taskTitle, taskInstructions);
+
+                meal.StrMealVi = await taskTitle;
+                meal.StrInstructionsVi = await taskInstructions;
+
+                // 1. Chuẩn hóa & khắc phục lỗi dịch sai ngữ cảnh cho danh sách nguyên liệu
+                var sanitizedIngredients = new List<string>();
+                for (int i = 0; i < meal.Ingredients.Count; i++)
                 {
-                    meal.StrInstructionsVi = await _translationService.TranslateAsync(meal.StrInstructions, "vi", "en");
+                    string en = meal.Ingredients[i];
+                    string? currentVi = (meal.IngredientsVi != null && i < meal.IngredientsVi.Count) ? meal.IngredientsVi[i] : null;
+                    sanitizedIngredients.Add(TranslationService.SanitizeIngredient(en, currentVi));
                 }
-                meal.IngredientsVi = await _translationService.TranslateBatchAsync(meal.Ingredients, "vi", "en");
-                meal.MeasuresVi = await _translationService.TranslateBatchAsync(meal.Measures, "vi", "en");
+
+                // Chỉ dịch những nguyên liệu thực sự chưa được Việt hóa (vẫn còn nguyên tiếng Anh)
+                for (int i = 0; i < sanitizedIngredients.Count; i++)
+                {
+                    string item = sanitizedIngredients[i];
+                    if (string.Equals(item, meal.Ingredients[i], StringComparison.OrdinalIgnoreCase))
+                    {
+                        sanitizedIngredients[i] = await _translationService.TranslateAsync(item, "vi", "en");
+                    }
+                }
+                meal.IngredientsVi = sanitizedIngredients;
+
+                // 2. Chuẩn hóa & định lượng thực tế 100% cho toàn bộ nguyên liệu của mọi món ăn
+                SanitizeMealMeasures(meal);
             }
 
             _cache.Set(cacheKey, meal, TimeSpan.FromDays(7));
@@ -218,15 +270,16 @@ public class RecipeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi khi lấy chi tiết món {IdMeal}", idMeal);
+            _logger.LogError(ex, "Lỗi khi lấy chi tiết món {IdMeal} từ cơ sở dữ liệu cục bộ", idMeal);
             return null;
         }
     }
 
-    /// Lấy danh sách món theo danh mục (có Cache 1 giờ để tăng tốc độ phản hồi)
+    /// Lấy danh sách món theo danh mục từ cơ sở dữ liệu cục bộ (có Cache 1 giờ để tăng tốc độ phản hồi)
     private async Task<List<RecommendedMealDto>> GetCandidateMealsByCategoryAsync(string category)
     {
-        string cacheKey = $"mealdb_cat_{category.ToLower()}";
+        string cleanCat = category.Trim().ToLower();
+        string cacheKey = $"local_cat_{cleanCat}";
         if (_cache.TryGetValue(cacheKey, out List<RecommendedMealDto>? cached) && cached != null)
         {
             return cached;
@@ -235,31 +288,60 @@ public class RecipeService
         var list = new List<RecommendedMealDto>();
         try
         {
-            string url = $"https://www.themealdb.com/api/json/v1/1/filter.php?c={Uri.EscapeDataString(category)}";
-            var response = await _httpClient.GetStringAsync(url);
-            var node = JsonNode.Parse(response);
-            var mealsArray = node?["meals"]?.AsArray();
+            var all = await GetAllDatabaseRecipesAsync();
 
-            if (mealsArray != null)
+            // 1. Khớp theo StrCategory
+            var matched = all.Where(m =>
             {
-                foreach (var item in mealsArray)
+                string c = (m.StrCategory ?? "").ToLower();
+                return c == cleanCat || c.Contains(cleanCat) || cleanCat.Contains(c);
+            }).ToList();
+
+            // 2. Mở rộng tìm kiếm nếu số lượng ứng viên theo danh mục chưa phong phú
+            if (matched.Count < 6)
+            {
+                var extra = all.Where(m =>
                 {
-                    if (item == null) continue;
-                    list.Add(new RecommendedMealDto
-                    {
-                        IdMeal = item["idMeal"]?.ToString() ?? "",
-                        StrMeal = item["strMeal"]?.ToString() ?? "",
-                        StrMealThumb = item["strMealThumb"]?.ToString() ?? "",
-                        StrCategory = category
-                    });
-                }
+                    if (matched.Any(x => x.IdMeal == m.IdMeal)) return false;
+                    string name = m.StrMeal.ToLower();
+                    string nameVi = (m.StrMealVi ?? "").ToLower();
+                    return name.Contains(cleanCat) || nameVi.Contains(cleanCat);
+                }).Take(20);
+                matched.AddRange(extra);
+            }
+
+            foreach (var item in matched)
+            {
+                var dto = new RecommendedMealDto
+                {
+                    IdMeal = item.IdMeal,
+                    StrMeal = item.StrMeal,
+                    StrMealVi = item.StrMealVi,
+                    StrMealThumb = item.StrMealThumb,
+                    StrCategory = item.StrCategory ?? category,
+                    StrArea = item.StrArea,
+                    StrInstructions = item.StrInstructions,
+                    StrInstructionsVi = item.StrInstructionsVi,
+                    StrYoutube = item.StrYoutube,
+                    Ingredients = item.Ingredients != null ? new List<string>(item.Ingredients) : new List<string>(),
+                    IngredientsVi = item.IngredientsVi != null ? new List<string>(item.IngredientsVi) : new List<string>(),
+                    Measures = item.Measures != null ? new List<string>(item.Measures) : new List<string>(),
+                    MeasuresVi = item.MeasuresVi != null ? new List<string>(item.MeasuresVi) : new List<string>(),
+                    EstimatedCalories = item.EstimatedCalories,
+                    EstimatedProtein = item.EstimatedProtein,
+                    EstimatedCarbs = item.EstimatedCarbs,
+                    EstimatedFat = item.EstimatedFat
+                };
+                CalculateNutrition(dto);
+                SanitizeMealMeasures(dto);
+                list.Add(dto);
             }
 
             _cache.Set(cacheKey, list, TimeSpan.FromHours(1));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi khi lấy danh mục {Category} từ TheMealDB", category);
+            _logger.LogError(ex, "Lỗi khi lấy danh mục {Category} từ cơ sở dữ liệu cục bộ", category);
         }
 
         return list;
@@ -313,6 +395,142 @@ public class RecipeService
             meal.EstimatedProtein = 24 + (seed % 14);
             meal.EstimatedCarbs = 28 + (seed % 20);
             meal.EstimatedFat = 12 + (seed % 10);
+        }
+    }
+
+    /// <summary>
+    /// Chuẩn hóa định lượng cho toàn bộ nguyên liệu của mọi món ăn, triệt để loại bỏ placeholder 'Khẩu phần tiêu chuẩn' hoặc 'Khẩu phần MasterChef'
+    /// </summary>
+    public static void SanitizeMealMeasures(RecommendedMealDto meal)
+    {
+        if (meal == null) return;
+        SanitizeMealImage(meal);
+
+        int count = Math.Max(meal.IngredientsVi?.Count ?? 0, meal.Ingredients?.Count ?? 0);
+        if (count == 0) return;
+
+        meal.Ingredients ??= new List<string>();
+        meal.IngredientsVi ??= new List<string>();
+        meal.Measures ??= new List<string>();
+        meal.MeasuresVi ??= new List<string>();
+
+        // Đồng bộ số lượng IngredientsVi nếu còn thiếu
+        while (meal.IngredientsVi.Count < meal.Ingredients.Count)
+        {
+            meal.IngredientsVi.Add(TranslationService.SanitizeIngredient(meal.Ingredients[meal.IngredientsVi.Count], null));
+        }
+
+        var newMeasuresVi = new List<string>(count);
+        var newMeasures = new List<string>(count);
+
+        for (int i = 0; i < count; i++)
+        {
+            string ingVi = i < meal.IngredientsVi.Count ? meal.IngredientsVi[i] : "";
+            string ingEn = i < meal.Ingredients.Count ? meal.Ingredients[i] : "";
+            string ingRef = !string.IsNullOrWhiteSpace(ingVi) ? ingVi : ingEn;
+
+            string mVi = i < meal.MeasuresVi.Count ? meal.MeasuresVi[i] : "";
+            string mEn = i < meal.Measures.Count ? meal.Measures[i] : "";
+
+            bool isPlaceholderVi = IsPlaceholderMeasure(mVi);
+            bool isPlaceholderEn = IsPlaceholderMeasure(mEn);
+
+            if (isPlaceholderVi && isPlaceholderEn)
+            {
+                string realistic = TranslationService.GenerateDefaultMeasure(ingRef, i);
+                newMeasuresVi.Add(realistic);
+                newMeasures.Add(realistic);
+            }
+            else if (isPlaceholderVi && !isPlaceholderEn)
+            {
+                newMeasures.Add(mEn);
+                newMeasuresVi.Add(TranslationService.TranslateMeasure(mEn));
+            }
+            else if (!isPlaceholderVi && isPlaceholderEn)
+            {
+                newMeasuresVi.Add(TranslationService.TranslateMeasure(mVi));
+                newMeasures.Add(mVi);
+            }
+            else
+            {
+                newMeasuresVi.Add(TranslationService.TranslateMeasure(mVi));
+                newMeasures.Add(mEn);
+            }
+        }
+
+        meal.MeasuresVi = newMeasuresVi;
+        meal.Measures = newMeasures;
+    }
+
+    public static bool IsPlaceholderMeasure(string? m)
+    {
+        if (string.IsNullOrWhiteSpace(m)) return true;
+        string lower = m.Trim().ToLowerInvariant();
+        return lower.Contains("tiêu chuẩn") ||
+               lower.Contains("tieu chuan") ||
+               lower.Contains("khẩu phần") ||
+               lower.Contains("khau phan") ||
+               lower.Contains("standard portion") ||
+               lower.Contains("default portion") ||
+               lower.Contains("masterchef");
+    }
+
+    /// <summary>
+    /// Chuẩn hóa ảnh đại diện cho món ăn, loại bỏ ảnh placeholder sườn nướng BBQ bị lặp lại cho các món xào/mực/rau
+    /// </summary>
+    public static void SanitizeMealImage(RecommendedMealDto meal)
+    {
+        if (meal == null) return;
+        string current = meal.StrMealThumb ?? "";
+
+        // Giữ nguyên ảnh chụp món gốc từ TheMealDB
+        if (current.Contains("themealdb.com", StringComparison.OrdinalIgnoreCase)) return;
+
+        bool isOverusedRibs = current.Contains("photo-1544025162-d76694265947");
+        bool isGenericSalad = current.Contains("photo-1546069901-ba9599a7e63c");
+        bool isSaladBowl = current.Contains("photo-1540420773420-3366772f4999");
+        bool isEmpty = string.IsNullOrWhiteSpace(current);
+
+        if (!isOverusedRibs && !isGenericSalad && !isSaladBowl && !isEmpty) return;
+
+        string titleLower = (meal.StrMealVi ?? meal.StrMeal ?? "").ToLowerInvariant();
+
+        // 1. Món Bò xào rau củ / xào rau muống / xào cải ngọt (dùng ảnh chảo xào/đĩa xào nóng hổi, tuyệt đối không dùng đĩa salad)
+        if ((titleLower.Contains("bò") || titleLower.Contains("beef")) &&
+            (titleLower.Contains("xào") || titleLower.Contains("stir") || titleLower.Contains("spinach") || titleLower.Contains("cải") || titleLower.Contains("muống") || titleLower.Contains("bông cải")))
+        {
+            int seed = Math.Abs((meal.IdMeal ?? "1").GetHashCode()) % 3;
+            meal.StrMealThumb = seed switch
+            {
+                0 => "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=600&q=80",
+                1 => "https://images.unsplash.com/photo-1541832676-9b763b0239ab?auto=format&fit=crop&w=600&q=80",
+                _ => "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&q=80"
+            };
+        }
+        // 2. Món Mực ống / hải sản
+        else if (titleLower.Contains("mực") || titleLower.Contains("squid") || titleLower.Contains("calamari"))
+        {
+            meal.StrMealThumb = "https://images.unsplash.com/photo-1532550907401-a500c9a57435?auto=format&fit=crop&w=600&q=80";
+        }
+        // 3. Món Thịt heo xào / luộc
+        else if (titleLower.Contains("heo") || titleLower.Contains("pork") || titleLower.Contains("lợn"))
+        {
+            meal.StrMealThumb = "https://images.unsplash.com/photo-1529042410759-befb1204b468?auto=format&fit=crop&w=600&q=80";
+        }
+        // 4. Món Đậu phụ / Tofu
+        else if (titleLower.Contains("đậu") || titleLower.Contains("tofu"))
+        {
+            meal.StrMealThumb = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&q=80";
+        }
+        // 5. Món Trứng
+        else if (titleLower.Contains("trứng") || titleLower.Contains("egg"))
+        {
+            meal.StrMealThumb = "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=600&q=80";
+        }
+        // 6. Món Bò kho / Bò hầm
+        else if (titleLower.Contains("bò kho") || titleLower.Contains("hầm") || titleLower.Contains("stew"))
+        {
+            meal.StrMealThumb = "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=600&q=80";
         }
     }
 
@@ -427,7 +645,8 @@ public class RecipeService
         }
 
         var result = new List<RecommendedMealDto>();
-        var usedIds = new HashSet<string>();
+        var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var usedThumbs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // 1. Chọn 1 hoặc 2 món trùng với ngày hôm trước (dayOfYear - 1) từ top 10 món phù hợp nhất
         int topPoolSize = Math.Min(10, sortedMeals.Count);
@@ -437,6 +656,7 @@ public class RecipeService
         var overlapMeal1 = sortedMeals[yesterdaySeed1];
         result.Add(overlapMeal1);
         usedIds.Add(overlapMeal1.IdMeal);
+        if (!string.IsNullOrWhiteSpace(overlapMeal1.StrMealThumb)) usedThumbs.Add(overlapMeal1.StrMealThumb);
 
         if (overlapCount > 1)
         {
@@ -446,10 +666,12 @@ public class RecipeService
                 yesterdaySeed2 = (yesterdaySeed1 + 1) % topPoolSize;
             }
             var overlapMeal2 = sortedMeals[yesterdaySeed2];
-            if (!usedIds.Contains(overlapMeal2.IdMeal))
+            if (!usedIds.Contains(overlapMeal2.IdMeal) &&
+                (string.IsNullOrWhiteSpace(overlapMeal2.StrMealThumb) || !usedThumbs.Contains(overlapMeal2.StrMealThumb)))
             {
                 result.Add(overlapMeal2);
                 usedIds.Add(overlapMeal2.IdMeal);
+                if (!string.IsNullOrWhiteSpace(overlapMeal2.StrMealThumb)) usedThumbs.Add(overlapMeal2.StrMealThumb);
             }
         }
 
@@ -458,6 +680,7 @@ public class RecipeService
         // - Ngày hôm nay khác ngày hôm trước
         // - Mỗi lần reload/refresh người dùng nhận được các món mới
         // - Luôn ưu tiên các món có MatchScore cao
+        // - Tuyệt đối không trùng ảnh hiển thị giữa các món kề nhau
         var remainingCandidates = sortedMeals
             .Where(m => !usedIds.Contains(m.IdMeal))
             .Select(m =>
@@ -475,8 +698,31 @@ public class RecipeService
         foreach (var meal in remainingCandidates)
         {
             if (result.Count >= limit) break;
+            // Chống trùng ảnh: Không cho phép 2 món trong cùng danh sách hiển thị dùng chung 1 ảnh
+            if (!string.IsNullOrWhiteSpace(meal.StrMealThumb) && usedThumbs.Contains(meal.StrMealThumb))
+            {
+                continue;
+            }
             result.Add(meal);
             usedIds.Add(meal.IdMeal);
+            if (!string.IsNullOrWhiteSpace(meal.StrMealThumb))
+            {
+                usedThumbs.Add(meal.StrMealThumb);
+            }
+        }
+
+        // Nếu sau khi lọc trùng ảnh mà danh sách vẫn chưa đủ limit, bù thêm các món còn lại
+        if (result.Count < limit)
+        {
+            foreach (var meal in remainingCandidates)
+            {
+                if (result.Count >= limit) break;
+                if (!usedIds.Contains(meal.IdMeal))
+                {
+                    result.Add(meal);
+                    usedIds.Add(meal.IdMeal);
+                }
+            }
         }
 
         // Sắp xếp lại danh sách kết quả cuối cùng theo MatchScore để hiển thị đẹp mắt
@@ -538,28 +784,8 @@ public class RecipeService
 
         var candidatePool = new Dictionary<string, RecommendedMealDto>(StringComparer.OrdinalIgnoreCase);
 
-        // 2. TẬP HỢP KHO CÔNG THỨC MẪU VIỆT NAM + CƠ SỞ DỮ LIỆU THEMEALDB ĐÃ ĐỒNG BỘ
-        var masterRecipes = new List<RecommendedMealDto>();
-        masterRecipes.AddRange(CombinationRecipeCatalog.Recipes);
-
-        try
-        {
-            var localMealDb = await _mealDbSyncService.GetOrSyncLocalRecipesAsync(false);
-            if (localMealDb != null && localMealDb.Count > 0)
-            {
-                foreach (var m in localMealDb)
-                {
-                    if (!masterRecipes.Any(x => x.IdMeal == m.IdMeal))
-                    {
-                        masterRecipes.Add(m);
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning("Không thể tải cơ sở dữ liệu TheMealDB cục bộ: {Message}", ex.Message);
-        }
+        // 2. NẠP TOÀN BỘ KHO CÔNG THỨC CƠ SỞ DỮ LIỆU CỤC BỘ (1,100+ MÓN)
+        var masterRecipes = await GetAllDatabaseRecipesAsync();
 
         // 3. ĐỐI SOÁT & XẾP HẠNG MÓN ĂN THEO NGUYÊN LIỆU TRÊN TOÀN BỘ KHO CÔNG THỨC CỤC BỘ
         foreach (var catMeal in masterRecipes)
@@ -599,6 +825,7 @@ public class RecipeService
                     EstimatedFat = catMeal.EstimatedFat,
                     Badges = new(catMeal.Badges)
                 };
+                SanitizeMealMeasures(cloned);
 
                 bool matchedUserMeat = matchedIngs.Any(i => i.IsMeat);
                 bool matchedUserVeggie = matchedIngs.Any(i => i.IsVeggie);
@@ -672,16 +899,16 @@ public class RecipeService
             .Take(limit)
             .ToList();
 
-        // 5. TỰ ĐỘNG DỊCH TIẾNG VIỆT CHO CÁC MÓN CHƯA CÓ BẢN DỊCH
+        // 5. TỰ ĐỘNG DỊCH TIẾNG VIỆT CHO CÁC MÓN CHƯA CÓ BẢN DỊCH (chạy song song)
         if (lang.Equals("vi", StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var m in sorted)
-            {
-                if (string.IsNullOrWhiteSpace(m.StrMealVi))
+            var transTasks = sorted
+                .Where(m => string.IsNullOrWhiteSpace(m.StrMealVi) || m.StrMealVi == m.StrMeal)
+                .Select(async m =>
                 {
                     m.StrMealVi = await _translationService.TranslateAsync(m.StrMeal, "vi", "en");
-                }
-            }
+                });
+            await Task.WhenAll(transTasks);
         }
 
         _cache.Set(cacheKey, sorted, TimeSpan.FromHours(1));
@@ -738,55 +965,82 @@ public class RecipeService
 
     private static bool RecipeContainsIngredient(RecommendedMealDto recipe, IngredientInfo ing)
     {
+        string rawLower = ing.Raw.Trim().ToLower();
+        string cleanKey = ing.CleanKey.ToLower();
+        string viKey = ing.ViKey.ToLower();
+
         // 1. Kiểm tra nguyên liệu tiếng Anh (loại bỏ nước dùng / hạt nêm gà, bò)
-        if (recipe.Ingredients.Any(i =>
+        if (recipe.Ingredients != null && recipe.Ingredients.Any(i =>
         {
             string lower = i.ToLower();
-            if (ing.CleanKey == "chicken" && (lower.Contains("stock") || lower.Contains("broth") || lower.Contains("bouillon") || lower.Contains("cube") || lower.Contains("powder")))
+            if (cleanKey == "chicken" && (lower.Contains("stock") || lower.Contains("broth") || lower.Contains("bouillon") || lower.Contains("cube") || lower.Contains("powder")))
             {
                 return false;
             }
-            if (ing.CleanKey == "beef" && (lower.Contains("stock") || lower.Contains("broth") || lower.Contains("bouillon") || lower.Contains("cube") || lower.Contains("powder")))
+            if (cleanKey == "beef" && (lower.Contains("stock") || lower.Contains("broth") || lower.Contains("bouillon") || lower.Contains("cube") || lower.Contains("powder")))
             {
                 return false;
             }
-            return lower.Equals(ing.CleanKey, StringComparison.OrdinalIgnoreCase) ||
-                   lower.Contains(ing.CleanKey, StringComparison.OrdinalIgnoreCase) ||
-                   lower.Contains(ing.Raw.ToLower(), StringComparison.OrdinalIgnoreCase);
+
+            if (lower.Equals(cleanKey, StringComparison.OrdinalIgnoreCase) ||
+                lower.Contains(cleanKey, StringComparison.OrdinalIgnoreCase) ||
+                lower.Contains(rawLower, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Hỗ trợ từ đồng nghĩa tiếng Anh
+            if (cleanKey == "shrimp" && (lower.Contains("prawn") || lower.Contains("shrimp"))) return true;
+            if (cleanKey == "pork" && (lower.Contains("bacon") || lower.Contains("ham") || lower.Contains("pork"))) return true;
+            if (cleanKey == "beef" && (lower.Contains("steak") || lower.Contains("beef") || lower.Contains("sirloin"))) return true;
+            if (cleanKey == "cheese" && (lower.Contains("cheddar") || lower.Contains("mozzarella") || lower.Contains("parmesan") || lower.Contains("feta") || lower.Contains("cheese"))) return true;
+            if (cleanKey == "coconut" && (lower.Contains("coconut") || lower.Contains("coconut milk") || lower.Contains("coconut cream"))) return true;
+            if (cleanKey == "squid" && (lower.Contains("squid") || lower.Contains("calamari"))) return true;
+
+            return false;
         }))
         {
             return true;
         }
 
         // 2. Kiểm tra danh mục
-        if ((recipe.StrCategory ?? "").Equals(ing.CleanKey, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrEmpty(recipe.StrCategory))
         {
-            return true;
+            string catLower = recipe.StrCategory.ToLower();
+            if (catLower.Equals(cleanKey, StringComparison.OrdinalIgnoreCase) || catLower.Contains(cleanKey))
+            {
+                return true;
+            }
+            if ((cleanKey == "shrimp" || cleanKey == "fish" || cleanKey == "squid") && catLower.Contains("seafood")) return true;
         }
 
         // 3. Kiểm tra tên món
-        if (recipe.StrMeal.Contains(ing.CleanKey, StringComparison.OrdinalIgnoreCase) ||
-            (recipe.StrMealVi ?? "").Contains(ing.ViKey, StringComparison.OrdinalIgnoreCase))
+        string mealEn = (recipe.StrMeal ?? "").ToLower();
+        string mealVi = (recipe.StrMealVi ?? "").ToLower();
+        if (mealEn.Contains(cleanKey) || mealEn.Contains(rawLower) ||
+            (!string.IsNullOrEmpty(mealVi) && (mealVi.Contains(viKey) || mealVi.Contains(rawLower))))
         {
             return true;
         }
 
         // 4. Kiểm tra nguyên liệu tiếng Việt (loại bỏ nấm đùi gà, trứng gà, nước dùng gà/bò bị tính là thịt)
-        foreach (var viIng in recipe.IngredientsVi)
+        if (recipe.IngredientsVi != null && recipe.IngredientsVi.Count > 0)
         {
-            string lowerIng = viIng.ToLower();
-            if (ing.CleanKey == "chicken" && (lowerIng.Contains("nấm") || lowerIng.Contains("trứng") || lowerIng.Contains("nước dùng") || lowerIng.Contains("hạt nêm")))
+            foreach (var viIng in recipe.IngredientsVi)
             {
-                continue;
-            }
-            if (ing.CleanKey == "beef" && (lowerIng.Contains("nước dùng") || lowerIng.Contains("hạt nêm")))
-            {
-                continue;
-            }
-            if (lowerIng.Contains(ing.ViKey, StringComparison.OrdinalIgnoreCase) ||
-                lowerIng.Contains(ing.Raw.ToLower(), StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
+                string lowerIng = viIng.ToLower();
+                if (cleanKey == "chicken" && (lowerIng.Contains("nấm") || lowerIng.Contains("trứng") || lowerIng.Contains("nước dùng") || lowerIng.Contains("hạt nêm")))
+                {
+                    continue;
+                }
+                if (cleanKey == "beef" && (lowerIng.Contains("nước dùng") || lowerIng.Contains("hạt nêm")))
+                {
+                    continue;
+                }
+                if (lowerIng.Contains(viKey) || lowerIng.Contains(rawLower) || (!string.IsNullOrEmpty(cleanKey) && lowerIng.Contains(cleanKey)))
+                {
+                    return true;
+                }
             }
         }
 
@@ -823,83 +1077,217 @@ public class RecipeService
         bool isVeggie = false;
         string viKey = lower;
 
+        // Trứng
         if (lower.Contains("trứng") || clean.Contains("egg"))
         {
             clean = "egg";
             viKey = "trứng";
             isMeat = true;
         }
+        // Thịt bò
         else if (lower.Contains("bò") || clean.Contains("beef"))
         {
             clean = "beef";
             viKey = "bò";
             isMeat = true;
         }
-        else if (lower.Contains("heo") || lower.Contains("lợn") || clean.Contains("pork"))
+        // Thịt heo / lợn
+        else if (lower.Contains("heo") || lower.Contains("lợn") || lower.Contains("ba chỉ") || lower.Contains("ba rọi") || clean.Contains("pork"))
         {
             clean = "pork";
             viKey = "heo";
             isMeat = true;
         }
+        // Thịt gà
         else if (lower.Contains("gà") || clean.Contains("chicken"))
         {
             clean = "chicken";
             viKey = "gà";
             isMeat = true;
         }
+        // Vịt
+        else if (lower.Contains("vịt") || clean.Contains("duck"))
+        {
+            clean = "duck";
+            viKey = "vịt";
+            isMeat = true;
+        }
+        // Cừu
+        else if (lower.Contains("cừu") || clean.Contains("lamb"))
+        {
+            clean = "lamb";
+            viKey = "cừu";
+            isMeat = true;
+        }
+        // Sườn
+        else if (lower.Contains("sườn") || clean.Contains("rib"))
+        {
+            clean = "ribs";
+            viKey = "sườn";
+            isMeat = true;
+        }
+        // Xúc xích / thịt nguội / giăm bông
+        else if (lower.Contains("xúc xích") || lower.Contains("dăm bông") || lower.Contains("giăm bông") || lower.Contains("chả"))
+        {
+            clean = "sausage";
+            viKey = lower;
+            isMeat = true;
+        }
+        // Tôm
         else if (lower.Contains("tôm") || clean.Contains("shrimp") || clean.Contains("prawn"))
         {
             clean = "shrimp";
             viKey = "tôm";
             isMeat = true;
         }
+        // Cá
         else if (lower.Contains("cá") || clean.Contains("fish") || clean.Contains("salmon"))
         {
             clean = "fish";
             viKey = "cá";
             isMeat = true;
         }
+        // Mực
+        else if (lower.Contains("mực") || clean.Contains("squid") || clean.Contains("calamari"))
+        {
+            clean = "squid";
+            viKey = "mực";
+            isMeat = true;
+        }
+        // Cua / ghẹ
+        else if (lower.Contains("cua") || lower.Contains("ghẹ") || clean.Contains("crab"))
+        {
+            clean = "crab";
+            viKey = "cua";
+            isMeat = true;
+        }
+        // Cà chua
         else if (lower.Contains("cà chua") || clean.Contains("tomato"))
         {
             clean = "tomato";
             viKey = "cà chua";
             isVeggie = true;
         }
+        // Bông cải / súp lơ
         else if (lower.Contains("bông cải") || lower.Contains("súp lơ") || clean.Contains("broccoli"))
         {
             clean = "broccoli";
             viKey = "bông cải";
             isVeggie = true;
         }
+        // Cà rốt
         else if (lower.Contains("cà rốt") || clean.Contains("carrot"))
         {
             clean = "carrot";
             viKey = "cà rốt";
             isVeggie = true;
         }
+        // Nấm
         else if (lower.Contains("nấm") || clean.Contains("mushroom"))
         {
             clean = "mushroom";
             viKey = "nấm";
             isVeggie = true;
         }
+        // Khoai tây
         else if (lower.Contains("khoai tây") || clean.Contains("potato"))
         {
             clean = "potato";
             viKey = "khoai tây";
             isVeggie = true;
         }
-        else if (lower.Contains("hành tây") || lower.Contains("hành") || clean.Contains("onion"))
+        // Khoai lang
+        else if (lower.Contains("khoai lang"))
         {
-            clean = "onion";
-            viKey = "hành tây";
+            clean = "sweet potato";
+            viKey = "khoai lang";
             isVeggie = true;
         }
+        // Hành tây / hành
+        else if (lower.Contains("hành tây") || lower.Contains("hành lá") || lower.Contains("hành tím") || lower.Contains("hành") || clean.Contains("onion"))
+        {
+            clean = "onion";
+            viKey = "hành";
+            isVeggie = true;
+        }
+        // Tỏi
+        else if (lower.Contains("tỏi") || clean.Contains("garlic"))
+        {
+            clean = "garlic";
+            viKey = "tỏi";
+            isVeggie = true;
+        }
+        // Gừng
+        else if (lower.Contains("gừng") || clean.Contains("ginger"))
+        {
+            clean = "ginger";
+            viKey = "gừng";
+            isVeggie = true;
+        }
+        // Sả
+        else if (lower.Contains("sả") || clean.Contains("lemongrass"))
+        {
+            clean = "lemongrass";
+            viKey = "sả";
+            isVeggie = true;
+        }
+        // Ớt
+        else if (lower.Contains("ớt") || clean.Contains("chili"))
+        {
+            clean = "chili";
+            viKey = "ớt";
+            isVeggie = true;
+        }
+        // Chanh
+        else if (lower.Contains("chanh") || clean.Contains("lemon") || clean.Contains("lime"))
+        {
+            clean = "lemon";
+            viKey = "chanh";
+            isVeggie = true;
+        }
+        // Cốt dừa
+        else if (lower.Contains("cốt dừa") || lower.Contains("nước cốt dừa") || clean.Contains("coconut"))
+        {
+            clean = "coconut";
+            viKey = "cốt dừa";
+            isVeggie = true;
+        }
+        // Măng tây
+        else if (lower.Contains("măng tây") || clean.Contains("asparagus"))
+        {
+            clean = "asparagus";
+            viKey = "măng tây";
+            isVeggie = true;
+        }
+        // Đậu phụ / đậu hũ
         else if (lower.Contains("đậu phụ") || lower.Contains("đậu hũ") || clean.Contains("tofu"))
         {
             clean = "tofu";
             viKey = "đậu phụ";
             isVeggie = true;
+        }
+        // Bắp cải / xà lách / rau
+        else if (lower.Contains("rau") || lower.Contains("bắp cải") || lower.Contains("cải") || lower.Contains("xà lách"))
+        {
+            clean = "cabbage";
+            viKey = lower;
+            isVeggie = true;
+        }
+        // Phô mai
+        else if (lower.Contains("phô mai") || clean.Contains("cheese"))
+        {
+            clean = "cheese";
+            viKey = "phô mai";
+            isVeggie = false;
+            isMeat = false;
+        }
+        // Bơ
+        else if (lower.Contains("bơ") || clean.Contains("butter"))
+        {
+            clean = "butter";
+            viKey = "bơ";
+            isVeggie = false;
+            isMeat = false;
         }
         else
         {
@@ -910,12 +1298,21 @@ public class RecipeService
     }
 
     /// <summary>
-    /// 4. Tìm kiếm món ăn theo từ khóa
+    /// 4. Tìm kiếm món ăn theo từ khóa trên toàn bộ Cơ Sở Dữ Liệu Cục Bộ (1,100+ món)
+    /// Hỗ trợ tìm kiếm theo tiếng Việt, tiếng Anh, tên món, danh mục, khu vực và nguyên liệu.
     /// </summary>
     public async Task<List<RecommendedMealDto>> SearchMealsAsync(string query, string lang = "vi")
     {
-        string cleanQuery = MapSearchQuery(query);
-        string cacheKey = $"meals_search_{cleanQuery.ToLower()}_{lang}";
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return new List<RecommendedMealDto>();
+        }
+
+        string rawQuery = query.Trim();
+        string cleanQuery = MapSearchQuery(rawQuery).ToLower();
+        string lowerQuery = rawQuery.ToLower();
+
+        string cacheKey = $"local_meals_search_{lowerQuery}_{lang}";
         if (_cache.TryGetValue(cacheKey, out List<RecommendedMealDto>? cached) && cached != null)
         {
             return cached;
@@ -924,54 +1321,101 @@ public class RecipeService
         var results = new List<RecommendedMealDto>();
         try
         {
-            string url = $"https://www.themealdb.com/api/json/v1/1/search.php?s={Uri.EscapeDataString(cleanQuery)}";
-            var response = await _httpClient.GetStringAsync(url);
-            var node = JsonNode.Parse(response);
-            var mealsArray = node?["meals"]?.AsArray();
+            var all = await GetAllDatabaseRecipesAsync();
 
-            // Nếu không ra kết quả, thử filter theo category
-            if (mealsArray == null || mealsArray.Count == 0)
+            // Tính điểm tương đồng cho từng món
+            var scoredMeals = new List<(RecommendedMealDto Meal, int Score)>();
+
+            foreach (var item in all)
             {
-                string catUrl = $"https://www.themealdb.com/api/json/v1/1/filter.php?c={Uri.EscapeDataString(cleanQuery)}";
-                try
+                int score = 0;
+                string mealName = item.StrMeal.ToLower();
+                string mealNameVi = (item.StrMealVi ?? "").ToLower();
+                string category = (item.StrCategory ?? "").ToLower();
+                string area = (item.StrArea ?? "").ToLower();
+
+                // 1. Tên món khớp chính xác hoặc bắt đầu bằng từ khóa
+                if (mealName == lowerQuery || mealNameVi == lowerQuery) score += 100;
+                else if (mealName.StartsWith(lowerQuery) || mealNameVi.StartsWith(lowerQuery)) score += 80;
+                else if (mealName.Contains(lowerQuery) || mealNameVi.Contains(lowerQuery)) score += 60;
+                else if (cleanQuery != lowerQuery && (mealName.Contains(cleanQuery) || mealNameVi.Contains(cleanQuery))) score += 50;
+
+                // 2. Danh mục hoặc khu vực ẩm thực khớp
+                if (category == lowerQuery || category == cleanQuery) score += 40;
+                else if (category.Contains(lowerQuery) || category.Contains(cleanQuery)) score += 30;
+                if (area.Contains(lowerQuery) || area.Contains(cleanQuery)) score += 20;
+
+                // 3. Nguyên liệu trong món ăn khớp
+                bool ingMatched = (item.Ingredients != null && item.Ingredients.Any(i => i.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase) || i.Contains(cleanQuery, StringComparison.OrdinalIgnoreCase))) ||
+                                  (item.IngredientsVi != null && item.IngredientsVi.Any(i => i.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase)));
+                if (ingMatched) score += 35;
+
+                // 4. Huy hiệu (Badges) hoặc Mã món khớp (MasterChef, Vua Đầu Bếp, Eat Clean...)
+                bool badgeMatched = item.Badges != null && item.Badges.Any(b => b.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase) || b.Contains(cleanQuery, StringComparison.OrdinalIgnoreCase) || b.ToLower().Contains("masterchef") || b.ToLower().Contains("vua đầu bếp"));
+                if (badgeMatched && (lowerQuery.Contains("master") || lowerQuery.Contains("chef") || lowerQuery.Contains("đầu bếp") || cleanQuery.Contains("masterchef")))
                 {
-                    var catResp = await _httpClient.GetStringAsync(catUrl);
-                    var catNode = JsonNode.Parse(catResp);
-                    mealsArray = catNode?["meals"]?.AsArray();
+                    score += 75;
                 }
-                catch { }
+                else if (badgeMatched)
+                {
+                    score += 30;
+                }
+
+                if (item.IdMeal.StartsWith("mc_", StringComparison.OrdinalIgnoreCase) && (lowerQuery.Contains("master") || lowerQuery.Contains("chef") || lowerQuery.Contains("đầu bếp") || cleanQuery.Contains("masterchef")))
+                {
+                    score += 85;
+                }
+
+                if (score > 0)
+                {
+                    var dto = new RecommendedMealDto
+                    {
+                        IdMeal = item.IdMeal,
+                        StrMeal = item.StrMeal,
+                        StrMealVi = item.StrMealVi,
+                        StrMealThumb = item.StrMealThumb,
+                        StrCategory = item.StrCategory,
+                        StrArea = item.StrArea,
+                        StrInstructions = item.StrInstructions,
+                        StrInstructionsVi = item.StrInstructionsVi,
+                        StrYoutube = item.StrYoutube,
+                        Ingredients = item.Ingredients != null ? new List<string>(item.Ingredients) : new List<string>(),
+                        IngredientsVi = item.IngredientsVi != null ? new List<string>(item.IngredientsVi) : new List<string>(),
+                        Measures = item.Measures != null ? new List<string>(item.Measures) : new List<string>(),
+                        MeasuresVi = item.MeasuresVi != null ? new List<string>(item.MeasuresVi) : new List<string>(),
+                        EstimatedCalories = item.EstimatedCalories,
+                        EstimatedProtein = item.EstimatedProtein,
+                        EstimatedCarbs = item.EstimatedCarbs,
+                        EstimatedFat = item.EstimatedFat
+                    };
+                    CalculateNutrition(dto);
+                    SanitizeMealMeasures(dto);
+                    scoredMeals.Add((dto, score));
+                }
             }
 
-            if (mealsArray != null)
-            {
-                foreach (var item in mealsArray)
-                {
-                    if (item == null) continue;
-                    var meal = new RecommendedMealDto
-                    {
-                        IdMeal = item["idMeal"]?.ToString() ?? "",
-                        StrMeal = item["strMeal"]?.ToString() ?? "",
-                        StrMealThumb = item["strMealThumb"]?.ToString() ?? "",
-                        StrCategory = item["strCategory"]?.ToString() ?? cleanQuery
-                    };
-                    CalculateNutrition(meal);
-                    results.Add(meal);
-                }
+            results = scoredMeals
+                .OrderByDescending(x => x.Score)
+                .Select(x => x.Meal)
+                .Take(40)
+                .ToList();
 
-                if (lang.Equals("vi", StringComparison.OrdinalIgnoreCase))
+            if (lang.Equals("vi", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var m in results.Take(25))
                 {
-                    foreach (var m in results.Take(20))
+                    if (string.IsNullOrWhiteSpace(m.StrMealVi) || m.StrMealVi == m.StrMeal)
                     {
                         m.StrMealVi = await _translationService.TranslateAsync(m.StrMeal, "vi", "en");
                     }
                 }
-
-                _cache.Set(cacheKey, results, TimeSpan.FromHours(1));
             }
+
+            _cache.Set(cacheKey, results, TimeSpan.FromHours(1));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi khi tìm món với từ khóa {Query}", query);
+            _logger.LogError(ex, "Lỗi khi tìm món trong cơ sở dữ liệu với từ khóa {Query}", query);
         }
 
         return results;
@@ -1054,26 +1498,115 @@ public class RecipeService
             ["thịt_gà"] = "chicken",
             ["gà"] = "chicken",
             ["ức_gà"] = "chicken_breast",
+            ["đùi_gà"] = "chicken",
+            ["cánh_gà"] = "chicken",
             ["thịt_bò"] = "beef",
             ["bò"] = "beef",
+            ["thịt_bắp_bò"] = "beef",
+            ["bít_tết"] = "steak",
             ["thịt_heo"] = "pork",
             ["thịt_lợn"] = "pork",
             ["heo"] = "pork",
+            ["lợn"] = "pork",
+            ["ba_chỉ"] = "pork",
+            ["ba_rọi"] = "pork",
+            ["thịt_băm"] = "pork",
+            ["sườn"] = "ribs",
+            ["sườn_heo"] = "ribs",
+            ["sườn_non"] = "ribs",
+            ["vịt"] = "duck",
+            ["thịt_vịt"] = "duck",
+            ["cừu"] = "lamb",
+            ["thịt_cừu"] = "lamb",
+            ["xúc_xích"] = "sausage",
+            ["thịt_xông_khói"] = "bacon",
+            ["dăm_bông"] = "ham",
+            ["giăm_bông"] = "ham",
+            ["chả"] = "sausage",
             ["trứng"] = "egg",
             ["trứng_gà"] = "egg",
+            ["trứng_vịt"] = "egg",
             ["cà_chua"] = "tomato",
             ["khoai_tây"] = "potato",
+            ["khoai_lang"] = "sweet_potato",
             ["cá_hồi"] = "salmon",
+            ["cá_ngừ"] = "tuna",
             ["cá"] = "fish",
-            ["tôm"] = "prawns",
-            ["nấm"] = "mushrooms",
+            ["tôm"] = "shrimp",
+            ["tôm_sú"] = "shrimp",
+            ["tôm_tươi"] = "shrimp",
+            ["mực"] = "squid",
+            ["mực_ống"] = "squid",
+            ["bạch_tuộc"] = "octopus",
+            ["cua"] = "crab",
+            ["ghẹ"] = "crab",
+            ["nghêu"] = "clam",
+            ["sò"] = "clam",
+            ["nấm"] = "mushroom",
+            ["nấm_rơm"] = "mushroom",
+            ["nấm_hương"] = "mushroom",
+            ["nấm_đông_cô"] = "mushroom",
+            ["nấm_kim_châm"] = "mushroom",
+            ["nấm_mèo"] = "wood_ear_mushroom",
             ["hành_tây"] = "onion",
+            ["hành_lá"] = "spring_onion",
+            ["hành_tím"] = "shallot",
+            ["hành"] = "onion",
             ["cà_rốt"] = "carrot",
             ["bông_cải"] = "broccoli",
+            ["bông_cải_xanh"] = "broccoli",
             ["súp_lơ"] = "cauliflower",
             ["tỏi"] = "garlic",
+            ["gừng"] = "ginger",
+            ["sả"] = "lemongrass",
+            ["ớt"] = "chili",
+            ["chanh"] = "lemon",
             ["phô_mai"] = "cheese",
-            ["bơ"] = "butter"
+            ["phômai"] = "cheese",
+            ["cheese"] = "cheese",
+            ["bơ"] = "butter",
+            ["bơ_lạt"] = "butter",
+            ["trái_bơ"] = "avocado",
+            ["cốt_dừa"] = "coconut",
+            ["nước_cốt_dừa"] = "coconut",
+            ["dừa"] = "coconut",
+            ["mật_ong"] = "honey",
+            ["măng_tây"] = "asparagus",
+            ["bắp_cải"] = "cabbage",
+            ["rau_muống"] = "spinach",
+            ["cải_bó_xôi"] = "spinach",
+            ["rau_bina"] = "spinach",
+            ["cải_thìa"] = "cabbage",
+            ["xà_lách"] = "lettuce",
+            ["dưa_leo"] = "cucumber",
+            ["dưa_chuột"] = "cucumber",
+            ["bí_đỏ"] = "pumpkin",
+            ["bí_ngô"] = "pumpkin",
+            ["đậu_phụ"] = "tofu",
+            ["đậu_hũ"] = "tofu",
+            ["đậu_phộng"] = "peanut",
+            ["lạc"] = "peanut",
+            ["hạt_điều"] = "cashew",
+            ["bắp"] = "corn",
+            ["ngô"] = "corn",
+            ["đậu_hà_lan"] = "peas",
+            ["đậu_que"] = "green_beans",
+            ["tiêu"] = "pepper",
+            ["hạt_tiêu"] = "pepper",
+            ["nước_mắm"] = "fish_sauce",
+            ["nước_tương"] = "soy_sauce",
+            ["xì_dầu"] = "soy_sauce",
+            ["dầu_hào"] = "oyster_sauce",
+            ["dầu_mè"] = "sesame_oil",
+            ["giấm"] = "vinegar",
+            ["mì_ý"] = "spaghetti",
+            ["mì"] = "noodle",
+            ["spaghetti"] = "spaghetti",
+            ["pasta"] = "pasta",
+            ["bún"] = "vermicelli",
+            ["phở"] = "rice_noodle",
+            ["cơm"] = "rice",
+            ["gạo"] = "rice"
         };
         return map.TryGetValue(clean, out var mapped) ? mapped : clean;
     }
@@ -1105,12 +1638,21 @@ public class RecipeService
             ["thịt lợn"] = "pork",
             ["heo"] = "pork",
             ["cá hồi"] = "salmon",
+            ["cá ngừ"] = "tuna",
             ["cá"] = "fish",
             ["hải sản"] = "seafood",
-            ["tôm"] = "prawn",
+            ["tôm"] = "shrimp",
+            ["mực"] = "squid",
+            ["cua"] = "crab",
+            ["vịt"] = "duck",
+            ["cừu"] = "lamb",
+            ["sườn"] = "ribs",
             ["trứng"] = "egg",
             ["mỳ ý"] = "pasta",
+            ["mì ý"] = "pasta",
             ["mì"] = "noodle",
+            ["bún"] = "vermicelli",
+            ["phở"] = "pho",
             ["cơm"] = "rice",
             ["chay"] = "vegetarian",
             ["rau"] = "vegetable",
@@ -1120,8 +1662,19 @@ public class RecipeService
             ["bánh"] = "cake",
             ["tráng miệng"] = "dessert",
             ["nấm"] = "mushroom",
+            ["khoai tây"] = "potato",
             ["khoai"] = "potato",
-            ["cà chua"] = "tomato"
+            ["cà chua"] = "tomato",
+            ["tỏi"] = "garlic",
+            ["gừng"] = "ginger",
+            ["sả"] = "lemongrass",
+            ["phô mai"] = "cheese",
+            ["bơ"] = "butter",
+            ["cốt dừa"] = "coconut",
+            ["măng tây"] = "asparagus",
+            ["masterchef"] = "masterchef",
+            ["vua đầu bếp"] = "masterchef",
+            ["gordon ramsay"] = "gordon"
         };
         foreach (var entry in map)
         {

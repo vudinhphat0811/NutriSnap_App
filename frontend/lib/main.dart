@@ -115,7 +115,8 @@ class MainShellScreen extends StatefulWidget {
   State<MainShellScreen> createState() => _MainShellScreenState();
 }
 
-class _MainShellScreenState extends State<MainShellScreen> with SingleTickerProviderStateMixin {
+class _MainShellScreenState extends State<MainShellScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // Biến quản lý index màn hình đang hiển thị
   int _activeScreenIndex = 0;
 
@@ -131,7 +132,9 @@ class _MainShellScreenState extends State<MainShellScreen> with SingleTickerProv
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AppStateService.instance.addListener(_onStateChanged);
+    AppStateService.instance.checkAndResetForNewDay();
 
     _menuController = AnimationController(
       vsync: this,
@@ -183,9 +186,17 @@ class _MainShellScreenState extends State<MainShellScreen> with SingleTickerProv
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AppStateService.instance.removeListener(_onStateChanged);
     _menuController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      AppStateService.instance.checkAndResetForNewDay();
+    }
   }
 
   void _onStateChanged() {
@@ -200,6 +211,7 @@ class _MainShellScreenState extends State<MainShellScreen> with SingleTickerProv
     if (_activeScreenIndex != 6 && index == 6) {
       AppStateService.instance.previousScreenIndex = _activeScreenIndex;
     }
+    AppStateService.instance.setCurrentScreenIndex(index);
     setState(() {
       _activeScreenIndex = index;
       if (index == 4) {

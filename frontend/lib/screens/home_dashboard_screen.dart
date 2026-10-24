@@ -5,6 +5,8 @@ import '../widgets/calorie_ring_painter.dart';
 import '../widgets/user_avatar_widget.dart';
 import '../widgets/ai_nutrition_report_sheet.dart';
 import '../services/app_state_service.dart';
+import '../models/ingredient_cut_model.dart';
+import 'ingredient_macro_calculator_screen.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
   final Function(int) onNavigate;
@@ -22,6 +24,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   void initState() {
     super.initState();
     appState.addListener(_onStateChanged);
+    appState.checkAndResetForNewDay();
   }
 
   @override
@@ -37,32 +40,44 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Center(
-              child: Text(
-                'NutriSnap',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+      child: RefreshIndicator(
+        color: AppColors.primary,
+        onRefresh: () async {
+          await appState.checkAndResetForNewDay();
+          if (appState.authToken != null && !appState.isGuestMode) {
+            await appState.fetchDashboardToday();
+            await appState.syncMealLogsFromServer();
+          }
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Center(
+                child: Text(
+                  'NutriSnap',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            _buildHeader(),
-            const SizedBox(height: 16),
-            _buildCalorieCard(),
-            const SizedBox(height: 16),
-            _buildAiNutritionBanner(),
-            const SizedBox(height: 16),
-            _buildQuickActions(),
-            const SizedBox(height: 16),
-            _buildWaterTracker(),
-            const SizedBox(height: 20),
-            _buildMealLogSection(),
-            const SizedBox(height: 24),
-          ],
+              const SizedBox(height: 16),
+              _buildHeader(),
+              const SizedBox(height: 16),
+              _buildCalorieCard(),
+              const SizedBox(height: 16),
+              _buildAiNutritionBanner(),
+              const SizedBox(height: 16),
+              _buildIngredientCutGymSection(),
+              const SizedBox(height: 16),
+              _buildQuickActions(),
+              const SizedBox(height: 16),
+              _buildWaterTracker(),
+              const SizedBox(height: 20),
+              _buildMealLogSection(),
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
     );
@@ -479,8 +494,327 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     );
   }
 
+  Widget _buildIngredientCutGymSection() {
+    final isVi = appState.currentLanguage == 'vi';
+
+    // Top các nguyên liệu thô tiêu biểu
+    final topGymCuts = [
+      const IngredientCutModel(
+        id: 'raw_chicken_breast',
+        category: 'Thịt & Trứng',
+        categoryIcon: '🍗',
+        name: 'Ức gà',
+        englishName: 'Raw Chicken Breast',
+        description: 'Chuẩn siết mỡ tăng cơ, đạm tinh khiết, ít mỡ.',
+        defaultPortionName: '100g thô',
+        defaultPortionWeightG: 100,
+        caloriesPer100g: 120,
+        proteinPer100g: 22.5,
+        carbsPer100g: 0.0,
+        fatPer100g: 2.6,
+        fiberPer100g: 0.0,
+        gymBadges: ['💪 22.5g Đạm', '🔥 120 kcal'],
+        imageUrl: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=400&q=80',
+      ),
+      const IngredientCutModel(
+        id: 'raw_chicken_thigh',
+        category: 'Thịt & Trứng',
+        categoryIcon: '🍗',
+        name: 'Đùi gà',
+        englishName: 'Raw Chicken Thigh',
+        description: 'Đậm vị, nhiều sắt kẽm, thịt mềm ngọt.',
+        defaultPortionName: '100g thô',
+        defaultPortionWeightG: 100,
+        caloriesPer100g: 177,
+        proteinPer100g: 19.7,
+        carbsPer100g: 0.0,
+        fatPer100g: 10.4,
+        fiberPer100g: 0.0,
+        gymBadges: ['💪 19.7g Đạm', '🩸 Giàu Sắt'],
+        imageUrl: 'https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=400&q=80',
+      ),
+      const IngredientCutModel(
+        id: 'raw_beef_shank',
+        category: 'Thịt & Trứng',
+        categoryIcon: '🥩',
+        name: 'Bắp bò',
+        englishName: 'Raw Beef Shank',
+        description: 'Cực nạc, gân giòn giàu collagen bôi trơn khớp.',
+        defaultPortionName: '100g thô',
+        defaultPortionWeightG: 100,
+        caloriesPer100g: 130,
+        proteinPer100g: 21.5,
+        carbsPer100g: 0.0,
+        fatPer100g: 4.2,
+        fiberPer100g: 0.0,
+        gymBadges: ['💪 21.5g Đạm', '🔥 130 kcal'],
+        imageUrl: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
+      ),
+      const IngredientCutModel(
+        id: 'raw_beef_tenderloin',
+        category: 'Thịt & Trứng',
+        categoryIcon: '🥩',
+        name: 'Thăn bò',
+        englishName: 'Raw Beef Tenderloin',
+        description: 'Đỉnh cao đạm bò và Creatine tự nhiên.',
+        defaultPortionName: '100g thô',
+        defaultPortionWeightG: 100,
+        caloriesPer100g: 142,
+        proteinPer100g: 22.3,
+        carbsPer100g: 0.0,
+        fatPer100g: 5.4,
+        fiberPer100g: 0.0,
+        gymBadges: ['👑 Creatine Cao', '🔥 142 kcal'],
+        imageUrl: 'https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=400&q=80',
+      ),
+      const IngredientCutModel(
+        id: 'raw_egg_white',
+        category: 'Thịt & Trứng',
+        categoryIcon: '🥚',
+        name: 'Lòng trắng trứng',
+        englishName: 'Raw Egg White',
+        description: '1 quả chỉ ~17 kcal, đạm tinh khiết không mỡ.',
+        defaultPortionName: '100g thô',
+        defaultPortionWeightG: 100,
+        caloriesPer100g: 52,
+        proteinPer100g: 10.9,
+        carbsPer100g: 0.7,
+        fatPer100g: 0.2,
+        fiberPer100g: 0.0,
+        gymBadges: ['🥚 1 quả = 17 kcal', '🔥 0g Mỡ'],
+        imageUrl: 'https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=crop&w=400&q=80',
+      ),
+      const IngredientCutModel(
+        id: 'raw_sweet_potato',
+        category: 'Gạo & Tinh bột',
+        categoryIcon: '🍠',
+        name: 'Khoai lang',
+        englishName: 'Raw Sweet Potato',
+        description: 'Carb chậm chất lượng cao, giàu xơ, no lâu.',
+        defaultPortionName: '100g thô',
+        defaultPortionWeightG: 100,
+        caloriesPer100g: 86,
+        proteinPer100g: 1.6,
+        carbsPer100g: 20.1,
+        fatPer100g: 0.1,
+        fiberPer100g: 3.0,
+        gymBadges: ['🍠 Carb Chậm', '🔥 86 kcal'],
+        imageUrl: 'https://images.unsplash.com/photo-1596097635121-14b63b7a0c19?auto=format&fit=crop&w=400&q=80',
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header có nút mũi tên mở nhanh vào màn hình tính calo
+          InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const IngredientMacroCalculatorScreen(),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.fitness_center_rounded, size: 18, color: Color(0xFFD97706)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              isVi ? 'Đo Calo Nguyên Liệu Thô' : 'Raw Ingredients Calorie',
+                              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.accentMint,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'NGUYÊN LIỆU THÔ',
+                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isVi
+                            ? 'Ức gà, đùi gà, bắp bò, gạo, rau củ... chuẩn gram thô chưa nấu'
+                            : 'Raw chicken, beef, rice, vegetables... precise per gram raw macros',
+                        style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.textLightGray,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Horizontal scroll các bộ phận tiêu biểu
+          SizedBox(
+            height: 140,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: topGymCuts.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final cut = topGymCuts[index];
+                return InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => IngredientMacroCalculatorScreen(initialCut: cut),
+                      ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    width: 130,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(cut.categoryIcon, style: const TextStyle(fontSize: 18)),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${cut.proteinPer100g.round()}g Pro',
+                                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blue),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          cut.name,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const Spacer(),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${cut.caloriesPer100g.round()} kcal',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+                            ),
+                            Text(
+                              '${cut.fatPer100g}g F',
+                              style: const TextStyle(fontSize: 9, color: AppColors.textGray),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'per 100g',
+                          style: TextStyle(fontSize: 9, color: AppColors.textLightGray),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Nút bấm mở toàn màn hình bộ đo
+          InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const IngredientMacroCalculatorScreen(),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.tune_rounded, size: 16, color: AppColors.primaryDark),
+                  SizedBox(width: 6),
+                  Text(
+                    'Mở Bảng Tính & So Sánh Chi Tiết Từng Bộ Phận',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+                  ),
+                  SizedBox(width: 4),
+                  Icon(Icons.arrow_forward_rounded, size: 14, color: AppColors.primaryDark),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMealLogSection() {
-    final logs = appState.mealLogs;
+    final logs = appState.todayMealLogs;
 
     return Column(
       children: [
@@ -516,14 +850,14 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 6)],
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 6)],
                 ),
                 child: Row(
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: Image.network(
-                        log.imageUrl,
+                        log.displayImageUrl,
                         width: 50,
                         height: 50,
                         fit: BoxFit.cover,
@@ -544,7 +878,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack),
                           ),
                           const SizedBox(height: 2),
-                          Text('${log.time} • ${log.protein}g ${AppTranslations.tr('pro')} • ${log.carbs}g ${AppTranslations.tr('carb')}', style: const TextStyle(fontSize: 10, color: AppColors.textGray)),
+                          Text('${log.displayTime} • ${log.protein}g ${AppTranslations.tr('pro')} • ${log.carbs}g ${AppTranslations.tr('carb')}', style: const TextStyle(fontSize: 10, color: AppColors.textGray)),
                         ],
                       ),
                     ),

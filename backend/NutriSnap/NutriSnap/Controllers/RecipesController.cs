@@ -13,19 +13,22 @@ public class RecipesController : ControllerBase
     private readonly TranslationService _translationService;
     private readonly AiVisionService _aiVisionService;
     private readonly MealDbSyncService _mealDbSyncService;
+    private readonly BarcodeNutritionService _barcodeNutritionService;
 
     public RecipesController(
         RecipeService recipeService,
         RecipeCrawlerService recipeCrawlerService,
         TranslationService translationService,
         AiVisionService aiVisionService,
-        MealDbSyncService mealDbSyncService)
+        MealDbSyncService mealDbSyncService,
+        BarcodeNutritionService barcodeNutritionService)
     {
         _recipeService = recipeService;
         _recipeCrawlerService = recipeCrawlerService;
         _translationService = translationService;
         _aiVisionService = aiVisionService;
         _mealDbSyncService = mealDbSyncService;
+        _barcodeNutritionService = barcodeNutritionService;
     }
 
     [HttpGet("shake")]
@@ -268,6 +271,87 @@ public class RecipesController : ControllerBase
     }
 
     /// <summary>
+    /// DANH SÁCH BỘ PHẬN NGUYÊN LIỆU CHI TIẾT CHO GYMER & TẬP LUYỆN (GET /api/recipes/ingredient-cuts)
+    /// Ví dụ: Ức gà không da, Đùi gà góc tư, Thăn bò phi lê, Bắp bò hoa, Nạc thăn heo...
+    /// </summary>
+    [HttpGet("ingredient-cuts")]
+    public IActionResult GetIngredientCuts([FromQuery] string? category = null, [FromQuery] string? q = null)
+    {
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var searchResults = IngredientCutCatalog.Search(q);
+            return Ok(new
+            {
+                success = true,
+                total = searchResults.Count,
+                data = searchResults
+            });
+        }
+
+        var cuts = IngredientCutCatalog.GetByCategory(category);
+        return Ok(new
+        {
+            success = true,
+            total = cuts.Count,
+            data = cuts
+        });
+    }
+
+    /// <summary>
+    /// CHI TIẾT BỘ PHẬN NGUYÊN LIỆU THEO ID (GET /api/recipes/ingredient-cuts/{id})
+    /// </summary>
+    [HttpGet("ingredient-cuts/{id}")]
+    public IActionResult GetIngredientCutDetail(string id)
+    {
+        var cut = IngredientCutCatalog.GetById(id);
+        if (cut == null)
+        {
+            return NotFound(new { message = "Không tìm thấy bộ phận nguyên liệu này." });
+        }
+        return Ok(cut);
+    }
+
+    /// <summary>
+    /// TÍNH TOÁN MACRO & CALO THEO TRỌNG LƯỢNG GRAM CHO BỘ PHẬN NGUYÊN LIỆU (POST /api/recipes/calculate-cut-macros)
+    /// </summary>
+    [HttpPost("calculate-cut-macros")]
+    public IActionResult CalculateCutMacros([FromBody] CalculateCutMacroRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.CutId))
+        {
+            return BadRequest(new { message = "Mã bộ phận nguyên liệu không được để trống." });
+        }
+
+        var result = IngredientCutCatalog.CalculateMacros(request.CutId, request.WeightG);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// TRA CỨU SẢN PHẨM & CALO THEO MÃ VẠCH (GET /api/recipes/barcode/{code})
+    /// Hỗ trợ EAN-13 bao bì & Tem cân siêu thị (Variable Weight)
+    /// </summary>
+    [HttpGet("barcode/{code}")]
+    public async Task<IActionResult> LookupBarcode(string code)
+    {
+        var result = await _barcodeNutritionService.LookupBarcodeAsync(code);
+        if (!result.Success && result.Product == null)
+        {
+            return NotFound(result);
+        }
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// DANH SÁCH MÃ VẠCH MẪU ĐỂ TEST NHANH (GET /api/recipes/barcode/samples)
+    /// </summary>
+    [HttpGet("barcode/samples")]
+    public IActionResult GetBarcodeSamples()
+    {
+        var samples = _barcodeNutritionService.GetSampleProducts();
+        return Ok(samples);
+    }
+
+    /// <summary>
     /// LẤY DANH SÁCH GỢI Ý NGUYÊN LIỆU NHANH (GET /api/recipes/quick-suggestions)
     /// </summary>
     [HttpGet("quick-suggestions")]
@@ -294,6 +378,19 @@ public class RecipesController : ControllerBase
     /// <summary>
     /// KIỂM TRA TRẠNG THÁI DATABASE CÔNG THỨC (GET /api/recipes/database-status)
     /// </summary>
+    [HttpGet("masterchef")]
+    public IActionResult GetMasterChefRecipes()
+    {
+        var recipes = MasterChefRecipeCatalog.GetRecipes();
+        return Ok(new
+        {
+            success = true,
+            total = recipes.Count,
+            message = "Bộ sưu tập món ăn kinh điển Vua Đầu Bếp Việt Nam & MasterChef Quốc Tế",
+            data = recipes
+        });
+    }
+
     [HttpGet("database-status")]
     public async Task<IActionResult> GetDatabaseStatus()
     {

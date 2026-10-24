@@ -90,6 +90,7 @@ builder.Services.AddHttpClient<RecipeCrawlerService>();
 builder.Services.AddHttpClient<TranslationService>();
 builder.Services.AddHttpClient<AiVisionService>();
 builder.Services.AddHttpClient<AiNutritionAdvisorService>();
+builder.Services.AddHttpClient<BarcodeNutritionService>();
 builder.Services.AddMemoryCache();
 
 // 5. Cấu hình CORS
@@ -241,6 +242,29 @@ app.MapControllers();
 
 // Khi truy cập http://localhost:5065/ thì tự động chuyển hướng sang giao diện Swagger API
 app.MapGet("/", () => Results.Redirect("/swagger"));
+
+// Lệnh CLI: Cào toàn bộ dữ liệu TheMealDB làm Database
+if (args.Any(a => a.Equals("--crawl-mealdb", StringComparison.OrdinalIgnoreCase) ||
+                  a.Equals("--seed-mealdb", StringComparison.OrdinalIgnoreCase) ||
+                  a.Equals("-crawl", StringComparison.OrdinalIgnoreCase)))
+{
+    Console.ForegroundColor = ConsoleColor.Cyan;
+    Console.WriteLine("======================================================================");
+    Console.WriteLine("NutriSnap - BẮT ĐẦU CÀO TOÀN BỘ CƠ SỞ DỮ LIỆU THEMEALDB VÀO DATABASE");
+    Console.WriteLine("======================================================================");
+    Console.ResetColor();
+
+    using var scope = app.Services.CreateScope();
+    var sync = scope.ServiceProvider.GetRequiredService<MealDbSyncService>();
+    var recipes = await sync.SyncFromMealDbAsync();
+
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine("======================================================================");
+    Console.WriteLine($"\n[HOÀN TẤT] Cào và lưu trữ thành công {recipes.Count} công thức món ăn!");
+    Console.WriteLine("======================================================================");
+    Console.ResetColor();
+    return;
+}
 
 // Tự động nạp trước cơ sở dữ liệu TheMealDB cục bộ chạy nền
 _ = Task.Run(async () =>
