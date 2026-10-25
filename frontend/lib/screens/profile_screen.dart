@@ -6,6 +6,7 @@ import '../services/app_state_service.dart';
 import '../services/meal_db_service.dart';
 import '../services/recipe_translator.dart';
 import '../widgets/user_avatar_widget.dart';
+import '../widgets/recipe_image_widget.dart';
 import '../widgets/social_auth_helper.dart';
 import '../main.dart';
 import 'login_screen.dart';
@@ -34,6 +35,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     appState.addListener(_onStateChanged);
     _loadMatchedMeals();
+    appState.fetchUserProfileFromServer();
   }
 
   @override
@@ -273,6 +275,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // WIDGET HIỂN THỊ TRONG MODAL SỬA THÔNG TIN
   Widget _buildEmailChangeField(UserProfile profile, void Function(void Function()) setModalState) {
+    final bool hasOfficialEmail = profile.email.isNotEmpty && appState.authToken != null && !appState.isGuestMode;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -285,7 +289,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.mark_email_read_outlined, size: 18, color: AppColors.primaryDark),
+              Icon(hasOfficialEmail ? Icons.mark_email_read_outlined : Icons.mail_outline_rounded,
+                  size: 18, color: hasOfficialEmail ? AppColors.primaryDark : const Color(0xFFD97706)),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
@@ -300,12 +305,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFDCFCE7),
+                  color: hasOfficialEmail ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text(
-                  'Email chính',
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                child: Text(
+                  hasOfficialEmail ? 'Email chính' : 'Khách / Tạm thời',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: hasOfficialEmail ? const Color(0xFF166534) : const Color(0xFFB45309),
+                  ),
                 ),
               ),
             ],
@@ -315,11 +324,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Expanded(
                 child: Text(
-                  profile.email,
-                  style: const TextStyle(
+                  hasOfficialEmail ? profile.email : 'Chưa thiết lập email chính thức',
+                  style: TextStyle(
                     fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF334155),
+                    fontWeight: hasOfficialEmail ? FontWeight.w600 : FontWeight.normal,
+                    color: hasOfficialEmail ? const Color(0xFF334155) : const Color(0xFFD97706),
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -336,18 +345,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
+                    color: (hasOfficialEmail ? AppColors.primary : const Color(0xFFD97706)).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                    border: Border.all(color: (hasOfficialEmail ? AppColors.primary : const Color(0xFFD97706)).withValues(alpha: 0.3)),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.edit, size: 13, color: AppColors.primaryDark),
-                      SizedBox(width: 4),
+                      Icon(hasOfficialEmail ? Icons.edit : Icons.add_link_rounded,
+                          size: 13, color: hasOfficialEmail ? AppColors.primaryDark : const Color(0xFFD97706)),
+                      const SizedBox(width: 4),
                       Text(
-                        'Đổi mail',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+                        hasOfficialEmail ? 'Đổi mail' : 'Liên kết',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: hasOfficialEmail ? AppColors.primaryDark : const Color(0xFFD97706),
+                        ),
                       ),
                     ],
                   ),
@@ -356,9 +370,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Lưu ý: Đây là email đăng ký gốc của tài khoản, không phải email Google đã liên kết. Khi đổi cần nhập mã xác thực OTP gửi về email mới.',
-            style: TextStyle(fontSize: 10, color: AppColors.textGray, height: 1.3),
+          Text(
+            hasOfficialEmail
+                ? 'Lưu ý: Đây là email đăng ký gốc của tài khoản, không phải email Google đã liên kết. Khi đổi cần nhập mã xác thực OTP gửi về email mới.'
+                : 'Lưu ý: Bạn đang dùng Khách. Hãy liên kết email chính thức để bảo lưu vĩnh viễn dữ liệu khi chuyển thiết bị hoặc đăng nhập lại.',
+            style: const TextStyle(fontSize: 10, color: AppColors.textGray, height: 1.3),
           ),
         ],
       ),
@@ -367,6 +383,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // WIDGET DÒNG EMAIL CHÍNH TRONG PHẦN QUẢN LÝ TÀI KHOẢN
   Widget _buildPrimaryEmailRow(UserProfile profile) {
+    final bool hasOfficialEmail = profile.email.isNotEmpty && appState.authToken != null && !appState.isGuestMode;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -374,12 +392,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: const Color(0xFFF0FDF4),
+            color: hasOfficialEmail ? const Color(0xFFF0FDF4) : const Color(0xFFFFFBEB),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFBBF7D0)),
+            border: Border.all(color: hasOfficialEmail ? const Color(0xFFBBF7D0) : const Color(0xFFFDE68A)),
           ),
-          child: const Center(
-            child: Icon(Icons.mark_email_read_outlined, color: Color(0xFF16A34A), size: 20),
+          child: Center(
+            child: Icon(
+              hasOfficialEmail ? Icons.mark_email_read_outlined : Icons.mail_outline_rounded,
+              color: hasOfficialEmail ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+              size: 20,
+            ),
           ),
         ),
         const SizedBox(width: 10),
@@ -401,20 +423,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFDCFCE7),
+                      color: hasOfficialEmail ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text(
-                      'Chính thức',
-                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                    child: Text(
+                      hasOfficialEmail ? 'Chính thức' : 'Khách / Tạm thời',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: hasOfficialEmail ? const Color(0xFF166534) : const Color(0xFFB45309),
+                      ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 2),
               Text(
-                profile.email,
-                style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+                hasOfficialEmail ? profile.email : 'Chưa thiết lập email chính thức',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: hasOfficialEmail ? AppColors.textGray : const Color(0xFFD97706),
+                  fontWeight: hasOfficialEmail ? FontWeight.normal : FontWeight.w500,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -424,18 +454,303 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(width: 8),
         OutlinedButton.icon(
           onPressed: () => _showChangeEmailDialog(context, onEmailChanged: () => setState(() {})),
-          icon: const Icon(Icons.edit, size: 12),
-          label: const Text('Đổi mail', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          icon: Icon(hasOfficialEmail ? Icons.edit : Icons.add_link_rounded, size: 12),
+          label: Text(hasOfficialEmail ? 'Đổi mail' : 'Liên kết', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             visualDensity: VisualDensity.compact,
-            side: const BorderSide(color: Color(0xFF86EFAC)),
-            foregroundColor: const Color(0xFF16A34A),
-            backgroundColor: const Color(0xFFF0FDF4),
+            side: BorderSide(color: hasOfficialEmail ? const Color(0xFF86EFAC) : const Color(0xFFFCD34D)),
+            foregroundColor: hasOfficialEmail ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+            backgroundColor: hasOfficialEmail ? const Color(0xFFF0FDF4) : const Color(0xFFFFFBEB),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
       ],
+    );
+  }
+
+  // WIDGET DÒNG MẬT KHẨU TÀI KHOẢN TRONG PHẦN QUẢN LÝ
+  Widget _buildPasswordRow(UserProfile profile) {
+    final bool hasPassword = profile.hasPassword;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: hasPassword ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: hasPassword ? const Color(0xFFBFDBFE) : const Color(0xFFFDE68A)),
+          ),
+          child: Center(
+            child: Icon(
+              hasPassword ? Icons.lock_outline_rounded : Icons.lock_reset_rounded,
+              color: hasPassword ? const Color(0xFF2563EB) : const Color(0xFFD97706),
+              size: 20,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Flexible(
+                    child: Text(
+                      'Mật khẩu tài khoản',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: hasPassword ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      hasPassword ? 'Đã kích hoạt' : 'Chưa thiết lập',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: hasPassword ? const Color(0xFF166534) : const Color(0xFFB45309),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                hasPassword ? '•••••••• (Dùng để đăng nhập)' : 'Tạo mật khẩu để đăng nhập lần sau',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: hasPassword ? AppColors.textGray : const Color(0xFFD97706),
+                  fontWeight: hasPassword ? FontWeight.normal : FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: () => _showSetPasswordDialog(context),
+          icon: Icon(hasPassword ? Icons.edit : Icons.key_rounded, size: 12),
+          label: Text(hasPassword ? 'Đổi mật khẩu' : 'Thiết lập', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            visualDensity: VisualDensity.compact,
+            side: BorderSide(color: hasPassword ? const Color(0xFF93C5FD) : const Color(0xFFFCD34D)),
+            foregroundColor: hasPassword ? const Color(0xFF2563EB) : const Color(0xFFD97706),
+            backgroundColor: hasPassword ? const Color(0xFFEFF6FF) : const Color(0xFFFFFBEB),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // HỘP THOẠI THIẾT LẬP HOẶC ĐỔI MẬT KHẨU TÀI KHOẢN
+  void _showSetPasswordDialog(BuildContext parentContext) {
+    final passCtrl = TextEditingController();
+    final confirmPassCtrl = TextEditingController();
+    bool isSubmitting = false;
+    String? errorMessage;
+    bool obscure = true;
+
+    showModalBottomSheet(
+      context: parentContext,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (bottomSheetCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
+          final bool hasPassword = appState.userProfile.hasPassword;
+
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: bottomInset > 0 ? bottomInset : 20,
+              top: 16,
+              left: 20,
+              right: 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.lock_rounded, color: Color(0xFF2563EB), size: 22),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              hasPassword ? 'Đổi Mật Khẩu Đăng Nhập' : 'Thiết Lập Mật Khẩu Đăng Nhập',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                            ),
+                            const Text(
+                              'Dùng để đăng nhập vào NutriSnap bằng email của bạn trên mọi thiết bị',
+                              style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  const Divider(height: 1),
+                  const SizedBox(height: 14),
+
+                  if (errorMessage != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFECACA)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              errorMessage!,
+                              style: const TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  TextField(
+                    controller: passCtrl,
+                    obscureText: obscure,
+                    decoration: InputDecoration(
+                      labelText: 'Mật khẩu mới (tối thiểu 6 ký tự)',
+                      hintText: '••••••••',
+                      prefixIcon: const Icon(Icons.key_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscure ? Icons.visibility_off : Icons.visibility, size: 18),
+                        onPressed: () => setDialogState(() => obscure = !obscure),
+                      ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  TextField(
+                    controller: confirmPassCtrl,
+                    obscureText: obscure,
+                    decoration: InputDecoration(
+                      labelText: 'Nhập lại mật khẩu mới',
+                      hintText: '••••••••',
+                      prefixIcon: const Icon(Icons.check_circle_outline_rounded),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              final newPass = passCtrl.text.trim();
+                              final confirmPass = confirmPassCtrl.text.trim();
+
+                              if (newPass.length < 6) {
+                                setDialogState(() => errorMessage = 'Mật khẩu phải có tối thiểu 6 ký tự!');
+                                return;
+                              }
+                              if (newPass != confirmPass) {
+                                setDialogState(() => errorMessage = 'Mật khẩu xác nhận không khớp!');
+                                return;
+                              }
+
+                              setDialogState(() {
+                                isSubmitting = true;
+                                errorMessage = null;
+                              });
+
+                              final res = await appState.setPassword(newPass);
+                              setDialogState(() => isSubmitting = false);
+
+                              if (res['success'] == true) {
+                                if (bottomSheetCtx.mounted) {
+                                  Navigator.pop(bottomSheetCtx);
+                                }
+                                if (parentContext.mounted) {
+                                  ScaffoldMessenger.of(parentContext).showSnackBar(
+                                    SnackBar(
+                                      content: Text('✅ ${res['message'] ?? 'Thiết lập mật khẩu thành công!'}'),
+                                      backgroundColor: const Color(0xFF16A34A),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                }
+                                if (mounted) setState(() {});
+                              } else {
+                                setDialogState(() => errorMessage = res['message']);
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: isSubmitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : Text(
+                              hasPassword ? 'Cập Nhật Mật Khẩu' : 'Lưu Mật Khẩu Mới',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -444,6 +759,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final currentEmail = appState.userProfile.email;
     final newEmailCtrl = TextEditingController();
     final otpCtrl = TextEditingController();
+    final newPassCtrl = TextEditingController();
+    final confirmPassCtrl = TextEditingController();
+    bool obscurePassword = true;
 
     int step = 1; // 1: Nhập email mới, 2: Nhập OTP
     bool isSubmitting = false;
@@ -505,17 +823,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: const Icon(Icons.mark_email_read_rounded, color: Color(0xFF16A34A), size: 22),
                       ),
                       const SizedBox(width: 10),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Đổi Email Đăng Ký Tài Khoản',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                              currentEmail.isNotEmpty
+                                  ? 'Đổi Email Đăng Ký Tài Khoản'
+                                  : 'Liên Kết Email Tài Khoản',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
                             ),
                             Text(
-                              'Email chính thức (không phải tài khoản Google liên kết)',
-                              style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                              currentEmail.isNotEmpty
+                                  ? 'Email chính thức (không phải tài khoản Google liên kết)'
+                                  : 'Chuyển tài khoản khách thành tài khoản chính thức để bảo lưu dữ liệu',
+                              style: const TextStyle(fontSize: 11, color: AppColors.textGray),
                             ),
                           ],
                         ),
@@ -553,33 +875,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ],
 
                   if (step == 1) ...[
-                    // BƯỚC 1: NHẬP EMAIL MỚI
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                    // BƯỚC 1: NHẬP EMAIL
+                    if (currentEmail.isNotEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Email đăng ký hiện tại của bạn:', style: TextStyle(fontSize: 11, color: AppColors.textGray)),
+                            const SizedBox(height: 2),
+                            Text(
+                              currentEmail,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Email đăng ký hiện tại của bạn:', style: TextStyle(fontSize: 11, color: AppColors.textGray)),
-                          const SizedBox(height: 2),
-                          Text(
-                            currentEmail,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack),
-                          ),
-                        ],
+                      const SizedBox(height: 14),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFBBF7D0)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline_rounded, color: Color(0xFF16A34A), size: 20),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Bạn đang dùng tài khoản Khách. Nhập email bên dưới để liên kết và bảo lưu vĩnh viễn toàn bộ thực đơn & chỉ số của bạn!',
+                                style: TextStyle(fontSize: 12, color: Color(0xFF166534), height: 1.3),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
+                      const SizedBox(height: 14),
+                    ],
 
                     TextField(
                       controller: newEmailCtrl,
                       keyboardType: TextInputType.emailAddress,
                       decoration: InputDecoration(
-                        labelText: 'Nhập địa chỉ Email mới',
+                        labelText: currentEmail.isNotEmpty ? 'Nhập địa chỉ Email mới' : 'Nhập địa chỉ Email của bạn',
                         hintText: 'vidu@gmail.com',
                         prefixIcon: const Icon(Icons.alternate_email_rounded),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -600,7 +946,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Hệ thống sẽ gửi mã xác nhận OTP 6 số đến email mới này để đảm bảo an toàn.',
+                              'Hệ thống sẽ gửi mã xác nhận OTP 6 số đến email này để đảm bảo an toàn.',
                               style: TextStyle(fontSize: 11, color: Color(0xFF166534)),
                             ),
                           ),
@@ -621,7 +967,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   setDialogState(() => errorMessage = 'Vui lòng nhập địa chỉ email hợp lệ!');
                                   return;
                                 }
-                                if (newEmail.toLowerCase() == currentEmail.toLowerCase()) {
+                                if (currentEmail.isNotEmpty && newEmail.toLowerCase() == currentEmail.toLowerCase()) {
                                   setDialogState(() => errorMessage = 'Email mới không được trùng với email hiện tại!');
                                   return;
                                 }
@@ -664,7 +1010,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 height: 20,
                                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                               )
-                            : const Text('Gửi Mã Xác Nhận Đến Email Mới ➔', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            : Text(
+                                currentEmail.isNotEmpty ? 'Gửi Mã Xác Nhận Đến Email Mới ➔' : 'Gửi Mã Xác Nhận Liên Kết Email ➔',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
                       ),
                     ),
                   ] else ...[
@@ -764,6 +1113,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                       ],
                     ),
+                    // Tạo mật khẩu cho tài khoản khi liên kết
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.key_rounded, size: 16, color: AppColors.primary),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  currentEmail.isEmpty
+                                      ? 'Tạo mật khẩu để đăng nhập lần sau:'
+                                      : 'Đổi mật khẩu mới (để trống nếu giữ nguyên):',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: newPassCtrl,
+                            obscureText: obscurePassword,
+                            decoration: InputDecoration(
+                              labelText: 'Mật khẩu mới (tối thiểu 6 ký tự)',
+                              hintText: '••••••••',
+                              prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
+                              suffixIcon: IconButton(
+                                icon: Icon(obscurePassword ? Icons.visibility_off : Icons.visibility, size: 18),
+                                onPressed: () => setDialogState(() => obscurePassword = !obscurePassword),
+                              ),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: confirmPassCtrl,
+                            obscureText: obscurePassword,
+                            decoration: InputDecoration(
+                              labelText: 'Nhập lại mật khẩu mới',
+                              hintText: '••••••••',
+                              prefixIcon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 14),
 
                     SizedBox(
@@ -779,6 +1185,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   return;
                                 }
 
+                                final pass = newPassCtrl.text.trim();
+                                final confirmPass = confirmPassCtrl.text.trim();
+
+                                if (currentEmail.isEmpty || pass.isNotEmpty) {
+                                  if (pass.length < 6) {
+                                    setDialogState(() => errorMessage = 'Vui lòng nhập mật khẩu tối thiểu 6 ký tự để đăng nhập lần sau!');
+                                    return;
+                                  }
+                                  if (pass != confirmPass) {
+                                    setDialogState(() => errorMessage = 'Mật khẩu xác nhận không khớp!');
+                                    return;
+                                  }
+                                }
+
                                 setDialogState(() {
                                   isSubmitting = true;
                                   errorMessage = null;
@@ -787,6 +1207,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 final res = await appState.confirmChangeEmail(
                                   newEmail: newEmailCtrl.text.trim(),
                                   otpCode: code,
+                                  newPassword: pass.isNotEmpty ? pass : null,
                                 );
                                 setDialogState(() => isSubmitting = false);
 
@@ -799,7 +1220,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   if (parentContext.mounted) {
                                     ScaffoldMessenger.of(parentContext).showSnackBar(
                                       SnackBar(
-                                        content: Text('✅ ${res['message'] ?? 'Đổi email đăng ký thành công!'}'),
+                                        content: Text('✅ ${res['message'] ?? (currentEmail.isNotEmpty ? 'Đổi email đăng ký thành công!' : 'Liên kết email thành công!')}'),
                                         backgroundColor: const Color(0xFF16A34A),
                                         behavior: SnackBarBehavior.floating,
                                       ),
@@ -820,7 +1241,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 height: 20,
                                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                               )
-                            : const Text('Xác Nhận & Hoàn Tất Đổi Email', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            : Text(
+                                currentEmail.isNotEmpty ? 'Xác Nhận & Hoàn Tất Đổi Email' : 'Xác Nhận & Hoàn Tất Liên Kết Email',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
                       ),
                     ),
                   ],
@@ -1170,20 +1594,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
                   child: Row(
                     children: [
-                      ClipRRect(
+                      RecipeImageWidget(
+                        imageUrl: meal.strMealThumb,
+                        mealName: meal.strMealVi ?? meal.strMeal,
+                        category: meal.strCategory,
+                        width: 58,
+                        height: 58,
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          meal.strMealThumb,
-                          width: 58,
-                          height: 58,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 58,
-                            height: 58,
-                            color: Colors.grey.shade200,
-                            child: const Icon(Icons.restaurant, size: 24, color: Colors.grey),
-                          ),
-                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -1231,7 +1648,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   /// KHỐI LIÊN KẾT & QUẢN LÝ TÀI KHOẢN (GOOGLE & FACEBOOK)
   Widget _buildAccountLinkingSection(UserProfile profile) {
-    final isGuest = appState.isGuestMode;
+    final isGuest = appState.isGuestMode || appState.authToken == null || profile.email.isEmpty;
     final guestDays = appState.guestUsageDays;
     final googleLinked = profile.googleEmail != null && profile.googleEmail!.isNotEmpty;
 
@@ -1279,7 +1696,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 2),
                     Text(
                       isGuest
-                          ? 'Đang dùng Khách (Ngày $guestDays/7)'
+                          ? (profile.email.isEmpty ? 'Đang dùng Khách (Chưa liên kết email)' : 'Đang dùng Khách (Ngày $guestDays/7)')
                           : 'Tài khoản chính thức đã bảo lưu dữ liệu',
                       style: TextStyle(
                         fontSize: 11,
@@ -1301,6 +1718,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 12),
           const Divider(height: 1),
           const SizedBox(height: 12),
+
+          // 0.1 Mật khẩu tài khoản (Hiển thị khi tài khoản đã có email)
+          if (profile.email.isNotEmpty) ...[
+            _buildPasswordRow(profile),
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+          ],
 
           // 1. Google
           _buildSocialLinkRow(

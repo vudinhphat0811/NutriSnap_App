@@ -33,4 +33,12 @@ public class ConfirmChangeEmailDto
 
     [Required, MinLength(4)]
     public string OtpCode { get; set; } = string.Empty;
+
+    public string? NewPassword { get; set; }
+}
+
+public class SetPasswordDto
+{
+    [Required, MinLength(6, ErrorMessage = "Mật khẩu phải có tối thiểu 6 ký tự.")]
+    public string NewPassword { get; set; } = string.Empty;
 }

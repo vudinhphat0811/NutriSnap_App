@@ -36,7 +36,8 @@ public static class MultiSourceCatalogService
             MeasuresVi = [.. measVi],
             StrInstructions = instEn,
             StrInstructionsVi = instVi,
-            StrMealThumb = img,
+            // Không sử dụng ảnh Unsplash không liên quan, để rỗng để Client hiển thị Icon món ăn chuẩn xác
+            StrMealThumb = (img != null && img.Contains("unsplash.com", StringComparison.OrdinalIgnoreCase)) ? "" : (img ?? ""),
             Badges = [.. badges],
             MatchScore = 98
         };
@@ -48,7 +49,7 @@ public static class MultiSourceCatalogService
     }
 
     /// <summary>
-    /// Bộ sưu tập 25 món ăn gia đình thân quen, bình dân, dễ nấu nhất
+    /// Bộ sưu tập 43 món ăn gia đình thân quen, bình dân, dễ nấu nhất
     /// </summary>
     public static List<RecommendedMealDto> GetHomeCookingRecipes()
     {
@@ -73,7 +74,7 @@ public static class MultiSourceCatalogService
                 ["200g", "250g", "4 tép", "1 thìa canh", "1 thìa cà phê"],
                 "1. Blanch broccoli florets in boiling water for 1 minute. 2. Sear sliced beef quickly in hot wok. 3. Add broccoli and oyster sauce, toss well for 1 minute.",
                 "1. Bông cải xanh chần sơ qua nước sôi 1 phút rồi vớt ra xả nước lạnh giữ màu xanh giòn. 2. Phi tỏi xào bò trên lửa lớn vừa chín mềm. 3. Cho bông cải xanh và dầu hào vào đảo đều nhanh tay 1 phút rồi dọn ra đĩa.",
-                "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=600&q=80",
+                "https://images.unsplash.com/photo-1783375175952-705a0600e05c?auto=format&fit=crop&w=600&q=80",
                 ["🥦 Giàu Chất Xơ", "💪 Đủ Đạm & Rau", "⚡ Nhanh Gọn"]),
 
             // 3. Bò xào cần tỏi tây
@@ -84,7 +85,7 @@ public static class MultiSourceCatalogService
                 ["200g", "100g", "1 cây", "3 tép", "1 thìa cà phê"],
                 "1. Thinly slice beef and season lightly. 2. Flash fry beef with garlic, set aside. 3. Sauté celery and leek until crisp-tender. 4. Mix together and finish with ground pepper.",
                 "1. Thịt bò thái mỏng ướp tỏi băm. 2. Xào bò trên lửa lớn vừa chín tới trút ra đĩa. 3. Cho cần tây và tỏi tây vào đảo đều cho dậy mùi thơm nức. 4. Đổ bò vào đảo lại 30 giây, rắc tiêu thơm phức.",
-                "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80",
+                "https://images.unsplash.com/photo-1738999353105-a19fcffefad2?auto=format&fit=crop&w=600&q=80",
                 ["🇻🇳 Chuẩn Vị Việt", "🥩 Bò Mềm Thơm", "⚡ 15 Phút"]),
 
             // 4. Bò lúc lắc hành tây ớt chuông
@@ -139,7 +140,7 @@ public static class MultiSourceCatalogService
                 ["180g", "1 quả", "100g", "6 quả", "1 thìa canh"],
                 "1. Poach or pan-sear chicken breast, then slice. 2. Arrange lettuce, halved boiled egg and tomatoes. 3. Drizzle roasted sesame dressing.",
                 "1. Ức gà áp chảo hoặc luộc chín xé sợi. 2. Xếp xà lách tươi ra đĩa, đặt trứng luộc bổ đôi và cà chua bi lên trên. 3. Rưới sốt mè rang bùi béo ăn thanh nhẹ bổ dưỡng.",
-                "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80",
+                "https://images.unsplash.com/photo-1649531794752-5833ee051fb6?auto=format&fit=crop&w=600&q=80",
                 ["💪 Siêu Đạm Tăng Cơ", "🥗 Chuẩn Gymer", "✨ Ít Calo"]),
 
             // 9. Salad dưa chuột cà chua
@@ -205,7 +206,7 @@ public static class MultiSourceCatalogService
                 ["180g", "200g", "3 tép", "1 thìa canh", "1 thìa cà phê"],
                 "1. Sauté garlic and sliced pork until browned. 2. Toss in trimmed green beans and oyster sauce. 3. Stir fry on high heat until beans are crisp-tender.",
                 "1. Phi thơm tỏi xào thịt heo nạc thái mỏng vừa chín tới. 2. Cho đậu cô ve bẻ khúc vào xào trên lửa lớn cùng dầu hào. 3. Đảo đều tay cho đậu chín giòn ngọt tự nhiên rồi rắc tiêu ra đĩa.",
-                "https://images.unsplash.com/photo-1505253716362-afaea1d3d1af?auto=format&fit=crop&w=600&q=80",
+                "https://images.unsplash.com/photo-1751560048567-b38f5cf3448a?auto=format&fit=crop&w=600&q=80",
                 ["🇻🇳 Món Ngon Gia Đình", "🥗 Đủ Đạm & Rau", "⚡ Giòn Ngọt"]),
 
             // 15. Thịt ba chỉ rang cháy cạnh
@@ -282,7 +283,7 @@ public static class MultiSourceCatalogService
                 ["150g", "150g", "1 củ", "1 nhánh", "2 hoa", "1 thanh"],
                 "1. Simmer marrow bones with roasted ginger, cinnamon and star anise for rich clear broth. 2. Blanch fresh pho noodles. 3. Layer tender beef on noodles and ladle boiling broth.",
                 "1. Hầm xương bò cùng gừng nướng, hoa hồi và quế thanh cho nước dùng trong veo ngọt lịm. 2. Chần bánh phở tươi qua nước sôi. 3. Xếp thịt bò tái nạm thái mỏng lên trên rồi chan nước dùng đang sôi sùng sục, rắc hành hoa.",
-                "https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80",
+                "https://images.unsplash.com/photo-1631709497146-a239ef373cf1?auto=format&fit=crop&w=600&q=80",
                 ["🍜 Tinh Hoa Phở Việt", "🥩 Nước Dùng Trong Ngọt", "💪 Giàu Đạm"]),
 
             // 22. Bún chả Hà Nội
@@ -327,7 +328,216 @@ public static class MultiSourceCatalogService
                 "1. Marinate fish fillets with fresh turmeric and aromatics. 2. Pan fry on table with mountain of fresh dill and scallions. 3. Serve hot over rice noodles.",
                 "1. Cá phi lê ướp nước cốt nghệ tươi vàng ruộm đậm đà. 2. Chiên cá vàng xèo xèo trên chảo rồi thả ngập tràn thì là và hành hoa đảo bốc khói nghi ngút. 3. Ăn cùng bún tươi lạc rang chấm mắm tôm hoặc mắm pha chua ngọt.",
                 "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&w=600&q=80",
-                ["🇻🇳 Di Sản Hà Nội", "🐟 Cá Giòn Béo Ngậy", "🌿 Thì Là Dậy Vị"])
+                ["🇻🇳 Di Sản Hà Nội", "🐟 Cá Giòn Béo Ngậy", "🌿 Thì Là Dậy Vị"]),
+
+            // 26. Thịt bò xào rau muống
+            M("vn_home_26", "Stir-fried Beef with Water Spinach", "Thịt Bò Xào Rau Muống Tỏi Phi", "Beef", "Vietnamese", 290, 32, 6, 13,
+                ["Beef", "Water Spinach", "Garlic", "Oyster Sauce", "Black Pepper"],
+                ["Thịt bò thái mỏng", "Rau muống ngọn non", "Tỏi tía đập dập", "Dầu hào", "Tiêu đen xay"],
+                ["200g", "300g", "5 cloves", "1 tbsp", "1 tsp"],
+                ["200g", "300g", "5 tép", "1 thìa canh", "1 thìa cà phê"],
+                "1. Marinate sliced beef with garlic and oyster sauce. 2. Flash fry beef in hot wok for 2 minutes and set aside. 3. Stir fry morning glory with purple garlic over high flame until crisp-green. 4. Toss beef back in for 30 seconds and serve hot.",
+                "1. Thịt bò thái mỏng ướp tỏi băm, dầu hào và chút hạt tiêu trong 10 phút. 2. Phi thơm tỏi, xào bò trên lửa lớn trong 2 phút vừa chín tới rồi trút riêng ra đĩa. 3. Cho rau muống vào xào nhanh tay trên lửa lớn với tỏi đập dập cho ngọn rau xanh giòn mướt. 4. Đổ thịt bò vào đảo cùng rau trong 30 giây rồi tắt bếp dọn ra đĩa.",
+                "https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&w=600&q=80",
+                ["🇻🇳 Món Ngon Gia Đình", "🥩 Đủ Đạm & Rau", "⚡ Hao Cơm"]),
+
+            // 27. Canh rau muống nấu tôm tươi
+            M("vn_home_27", "Water Spinach Soup with Fresh Shrimp", "Canh Rau Muống Nấu Tôm Tươi", "Seafood", "Vietnamese", 140, 20, 4, 3,
+                ["Fresh Shrimp", "Water Spinach", "Shallots", "Fish Sauce", "Black Pepper"],
+                ["Tôm sú tươi bóc vỏ", "Rau muống non", "Hành tím băm", "Nước mắm ngon", "Tiêu xay"],
+                ["150g", "300g", "2 pieces", "1 tbsp", "1/2 tsp"],
+                ["150g", "300g", "2 củ", "1 thìa canh", "1/2 thìa cà phê"],
+                "1. Peel and roughly mince fresh shrimp. 2. Sauté shallots and shrimp until pink, then add water to boil. 3. Add trimmed water spinach and season with fish sauce. 4. Simmer for 2 minutes and serve.",
+                "1. Tôm tươi bóc vỏ giã dập hoặc băm thô, ướp chút nước mắm và tiêu. 2. Phi thơm hành tím xào săn tôm rồi đổ nước vào đun sôi bùng, hớt sạch bọt. 3. Thả rau muống ngắt khúc vào nấu lửa lớn cho rau vừa chín tới giữ màu xanh mướt. 4. Nêm vừa ăn rồi múc ra bát canh thanh mát ngọt lịm.",
+                "https://images.unsplash.com/photo-1594756202469-9ff9799b2e4e?auto=format&fit=crop&w=600&q=80",
+                ["🍲 Canh Thanh Mát", "🦐 Tôm Tươi Ngọt Nước", "🌱 Giải Nhiệt"]),
+
+            // 28. Rau muống xào chao đỏ
+            M("vn_home_28", "Water Spinach Stir-fried with Fermented Tofu", "Rau Muống Xào Chao Đỏ Cay Nồng", "Vegetarian", "Vietnamese", 135, 5, 9, 8,
+                ["Water Spinach", "Fermented Tofu (Chao)", "Purple Garlic", "Chili", "Cooking Oil"],
+                ["Rau muống ngọn non", "Chao đỏ thơm bùi", "Tỏi tía băm", "Ớt cay", "Dầu ăn"],
+                ["300g", "2 cubes", "4 cloves", "1 piece", "1 tbsp"],
+                ["300g", "2 viên", "4 tép", "1 quả", "1 thìa canh"],
+                "1. Mash fermented tofu cubes with sugar and chili. 2. Sauté minced garlic until aromatic. 3. Flash fry morning glory stems over high heat, pour in chao mixture and toss vigorously.",
+                "1. Tán nhuyễn chao cùng chút đường và ớt thái lát. 2. Phi thơm tỏi tía trong chảo dầu nóng. 3. Cho rau muống vào xào lửa lớn đảo nhanh tay, rưới sốt chao vào xào thêm 1 phút cho rau áo đều vị chao béo ngậy thơm nức.",
+                "https://images.unsplash.com/photo-1550859917-b3f6c8993b43?auto=format&fit=crop&w=600&q=80",
+                ["🌱 Đậm Đà Béo Ngậy", "🔥 Vị Chao Thơm Lừng", "🇻🇳 Dân Dã Nam Bộ"]),
+
+            // 29. Canh ngao nấu rau muống
+            M("vn_home_29", "Clam & Water Spinach Soup", "Canh Ngao Nấu Rau Muống Gừng Tươi", "Seafood", "Vietnamese", 110, 14, 5, 2,
+                ["Fresh Clams", "Water Spinach", "Fresh Ginger", "Fish Sauce"],
+                ["Ngao tươi sống", "Rau muống non", "Gừng tươi đập dập", "Nước mắm ngon"],
+                ["500g", "300g", "1 knob", "1 tbsp"],
+                ["500g", "300g", "1 nhánh", "1 thìa canh"],
+                "1. Boil clams with ginger until open, save the clear sweet clam broth. 2. Remove meat from clam shells. 3. Bring clam broth to a rolling boil, add water spinach and clam meat, season and turn off heat.",
+                "1. Ngao ngâm ớt rửa sạch cát, luộc với chút gừng cho há miệng rồi gỡ lấy ruột, chắt lấy nước luộc trong veo. 2. Đun sôi bùng nước ngao, thả rau muống vào nấu lửa to cho rau xanh giòn. 3. Cho ruột ngao vào lại nồi, nêm chút nước mắm vừa miệng rồi tắt bếp ngay.",
+                "https://images.unsplash.com/photo-1707897748442-cc3a48d31300?auto=format&fit=crop&w=600&q=80",
+                ["🍲 Thanh Mát Ngọt Nước", "🦪 Ngao Tươi Béo", "🍃 Giải Nhiệt Mùa Hè"]),
+
+            // 30. Nộm rau muống tôm thịt
+            M("vn_home_30", "Water Spinach Salad with Shrimp & Pork", "Nộm Rau Muống Tôm Thịt Đậu Phộng", "Pork", "Vietnamese", 260, 24, 12, 12,
+                ["Water Spinach", "Fresh Shrimp", "Pork Belly", "Roasted Peanuts", "Lime Chili Dressing"],
+                ["Rau muống chẻ sợi giòn", "Tôm tươi luộc chín", "Thịt ba chỉ luộc", "Đậu phộng rang giòn", "Nước mắm chua ngọt"],
+                ["250g", "100g", "80g", "30g", "2 tbsp"],
+                ["250g", "100g", "80g", "30g", "2 thìa canh"],
+                "1. Shred water spinach stems and soak in iced lemon water to curl and crisp. 2. Slice boiled pork and halved shrimp. 3. Toss greens, meats and sweet-sour dressing, top with crushed peanuts.",
+                "1. Rau muống ngắt bỏ lá, chẻ cuộng ngâm nước đá chanh cho cong tít và giòn tan. 2. Thịt ba chỉ luộc thái mỏng, tôm luộc bóc vỏ chẻ đôi lưng. 3. Trộn rau muống cùng tôm thịt và nước mắm tỏi ớt chua ngọt, rắc đậu phộng rang giòn thơm phức.",
+                "https://images.unsplash.com/photo-1546069901-d5bfd2cbfb1f?auto=format&fit=crop&w=600&q=80",
+                ["🥗 Giòn Sần Sật", "🦐 Chua Cay Mặn Ngọt", "🇻🇳 Món Nhậu & Khai Vị"]),
+
+            // 31. Thịt bò xào cải ngồng
+            M("vn_home_31", "Stir-fried Beef with Chinese Broccoli", "Thịt Bò Xào Cải Ngồng Tỏi Phi", "Beef", "Vietnamese", 275, 32, 7, 11,
+                ["Beef", "Chinese Broccoli", "Purple Garlic", "Oyster Sauce", "Black Pepper"],
+                ["Thịt bò thái mỏng", "Cải ngồng non xanh", "Tỏi phi giòn", "Dầu hào", "Tiêu đen xay"],
+                ["200g", "250g", "5 cloves", "1 tbsp", "1 tsp"],
+                ["200g", "250g", "5 tép", "1 thìa canh", "1 thìa cà phê"],
+                "1. Marinate beef with garlic and oyster sauce. 2. Blanch Chinese broccoli in salted water for 45s. 3. Sauté beef in smoking wok for 2 mins, set aside. 4. Toss greens with beef and garlic.",
+                "1. Thịt bò thái mỏng ướp tỏi băm và dầu hào. 2. Cải ngồng rửa sạch, chần sơ 45 giây qua nước sôi rồi ngâm nước lạnh giữ màu xanh ngọc. 3. Xào bò trên lửa lớn vừa chín tới múc ra đĩa. 4. Cho cải ngồng vào chảo xào nhanh với tỏi phi giòn, đổ bò vào đảo đều 30 giây rồi rắc tiêu thơm lừng.",
+                "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=600&q=80",
+                ["🥦 Giòn Ngọt Thanh", "🥩 Bò Mềm Tỏi Phi", "⚡ 15 Phút"]),
+
+            // 32. Canh cải ngọt nấu thịt băm
+            M("vn_home_32", "Mustard Greens Soup with Minced Pork", "Canh Cải Ngọt Nấu Thịt Băm Gừng Tươi", "Pork", "Vietnamese", 155, 18, 6, 6,
+                ["Mustard Greens", "Minced Pork", "Fresh Ginger", "Fish Sauce", "Shallots"],
+                ["Rau cải ngọt tươi", "Thịt heo nạc băm", "Gừng tươi thái sợi", "Nước mắm ngon", "Hành tím"],
+                ["300g", "100g", "1 knob", "1 tbsp", "2 pieces"],
+                ["300g", "100g", "1 nhánh", "1 thìa canh", "2 củ"],
+                "1. Season minced pork with fish sauce and shallots. 2. Sauté pork until browned, add boiling water. 3. Drop in chopped mustard greens and julienned ginger, cook for 2 minutes.",
+                "1. Thịt nạc băm ướp chút nước mắm và tiêu. 2. Phi thơm hành tím xào săn thịt rồi đổ nước vào đun sôi, hớt bọt. 3. Thả rau cải ngọt cắt khúc và vài sợi gừng tươi ấm bụng vào nấu sôi 2 phút cho rau chín xanh ngọt lịm.",
+                "https://images.unsplash.com/photo-1664741662725-bd131742b7b7?auto=format&fit=crop&w=600&q=80",
+                ["🍲 Ấm Bụng Dễ Nấu", "🌱 Canh Cơm Gia Đình", "⚡ 10 Phút"]),
+
+            // 33. Cải thìa sốt dầu hào nấm đông cô
+            M("vn_home_33", "Bok Choy with Shiitake Mushrooms in Oyster Sauce", "Cải Thìa Sốt Dầu Hào Nấm Đông Cô", "Vegetarian", "Vietnamese", 120, 6, 12, 5,
+                ["Bok Choy", "Shiitake Mushrooms", "Garlic", "Oyster Sauce", "Sesame Oil"],
+                ["Cải thìa tươi", "Nấm đông cô tươi", "Tỏi băm", "Dầu hào", "Dầu mè"],
+                ["300g", "100g", "4 cloves", "1.5 tbsp", "1 tsp"],
+                ["300g", "100g", "4 tép", "1.5 thìa canh", "1 thìa cà phê"],
+                "1. Blanch bok choy halves until tender-crisp, arrange on platter. 2. Sauté garlic and mushrooms in rich oyster sauce until glossy. 3. Pour savory mushroom gravy over greens.",
+                "1. Cải thìa bổ đôi chần nước sôi ngâm đá giữ màu xanh ngọc, xếp tròn xòe cánh hoa ra đĩa. 2. Phi thơm tỏi xào nấm đông cô mọng nước cùng dầu hào và chút nước tương cho sốt sánh nâu óng ả. 3. Rưới toàn bộ nấm và sốt dầu hào lên đĩa cải thìa thơm phức.",
+                "https://images.unsplash.com/photo-1744612190414-f8844313befb?auto=format&fit=crop&w=600&q=80",
+                ["🌱 Thanh Đạm Sang Trọng", "🍄 Nấm Mọng Sốt Óng", "✨ Giàu Vitamin"]),
+
+            // 34. Thịt ba chỉ xào dưa cải chua
+            M("vn_home_34", "Stir-fried Pork Belly with Pickled Mustard Greens", "Thịt Ba Chỉ Xào Dưa Cải Chua", "Pork", "Vietnamese", 390, 26, 7, 28,
+                ["Pork Belly", "Pickled Mustard Greens", "Purple Garlic", "Fish Sauce", "Sugar"],
+                ["Thịt ba chỉ thái mỏng", "Dưa cải muối chua", "Tỏi băm", "Nước mắm ngon", "Đường"],
+                ["200g", "200g", "3 cloves", "1 tbsp", "1 tsp"],
+                ["200g", "200g", "3 tép", "1 thìa canh", "1 thìa cà phê"],
+                "1. Brown sliced pork belly in pan to render excess fat. 2. Squeeze pickled greens lightly, add to pork with garlic. 3. Sauté over high heat until greens absorb savory juices.",
+                "1. Thịt ba chỉ thái mỏng đảo trong chảo cho xém cạnh kiệt bớt mỡ. 2. Dưa chua vắt ráo nước cho vào đảo cùng thịt và tỏi băm. 3. Nêm nước mắm và chút đường cho vị chua ngọt đậm đà, xào cho dưa săn lại bóng óng ăn cùng cơm nóng rất đưa cơm.",
+                "https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=600&q=80",
+                ["🥓 Chua Ngọt Đậm Đà", "🇻🇳 Siêu Đưa Cơm", "🔥 Bắt Vị"]),
+
+            // 35. Sườn xào chua ngọt
+            M("vn_home_35", "Sweet and Sour Pork Ribs", "Sườn Xào Chua Ngọt Óng Ả", "Pork", "Vietnamese", 420, 32, 16, 24,
+                ["Pork Ribs", "Ripe Tomatoes", "Shallots", "Garlic", "Sweet-Sour Sauce"],
+                ["Sườn non chặt khúc", "Cà chua chín mọng", "Hành tím", "Tỏi băm", "Nước sốt chua ngọt giấm đường"],
+                ["300g", "2 pieces", "2 pieces", "3 cloves", "3 tbsp"],
+                ["300g", "2 quả", "2 củ", "3 tép", "3 thìa canh"],
+                "1. Parboil and fry pork ribs until golden brown. 2. Simmer tomato paste with vinegar, sugar and fish sauce into a thick sauce. 3. Toss ribs in glaze until coated in mahogany sheen.",
+                "1. Sườn non chần sơ nước sôi rồi rán vàng ruộm các mặt. 2. Phi thơm hành tỏi, xào nhừ cà chua rồi nêm giấm gạo, đường, nước mắm ngon tạo sốt chua ngọt sánh kẹo. 3. Trút sườn vào đảo đều lửa nhỏ cho ngấm sâu lớp sốt đỏ óng ả thơm ngất ngây.",
+                "https://images.unsplash.com/photo-1679711246825-1f2bd51b16d0?auto=format&fit=crop&w=600&q=80",
+                ["🍖 Sườn Rán Giòn Rụm", "🍅 Chua Ngọt Đậm Sốt", "🇻🇳 Món Khoái Khẩu"]),
+
+            // 36. Thịt kho tàu trứng cút nước dừa
+            M("vn_home_36", "Vietnamese Braised Pork with Quail Eggs", "Thịt Kho Tàu Trứng Cút Nước Dừa", "Pork", "Vietnamese", 490, 34, 10, 32,
+                ["Pork Belly", "Quail Eggs", "Fresh Coconut Water", "Shallots", "Fish Sauce"],
+                ["Thịt ba chỉ thái vuông", "Trứng cút luộc bóc vỏ", "Nước dừa xiêm tươi", "Hành tím băm", "Nước mắm nhĩ"],
+                ["250g", "8 pieces", "200ml", "2 pieces", "2 tbsp"],
+                ["250g", "8 quả", "200ml", "2 củ", "2 thìa canh"],
+                "1. Marinate pork cubes with shallots and fish sauce. 2. Brown lightly, then pour in fresh coconut water. 3. Simmer gently with peeled quail eggs for 45 mins until meat melts in mouth and sauce is amber gold.",
+                "1. Thịt ba chỉ thái miếng vuông con chì ướp hành tím, nước mắm, tiêu và đường caramel. 2. Xào săn thịt rồi đổ ngập nước dừa xiêm tươi đun sôi bùng, hớt bọt. 3. Thả trứng cút luộc vào kho liu riu trong 45 phút cho thịt mềm rục trong miệng, nước dừa cô lại màu hổ phách tuyệt đẹp.",
+                "https://images.unsplash.com/photo-1767974822929-ba6e6b909365?auto=format&fit=crop&w=600&q=80",
+                ["🥓 Mềm Rục Tan Trong Miệng", "🥥 Nước Dừa Thơm Béo", "🇻🇳 Tinh Hoa Cơm Nhà"]),
+
+            // 37. Tôm rim thịt ba chỉ
+            M("vn_home_37", "Caramelized Shrimp and Pork Belly", "Tôm Rim Thịt Ba Chỉ Đậm Đà", "Seafood", "Vietnamese", 360, 32, 8, 20,
+                ["Fresh Shrimp", "Pork Belly", "Shallots", "Fish Sauce", "Black Pepper"],
+                ["Tôm tươi cắt râu", "Thịt ba chỉ thái mỏng", "Hành tím", "Nước mắm ngon", "Tiêu đen xay"],
+                ["150g", "150g", "3 pieces", "2 tbsp", "1 tsp"],
+                ["150g", "150g", "3 củ", "2 thìa canh", "1 thìa cà phê"],
+                "1. Render pork belly until lightly crisp. 2. Add shrimp and sauté until blushing red. 3. Season with fish sauce and caramelized sugar, simmer until glistening and coated.",
+                "1. Thịt ba chỉ đảo kiệt bớt mỡ cho xém vàng cạnh. 2. Cho tôm tươi vào đảo cùng lửa lớn cho tôm đỏ au săn chắc vỏ ngoài giòn bóng. 3. Nêm nước mắm ngon, tiêu và chút nước màu dừa, rim liu riu đến khi nước cạn kẹo bóng bẩy phủ kín tôm thịt.",
+                "https://images.unsplash.com/photo-1764337944130-45560c1f8b41?auto=format&fit=crop&w=600&q=80",
+                ["🦐 Tôm Giòn Thịt Béo", "🔥 Đậm Đà Cực Hao Cơm", "🇻🇳 Chuẩn Vị Việt"]),
+
+            // 38. Canh sườn nấu cà chua dứa
+            M("vn_home_38", "Pork Rib Sour Soup with Tomato & Pineapple", "Canh Sườn Nấu Cà Chua Dứa Thanh Mát", "Pork", "Vietnamese", 230, 22, 12, 10,
+                ["Pork Ribs", "Ripe Tomatoes", "Pineapple", "Green Onions", "Fish Sauce"],
+                ["Sườn non heo", "Cà chua bổ múi", "Dứa thơm thái lát", "Hành hoa mùi tàu", "Nước mắm"],
+                ["250g", "2 pieces", "100g", "3 stalks", "1 tbsp"],
+                ["250g", "2 quả", "100g", "3 nhánh", "1 thìa canh"],
+                "1. Simmer parboiled ribs for 25 mins until tender. 2. Add sliced pineapple and tomatoes for natural sweet-sour tang. 3. Finish with fresh scallions and cilantro.",
+                "1. Sườn non chặt khúc luộc sơ rồi ninh trong 25 phút cho mềm ngọt nước. 2. Cho dứa thái lát và cà chua vào đun sôi thêm 5 phút cho tiết vị chua thanh dịu ngọt tự nhiên. 3. Nêm nước mắm vừa ăn, rắc hành lá mùi tàu thái nhỏ rồi múc canh ra tô.",
+                "https://images.unsplash.com/photo-1701480253822-1842236c9a97?auto=format&fit=crop&w=600&q=80",
+                ["🍲 Chua Thanh Ngọt Lịm", "🍖 Sườn Ninh Mềm", "🍍 Giải Nhiệt Ngày Hè"]),
+
+            // 39. Mực xào cần tỏi tây
+            M("vn_home_39", "Stir-fried Squid with Celery & Onion", "Mực Xào Cần Tỏi Tây Hành Tây", "Seafood", "Vietnamese", 210, 28, 8, 5,
+                ["Fresh Squid", "Celery", "Onion", "Purple Garlic", "Black Pepper"],
+                ["Mực ống tươi thái khoanh", "Cần tây cắt khúc", "Hành tây", "Tỏi băm", "Tiêu đen xay"],
+                ["250g", "100g", "1 piece", "4 cloves", "1 tsp"],
+                ["250g", "100g", "1 củ", "4 tép", "1 thìa cà phê"],
+                "1. Score and clean fresh squid. 2. Sear squid in smoking wok with garlic for 1.5 mins, remove. 3. Sauté onions and celery until crisp-tender, combine and pepper heavily.",
+                "1. Mực ống làm sạch thái khoanh khía vảy rồng. 2. Phi thơm tỏi xào mực trên lửa cực lớn trong 1.5 phút cho mực săn giòn không ra nước rồi trút ra đĩa. 3. Cho cần tây và hành tây vào chảo đảo chín tới dậy mùi thơm nức rồi trút mực vào đảo lại 30 giây rắc tiêu thơm cay.",
+                "https://images.unsplash.com/photo-1532550907401-a500c9a57435?auto=format&fit=crop&w=600&q=80",
+                ["🦑 Mực Giòn Sần Sật", "🌿 Thơm Nức Cần Tỏi", "⚡ Nhanh Gọn 10p"]),
+
+            // 40. Trứng chiên đúc thịt băm
+            M("vn_home_40", "Fried Scrambled Egg with Minced Meat", "Trứng Chiên Đúc Thịt Băm Hành Hoa", "Pork", "Vietnamese", 270, 24, 3, 18,
+                ["Chicken Eggs", "Minced Pork", "Green Onions", "Fish Sauce", "Black Pepper"],
+                ["Trứng gà ta", "Thịt heo nạc băm", "Hành hoa thái nhỏ", "Nước mắm ngon", "Tiêu đen"],
+                ["3 pieces", "100g", "3 stalks", "1 tbsp", "1/2 tsp"],
+                ["3 quả", "100g", "3 nhánh", "1 thìa canh", "1/2 thìa cà phê"],
+                "1. Mix eggs thoroughly with minced pork, scallions, fish sauce and pepper. 2. Fry on medium flame with lid on until fluffy, golden and cooked through.",
+                "1. Đánh tan trứng cùng thịt nạc băm nhỏ, hành hoa, nước mắm ngon và tiêu sọ. 2. Đun nóng chảo dầu, đổ hỗn hợp trứng thịt vào dàn đều, đậy vung chiên lửa nhỏ vừa cho thịt bên trong chín mềm mà lớp vỏ ngoài vàng rụm thơm phức.",
+                "https://images.unsplash.com/photo-1759216280603-364c7747d354?auto=format&fit=crop&w=600&q=80",
+                ["🍳 Đậm Đà Dễ Nấu", "🥚 Trứng Phồng Thơm", "⚡ 10 Phút"]),
+
+            // 41. Bắp cải xào cà chua thịt heo
+            M("vn_home_41", "Stir-fried Cabbage with Pork & Tomatoes", "Bắp Cải Xào Cà Chua Thịt Heo", "Pork", "Vietnamese", 220, 20, 12, 10,
+                ["Cabbage", "Lean Pork", "Ripe Tomatoes", "Garlic", "Fish Sauce"],
+                ["Bắp cải thái sợi", "Thịt heo nạc thái mỏng", "Cà chua bổ múi", "Tỏi băm", "Nước mắm"],
+                ["300g", "120g", "1 piece", "3 cloves", "1 tbsp"],
+                ["300g", "120g", "1 quả", "3 tép", "1 thìa canh"],
+                "1. Sauté sliced pork with garlic until cooked. 2. Add sliced cabbage and tomatoes, toss on high heat until sweet and tender.",
+                "1. Phi thơm tỏi xào săn thịt heo nạc thái mỏng. 2. Cho bắp cải thái sợi và cà chua vào đảo nhanh trên lửa lớn cho rau chín tới giữ độ ngọt giòn mọng nước.",
+                "https://images.unsplash.com/photo-1748444432939-f5e117280ab0?auto=format&fit=crop&w=600&q=80",
+                ["🥬 Giòn Ngọt Thanh Mát", "🇻🇳 Món Rau Hàng Ngày", "⚡ Dễ Làm"]),
+
+            // 42. Canh mướp hương nấu tôm tươi
+            M("vn_home_42", "Luffa Soup with Fresh Shrimp", "Canh Mướp Hương Nấu Tôm Tươi", "Seafood", "Vietnamese", 130, 18, 6, 2,
+                ["Fresh Luffa", "Fresh Shrimp", "Green Onions", "Fish Sauce", "Shallots"],
+                ["Mướp hương thái vát", "Tôm tươi băm thô", "Hành hoa", "Nước mắm ngon", "Hành tím"],
+                ["300g", "120g", "2 stalks", "1 tbsp", "2 pieces"],
+                ["300g", "120g", "2 nhánh", "1 thìa canh", "2 củ"],
+                "1. Sauté shallots with seasoned fresh shrimp. 2. Pour in water and boil vigorously. 3. Drop in sliced fragrant luffa, cook for 1 minute and finish with scallions.",
+                "1. Phi hành tím xào săn tôm băm nêm chút nước mắm. 2. Đổ nước vào đun sôi bùng, thả mướp hương gọt vỏ thái vát vào nấu sôi lại trong 1 phút cho mướp vừa chín tới thơm lừng. 3. Tắt bếp rắc hành hoa dọn ra bát canh ngọt mát dịu dàng.",
+                "https://images.unsplash.com/photo-1569239602012-e2b4575d1d40?auto=format&fit=crop&w=600&q=80",
+                ["🍲 Mướp Hương Thơm Ngát", "🦐 Tôm Ngọt Nước", "🌱 Thanh Mát Bữa Cơm"]),
+
+            // 43. Thịt bò xào nấm thập cẩm
+            M("vn_home_43", "Stir-fried Beef with Assorted Mushrooms", "Thịt Bò Xào Nấm Thập Cẩm Thanh Ngọt", "Beef", "Vietnamese", 260, 30, 8, 10,
+                ["Beef", "Shiitake Mushrooms", "Straw Mushrooms", "Green Onions", "Oyster Sauce"],
+                ["Thịt bò tươi thái mỏng", "Nấm hương tươi", "Nấm rơm tươi", "Hành hoa cắt khúc", "Dầu hào"],
+                ["200g", "100g", "100g", "3 stalks", "1 tbsp"],
+                ["200g", "100g", "100g", "3 nhánh", "1 thìa canh"],
+                "1. Sauté sliced beef quickly on high heat, set aside. 2. Cook mushrooms in oyster sauce until tender and juicy. 3. Return beef and finish with green onions.",
+                "1. Xào nhanh thịt bò thái mỏng trên lửa lớn vừa chín tới trút ra đĩa. 2. Cho nấm rơm và nấm hương vào xào với chút dầu hào cho nấm chín mọng ngọt. 3. Đổ bò vào đảo cùng nấm trong 30 giây rắc hành hoa dọn ra đĩa thơm lừng.",
+                "https://images.unsplash.com/photo-1527369116215-7ed0168aea41?auto=format&fit=crop&w=600&q=80",
+                ["🍄 Nấm Ngọt Giòn Mọng", "🥩 Bò Mềm Đậm Vị", "⚡ 15 Phút"]),
+
+            // 44. Cải ngồng xào tỏi phi giòn
+            M("vn_home_44", "Stir-fried Chinese Broccoli with Garlic", "Cải Ngồng Xào Tỏi Phi Giòn", "Vegetarian", "Vietnamese", 115, 4, 7, 7,
+                ["Chinese Broccoli", "Purple Garlic", "Oyster Sauce", "Cooking Oil"],
+                ["Cải ngồng non xanh", "Tỏi tía đập dập", "Dầu hào", "Dầu ăn"],
+                ["300g", "5 cloves", "1 tbsp", "1 tbsp"],
+                ["300g", "5 tép", "1 thìa canh", "1 thìa canh"],
+                "1. Trim and blanch Chinese broccoli for 45s in boiling salted water. 2. Fry crushed purple garlic until golden. 3. Flash fry greens over high flame with oyster sauce until tender-crisp.",
+                "1. Cải ngồng ngắt ngọn non rửa sạch, chần sơ 45 giây qua nước sôi có chút muối rồi vớt ra ngâm nước đá cho giòn xanh. 2. Phi thơm vàng giòn thật nhiều tỏi tía đập dập. 3. Cho cải ngồng vào chảo đảo nhanh tay trên lửa lớn cùng dầu hào và chút nước tương trong 1 phút là hoàn thành.",
+                "https://images.unsplash.com/photo-1486328228599-85db4443971f?auto=format&fit=crop&w=600&q=80",
+                ["🌱 Xanh Mướt Giòn Ngọt", "🧄 Tỏi Phi Vàng Giòn", "⚡ Dưới 10p"])
         ];
     }
 }

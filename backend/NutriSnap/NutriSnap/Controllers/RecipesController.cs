@@ -31,6 +31,24 @@ public class RecipesController : ControllerBase
         _barcodeNutritionService = barcodeNutritionService;
     }
 
+    /// <summary>
+    /// KIỂM TRA TRẠNG THÁI AI (GET /api/recipes/ai-status)
+    /// Cho biết Local AI (LM Studio Qwen2.5-VL) hay Cloud AI đang hoạt động
+    /// </summary>
+    [HttpGet("ai-status")]
+    public async Task<IActionResult> GetAiStatus()
+    {
+        bool isLocalAvailable = await _aiVisionService.CheckLmStudioAvailableAsync();
+        return Ok(new
+        {
+            activeProvider = isLocalAvailable ? "LM Studio Local (Qwen2.5-VL)" : "Cloud AI Fallback",
+            isLocalAi = isLocalAvailable,
+            model = "qwen2.5-vl-3b-instruct",
+            localEndpoint = "http://localhost:1234/v1",
+            status = isLocalAvailable ? "Online (Running)" : "Offline (Using Cloud Backup)"
+        });
+    }
+
     [HttpGet("shake")]
     public async Task<IActionResult> Shake([FromQuery] string lang = "vi")
     {
@@ -85,12 +103,32 @@ public class RecipesController : ControllerBase
     /// GET /api/recipes/detail/{idMeal}?lang=vi
     /// </summary>
     [HttpGet("detail/{idMeal}")]
-    public async Task<IActionResult> GetMealDetail(string idMeal, [FromQuery] string lang = "vi")
+    public async Task<IActionResult> GetMealDetail(string idMeal, [FromQuery] string lang = "vi", [FromQuery] bool forceAi = false)
     {
-        var meal = await _recipeService.GetMealDetailAsync(idMeal, lang);
+        var meal = await _recipeService.GetMealDetailAsync(idMeal, lang, forceAi);
         if (meal == null)
         {
             return NotFound(new { message = "Không tìm thấy công thức món ăn này." });
+        }
+        return Ok(meal);
+    }
+
+    /// <summary>
+    /// BỘ LỌC AI DỊCH THUẬT CÔNG THỨC TRỰC TIẾP TRƯỚC HOẶC KHI MỞ
+    /// POST /api/recipes/ai-filter-recipe
+    /// </summary>
+    [HttpPost("ai-filter-recipe")]
+    public async Task<IActionResult> AiFilterRecipe([FromBody] AiFilterRecipeRequestDto request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.IdMeal))
+        {
+            return BadRequest(new { message = "IdMeal không được để trống." });
+        }
+
+        var meal = await _recipeService.GetMealDetailAsync(request.IdMeal, "vi", forceAi: true);
+        if (meal == null)
+        {
+            return NotFound(new { message = $"Không tìm thấy món ăn {request.IdMeal}." });
         }
         return Ok(meal);
     }
@@ -100,14 +138,14 @@ public class RecipesController : ControllerBase
     /// POST /api/recipes/translate
     /// </summary>
     [HttpPost("translate")]
-    public async Task<IActionResult> TranslateText([FromBody] TranslateRequestDto request)
+    public async Task<IActionResult> TranslateText([FromBody] TranslateRequestDto request, [FromQuery] bool forceAi = false)
     {
         if (string.IsNullOrWhiteSpace(request.Text))
         {
             return BadRequest(new { message = "Nội dung cần dịch không được để trống." });
         }
 
-        var translated = await _translationService.TranslateAsync(request.Text, request.TargetLang ?? "vi", request.SourceLang ?? "en");
+        var translated = await _translationService.TranslateAsync(request.Text, request.TargetLang ?? "vi", request.SourceLang ?? "en", forceAi);
         return Ok(new
         {
             original = request.Text,
@@ -327,13 +365,19 @@ public class RecipesController : ControllerBase
     }
 
     /// <summary>
-    /// TRA CỨU SẢN PHẨM & CALO THEO MÃ VẠCH (GET /api/recipes/barcode/{code})
-    /// Hỗ trợ EAN-13 bao bì & Tem cân siêu thị (Variable Weight)
+    /// TRA CỨU SẢN PHẨM & CALO THEO MÃ VẠCH / MÃ QR (GET /api/recipes/barcode?code=... hoặc /api/recipes/barcode/{**code})
+    /// Hỗ trợ EAN-13, Tem Cân Siêu Thị, và Mã QR Truy Xuất Nguồn Gốc (Traceability URLs)
     /// </summary>
-    [HttpGet("barcode/{code}")]
-    public async Task<IActionResult> LookupBarcode(string code)
+    [HttpGet("barcode")]
+    [HttpGet("barcode/{**code}")]
+    public async Task<IActionResult> LookupBarcode([FromQuery(Name = "code")] string? queryCode, [FromRoute(Name = "code")] string? pathCode)
     {
-        var result = await _barcodeNutritionService.LookupBarcodeAsync(code);
+        var rawCode = !string.IsNullOrWhiteSpace(queryCode) ? queryCode : pathCode;
+        if (string.IsNullOrWhiteSpace(rawCode))
+        {
+            return BadRequest(new { success = false, message = "Mã vạch hoặc mã QR không được để trống." });
+        }
+        var result = await _barcodeNutritionService.LookupBarcodeAsync(rawCode);
         if (!result.Success && result.Product == null)
         {
             return NotFound(result);
@@ -342,14 +386,31 @@ public class RecipesController : ControllerBase
     }
 
     /// <summary>
-    /// DANH SÁCH MÃ VẠCH MẪU ĐỂ TEST NHANH (GET /api/recipes/barcode/samples)
+    /// QUÉT MÃ VẠCH / TEM CÂN TỪ HÌNH ẢNH BẰNG AI VISION (POST /api/recipes/scan-barcode-image)
     /// </summary>
-    [HttpGet("barcode/samples")]
-    public IActionResult GetBarcodeSamples()
+    [HttpPost("scan-barcode-image")]
+    public async Task<IActionResult> ScanBarcodeImage([FromBody] AnalyzeImageRequest jsonBody)
     {
-        var samples = _barcodeNutritionService.GetSampleProducts();
-        return Ok(samples);
+        if (jsonBody == null || string.IsNullOrWhiteSpace(jsonBody.ImageBase64))
+        {
+            return BadRequest(new { success = false, message = "Vui lòng cung cấp chuỗi Base64 của ảnh." });
+        }
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(jsonBody.ImageBase64);
+        }
+        catch
+        {
+            return BadRequest(new { success = false, message = "Chuỗi Base64 hình ảnh không hợp lệ." });
+        }
+
+        string contentType = !string.IsNullOrWhiteSpace(jsonBody.ContentType) ? jsonBody.ContentType : "image/jpeg";
+        var result = await _barcodeNutritionService.ScanBarcodeFromImageAsync(bytes, contentType);
+        return Ok(result);
     }
+
 
     /// <summary>
     /// LẤY DANH SÁCH GỢI Ý NGUYÊN LIỆU NHANH (GET /api/recipes/quick-suggestions)
@@ -409,4 +470,9 @@ public class TranslateRequestDto
     public string Text { get; set; } = "";
     public string? TargetLang { get; set; } = "vi";
     public string? SourceLang { get; set; } = "en";
+}
+
+public class AiFilterRecipeRequestDto
+{
+    public string IdMeal { get; set; } = "";
 }

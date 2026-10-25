@@ -65,7 +65,8 @@ public class UserController : ControllerBase
             googleEmail = user.GoogleEmail,
             facebookName = user.FacebookName,
             isGuest = user.IsGuest,
-            hasProfile = user.HasProfile
+            hasProfile = user.HasProfile,
+            hasPassword = !string.IsNullOrEmpty(user.PasswordHash)
         });
     }
 
@@ -445,6 +446,25 @@ public class UserController : ControllerBase
             });
         }
 
+        // Cập nhật mật khẩu nếu có gửi kèm (ví dụ nâng cấp từ khách hoặc đổi mật khẩu)
+        if (!string.IsNullOrWhiteSpace(dto.NewPassword))
+        {
+            var hasPassword = await _userManager.HasPasswordAsync(user);
+            if (hasPassword)
+            {
+                await _userManager.RemovePasswordAsync(user);
+            }
+            var addPassResult = await _userManager.AddPasswordAsync(user, dto.NewPassword.Trim());
+            if (!addPassResult.Succeeded)
+            {
+                return BadRequest(new
+                {
+                    message = "Email đã được xác nhận nhưng mật khẩu không hợp lệ (tối thiểu 6 ký tự).",
+                    errors = addPassResult.Errors.Select(e => e.Description)
+                });
+            }
+        }
+
         // 4. Xóa OTP sau khi đổi thành công
         _cache.Remove(cacheKey);
 
@@ -454,10 +474,62 @@ public class UserController : ControllerBase
 
         return Ok(new
         {
-            message = "Đổi email đăng ký thành công!",
+            message = "Xác nhận và liên kết email thành công!",
             oldEmail,
             newEmail = user.Email,
-            token = newToken
+            token = newToken,
+            hasPassword = !string.IsNullOrEmpty(user.PasswordHash)
+        });
+    }
+
+    /// <summary>
+    /// THIẾT LẬP HOẶC ĐỔI MẬT KHẨU CHO TÀI KHOẢN ĐÃ ĐĂNG NHẬP (POST /api/user/set-password)
+    /// </summary>
+    [HttpPost("set-password")]
+    public async Task<IActionResult> SetPassword([FromBody] SetPasswordDto dto)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
+        {
+            return Unauthorized(new { message = "Phiên làm việc không hợp lệ hoặc đã hết hạn." });
+        }
+
+        var user = await _userManager.FindByIdAsync(userIdStr);
+        if (user == null) return NotFound(new { message = "Không tìm thấy thông tin người dùng." });
+
+        if (string.IsNullOrWhiteSpace(dto.NewPassword) || dto.NewPassword.Trim().Length < 6)
+        {
+            return BadRequest(new { message = "Mật khẩu mới phải có tối thiểu 6 ký tự." });
+        }
+
+        var hasPassword = await _userManager.HasPasswordAsync(user);
+        if (hasPassword)
+        {
+            var removeResult = await _userManager.RemovePasswordAsync(user);
+            if (!removeResult.Succeeded)
+            {
+                return BadRequest(new
+                {
+                    message = "Không thể làm mới mật khẩu cũ.",
+                    errors = removeResult.Errors.Select(e => e.Description)
+                });
+            }
+        }
+
+        var addResult = await _userManager.AddPasswordAsync(user, dto.NewPassword.Trim());
+        if (!addResult.Succeeded)
+        {
+            return BadRequest(new
+            {
+                message = "Thiết lập mật khẩu thất bại.",
+                errors = addResult.Errors.Select(e => e.Description)
+            });
+        }
+
+        return Ok(new
+        {
+            message = hasPassword ? "Đổi mật khẩu thành công!" : "Thiết lập mật khẩu mới thành công! Bạn có thể sử dụng mật khẩu này để đăng nhập lần sau.",
+            hasPassword = true
         });
     }
 }

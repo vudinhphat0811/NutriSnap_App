@@ -313,7 +313,59 @@ public class AiNutritionAdvisorService
             promptBuilder.AppendLine("}");
         }
 
-        string[] models = { "gemini-2.5-flash", "gemini-flash-latest" };
+        // 1. Thử Groq Cloud AI (siêu tốc < 1s, chuẩn JSON, 100% Cloud, không dùng AI local)
+        string groqKey = _config["GROQ_API_KEY"]
+            ?? _config["AiKeys:GroqApiKey"]
+            ?? Environment.GetEnvironmentVariable("GROQ_API_KEY")
+            ?? "";
+        if (!string.IsNullOrWhiteSpace(groqKey))
+        {
+            string[] groqModels = { "qwen/qwen3.8-27b", "openai/gpt-oss-20b" };
+            foreach (var gModel in groqModels)
+            {
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                    var groqPayload = new
+                    {
+                        model = gModel,
+                        messages = new object[]
+                        {
+                            new { role = "system", content = "Bạn là chuyên gia dinh dưỡng cao cấp. Hãy đánh giá chế độ ăn uống và trả về duy nhất định dạng JSON thuần túy theo cấu trúc yêu cầu." },
+                            new { role = "user", content = promptBuilder.ToString() }
+                        },
+                        temperature = 0.3
+                    };
+                    using var msg = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
+                    msg.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", groqKey);
+                    msg.Content = new StringContent(JsonSerializer.Serialize(groqPayload), Encoding.UTF8, "application/json");
+                    var resp = await _httpClient.SendAsync(msg, cts.Token);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        string resJson = await resp.Content.ReadAsStringAsync(cts.Token);
+                        var node = JsonNode.Parse(resJson);
+                        string? rawText = node?["choices"]?[0]?["message"]?["content"]?.ToString();
+                        if (!string.IsNullOrWhiteSpace(rawText))
+                        {
+                            var cleanedJson = CleanJsonString(rawText);
+                            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                            var parsed = JsonSerializer.Deserialize<NutritionReviewResultDto>(cleanedJson, options);
+                            if (parsed != null && parsed.Score > 0)
+                            {
+                                _logger.LogInformation("Đánh giá dinh dưỡng thành công bằng Groq Cloud AI ({Model})!", gModel);
+                                return parsed;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("Groq AI Advisor ({Model}) lỗi: {Msg}", gModel, ex.Message);
+                }
+            }
+        }
+
+        string[] models = { "gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest" };
 
         foreach (var model in models)
         {
@@ -364,6 +416,50 @@ public class AiNutritionAdvisorService
             catch (Exception ex)
             {
                 _logger.LogWarning("Thử Gemini model {Model} thất bại: {Message}", model, ex.Message);
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<NutritionReviewResultDto?> CallLmStudioAdvisorAsync(string prompt)
+    {
+        string baseUrl = _config["LmStudio:BaseUrl"] ?? "http://127.0.0.1:1234/v1";
+        string model = _config["LmStudio:Model"] ?? "qwen2.5-vl-3b-instruct";
+        string url = $"{baseUrl.TrimEnd('/')}/chat/completions";
+
+        var payload = new
+        {
+            model = model,
+            messages = new object[]
+            {
+                new { role = "user", content = prompt }
+            },
+            temperature = 0.2,
+            max_tokens = 1000
+        };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+        };
+
+        using var response = await _httpClient.SendAsync(request, cts.Token);
+        if (response.IsSuccessStatusCode)
+        {
+            string resBody = await response.Content.ReadAsStringAsync(cts.Token);
+            var node = JsonNode.Parse(resBody);
+            string? rawText = node?["choices"]?[0]?["message"]?["content"]?.ToString();
+            if (!string.IsNullOrWhiteSpace(rawText))
+            {
+                var cleanedJson = CleanJsonString(rawText);
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var parsed = JsonSerializer.Deserialize<NutritionReviewResultDto>(cleanedJson, options);
+                if (parsed != null && parsed.Score > 0)
+                {
+                    return parsed;
+                }
             }
         }
 

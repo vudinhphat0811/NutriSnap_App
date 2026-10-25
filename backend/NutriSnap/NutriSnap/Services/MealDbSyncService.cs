@@ -72,18 +72,33 @@ public class MealDbSyncService
                         dict[hr.IdMeal] = hr;
                     }
 
-                    // 3. Lọc và loại bỏ triệt để 100% các món có ảnh trùng lặp trong cơ sở dữ liệu
-                    var duplicateImageUrls = dict.Values
-                        .Where(x => !string.IsNullOrWhiteSpace(x.StrMealThumb))
-                        .GroupBy(x => x.StrMealThumb.Trim(), StringComparer.OrdinalIgnoreCase)
-                        .Where(g => g.Count() > 1)
-                        .Select(g => g.Key)
-                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    // 3. Khử trùng lặp ảnh: Giữ lại 100% các món ăn gia đình quen thuộc (vn_home_), và món đầu tiên cho các công thức khác
+                    var cleanList = new List<RecommendedMealDto>();
+                    var seenImages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                    var cleanList = dict.Values
-                        .Where(x => !string.IsNullOrWhiteSpace(x.StrMealThumb) &&
-                                    !duplicateImageUrls.Contains(x.StrMealThumb.Trim()))
-                        .ToList();
+                    // Ưu tiên cao nhất cho vn_home_ và mc_
+                    foreach (var m in dict.Values.OrderByDescending(x => x.IdMeal.StartsWith("vn_home_") ? 2 : (x.IdMeal.StartsWith("mc_") ? 1 : 0)))
+                    {
+                        // Món ăn gia đình Việt Nam: Luôn giữ lại 100% (không có ảnh thật thì Client hiển thị Food Icon)
+                        if (m.IdMeal.StartsWith("vn_home_"))
+                        {
+                            cleanList.Add(m);
+                            if (!string.IsNullOrWhiteSpace(m.StrMealThumb))
+                            {
+                                seenImages.Add(m.StrMealThumb.Trim());
+                            }
+                            continue;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(m.StrMealThumb)) continue;
+
+                        // Các món quốc tế khác: Không cho trùng ảnh, chỉ giữ lại món xuất hiện đầu tiên
+                        if (!seenImages.Contains(m.StrMealThumb.Trim()))
+                        {
+                            seenImages.Add(m.StrMealThumb.Trim());
+                            cleanList.Add(m);
+                        }
+                    }
 
                     // Chuẩn hóa định lượng thực tế 100% cho toàn bộ công thức trong toàn bộ cơ sở dữ liệu
                     foreach (var r in cleanList)
@@ -214,8 +229,8 @@ public class MealDbSyncService
 
         var resultList = allMeals.Values
             .Where(x => !x.IdMeal.StartsWith("vn_combo_", StringComparison.OrdinalIgnoreCase) &&
-                        !string.IsNullOrWhiteSpace(x.StrMealThumb) &&
-                        !duplicateImageUrls.Contains(x.StrMealThumb.Trim()))
+                        (x.IdMeal.StartsWith("vn_home_", StringComparison.OrdinalIgnoreCase) ||
+                         (!string.IsNullOrWhiteSpace(x.StrMealThumb) && !duplicateImageUrls.Contains(x.StrMealThumb.Trim()))))
             .ToList();
 
         Console.WriteLine($"\n[TỔNG HỢP] Đã thu thập thành công {resultList.Count} công thức độc nhất (100% ảnh độc bản, 0 trùng lặp)!");

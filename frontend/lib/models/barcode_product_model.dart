@@ -14,7 +14,10 @@ class BarcodeProductModel {
   final double carbsPer100g;
   final double fatPer100g;
   final double fiberPer100g;
+  final double? sugarsPer100g;
+  final double? saturatedFatPer100g;
   final double? sodiumMg;
+  final String ingredientsText;
   final String imageUrl;
   final String source;
   final String? cutEquivalentId;
@@ -34,9 +37,12 @@ class BarcodeProductModel {
     required this.carbsPer100g,
     required this.fatPer100g,
     required this.fiberPer100g,
+    this.sugarsPer100g,
+    this.saturatedFatPer100g,
     this.sodiumMg,
+    this.ingredientsText = '',
     this.imageUrl = '',
-    this.source = 'NutriSnap Barcode DB',
+    this.source = 'Open Food Facts (CSDL Bên Thứ 3)',
     this.cutEquivalentId,
     this.notes = '',
   });
@@ -58,9 +64,12 @@ class BarcodeProductModel {
       carbsPer100g: (json['carbsPer100g'] ?? json['CarbsPer100g'] ?? 0.0).toDouble(),
       fatPer100g: (json['fatPer100g'] ?? json['FatPer100g'] ?? 0.0).toDouble(),
       fiberPer100g: (json['fiberPer100g'] ?? json['FiberPer100g'] ?? 0.0).toDouble(),
+      sugarsPer100g: json['sugarsPer100g'] != null ? (json['sugarsPer100g']).toDouble() : (json['SugarsPer100g'] != null ? (json['SugarsPer100g']).toDouble() : null),
+      saturatedFatPer100g: json['saturatedFatPer100g'] != null ? (json['saturatedFatPer100g']).toDouble() : (json['SaturatedFatPer100g'] != null ? (json['SaturatedFatPer100g']).toDouble() : null),
       sodiumMg: json['sodiumMg'] != null ? (json['sodiumMg']).toDouble() : (json['SodiumMg'] != null ? (json['SodiumMg']).toDouble() : null),
+      ingredientsText: json['ingredientsText'] ?? json['IngredientsText'] ?? '',
       imageUrl: json['imageUrl'] ?? json['ImageUrl'] ?? '',
-      source: json['source'] ?? json['Source'] ?? 'NutriSnap DB',
+      source: json['source'] ?? json['Source'] ?? 'Open Food Facts (CSDL Bên Thứ 3)',
       cutEquivalentId: json['cutEquivalentId'] ?? json['CutEquivalentId'],
       notes: json['notes'] ?? json['Notes'] ?? '',
     );
@@ -80,7 +89,10 @@ class BarcodeProductModel {
     'carbsPer100g': carbsPer100g,
     'fatPer100g': fatPer100g,
     'fiberPer100g': fiberPer100g,
+    'sugarsPer100g': sugarsPer100g,
+    'saturatedFatPer100g': saturatedFatPer100g,
     'sodiumMg': sodiumMg,
+    'ingredientsText': ingredientsText,
     'imageUrl': imageUrl,
     'source': source,
     'cutEquivalentId': cutEquivalentId,

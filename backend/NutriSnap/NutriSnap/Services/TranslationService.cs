@@ -116,6 +116,25 @@ public class TranslationService
         ["thyme"] = "Xạ hương",
         ["oregano"] = "Lá kinh giới tây (Oregano)",
         ["lemongrass"] = "Sả",
+        ["spinach"] = "Rau muống",
+        ["water spinach"] = "Rau muống",
+        ["morning glory"] = "Rau muống",
+        ["bok choy"] = "Cải thìa",
+        ["pak choi"] = "Cải thìa",
+        ["chinese broccoli"] = "Cải ngồng",
+        ["gai lan"] = "Cải ngồng",
+        ["kai lan"] = "Cải ngồng",
+        ["choy sum"] = "Cải ngồng",
+        ["choi sum"] = "Cải ngồng",
+        ["yu choy"] = "Cải ngồng",
+        ["chinese cabbage"] = "Cải thảo",
+        ["napa cabbage"] = "Cải thảo",
+        ["mustard greens"] = "Cải xanh",
+        ["chinese mustard greens"] = "Cải xanh",
+        ["lettuce"] = "Xà lách",
+        ["romaine lettuce"] = "Xà lách Romaine",
+        ["bean sprouts"] = "Giá đỗ",
+        ["kale"] = "Cải xoăn",
 
         // Gia vị, Dầu ăn & Sữa
         ["salt"] = "Muối",
@@ -192,22 +211,60 @@ public class TranslationService
         ["pinches"] = "nhúm",
         ["to taste"] = "vừa ăn",
         ["to serve"] = "Dùng kèm",
-        ["garnish"] = "Trang trí"
+        ["garnish"] = "Trang trí",
+
+        // Bổ sung các nguyên liệu đặc thù ẩm thực quốc tế & MealDB
+        ["scotch bonnet"] = "Ớt cay Scotch Bonnet",
+        ["scotch bonnet pepper"] = "Ớt cay Scotch Bonnet",
+        ["shortening"] = "Mỡ trừu (shortening làm bánh)",
+        ["vegetable shortening"] = "Mỡ trừu (shortening làm bánh)",
+        ["jerk"] = "Gia vị Jerk Jamaica",
+        ["jerk seasoning"] = "Gia vị Jerk Jamaica",
+        ["allspice"] = "Tiêu Jamaica (Allspice)",
+        ["ground allspice"] = "Bột tiêu Jamaica (Allspice)",
+        ["roti"] = "Bánh Roti",
+        ["chicken and potato roti"] = "Bánh Roti gà và khoai tây",
+        ["plantain"] = "Chuối ngự (chuối lá xanh)",
+        ["plantains"] = "Chuối ngự",
+        ["ghee"] = "Bơ Ghee (bơ tinh chất)"
     };
 
-    public TranslationService(HttpClient httpClient, IMemoryCache cache, ILogger<TranslationService> logger)
+    private readonly IConfiguration _config;
+
+    public TranslationService(HttpClient httpClient, IMemoryCache cache, ILogger<TranslationService> logger, IConfiguration config)
     {
         _httpClient = httpClient;
         _cache = cache;
         _logger = logger;
+        _config = config;
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
-        _httpClient.Timeout = TimeSpan.FromSeconds(3); // Giới hạn tối đa 3s để không bao giờ làm treo ứng dụng
+        _httpClient.Timeout = TimeSpan.FromSeconds(25);
     }
 
     /// <summary>
-    /// Dịch một đoạn văn bản hoặc câu từ Tiếng Anh sang Tiếng Việt (có Cache và từ điển nhanh 0ms)
+    /// Kiểm tra văn bản có phải đã là tiếng Việt hay không (dựa trên dấu tiếng Việt đặc trưng)
     /// </summary>
-    public async Task<string> TranslateAsync(string text, string targetLang = "vi", string sourceLang = "en")
+    public static bool IsVietnamese(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        const string vietnameseChars = "àáảãạăắằẳẵặâấầẩẫậđèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬĐÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴ";
+        bool hasVnDiacritic = text.Any(c => vietnameseChars.Contains(c));
+        if (hasVnDiacritic) return true;
+
+        string lower = " " + text.ToLowerInvariant().Replace("\r", " ").Replace("\n", " ") + " ";
+        string[] enWords = { " the ", " and ", " with ", " for ", " cook ", " heat ", " add ", " stir ", " boil ", " into ", " then ", " saucepan ", " skillet ", " oven ", " minutes ", " hours ", " cup ", " tablespoon ", " teaspoon ", " chicken ", " potato ", " pepper ", " salt ", " sugar ", " until " };
+        if (enWords.Any(w => lower.Contains(w)))
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Dịch một đoạn văn bản hoặc câu từ Tiếng Anh sang Tiếng Việt (có Cache, clients5 Google, MyMemory và bộ lọc AI dự phòng)
+    /// </summary>
+    public async Task<string> TranslateAsync(string text, string targetLang = "vi", string sourceLang = "en", bool forceAi = false)
     {
         if (string.IsNullOrWhiteSpace(text)) return text;
         if (targetLang.Equals(sourceLang, StringComparison.OrdinalIgnoreCase)) return text;
@@ -215,42 +272,57 @@ public class TranslationService
         string trimmed = text.Trim();
 
         // 1. Tra cứu nhanh từ điển (0ms)
-        if (QuickDictionary.TryGetValue(trimmed, out var quickVal))
+        if (!forceAi && QuickDictionary.TryGetValue(trimmed, out var quickVal))
         {
             return quickVal;
         }
 
         // 2. Tra cứu bộ nhớ đệm Cache
         string cacheKey = $"trans_{sourceLang}_{targetLang}_{trimmed.GetHashCode()}";
-        if (_cache.TryGetValue(cacheKey, out string? cached) && !string.IsNullOrEmpty(cached))
+        if (!forceAi && _cache.TryGetValue(cacheKey, out string? cached) && !string.IsNullOrEmpty(cached))
         {
-            return cached;
+            if (targetLang != "vi" || IsVietnamese(cached) || cached.Length < 6)
+            {
+                return cached;
+            }
         }
 
+        // Nếu forceAi được yêu cầu, gọi thẳng bộ lọc AI
+        if (forceAi)
+        {
+            var aiResult = await TranslateWithAiAsync(trimmed, targetLang);
+            if (!string.IsNullOrWhiteSpace(aiResult) && (targetLang != "vi" || IsVietnamese(aiResult)))
+            {
+                _cache.Set(cacheKey, aiResult, TimeSpan.FromDays(7));
+                return aiResult;
+            }
+        }
+
+        // Tier 1: clients5 Google Translate (Hỗ trợ POST cho câu dài không bị giới hạn URL)
         try
         {
-            string url = $"https://translate.googleapis.com/translate_a/single?client=gtx&sl={sourceLang}&tl={targetLang}&dt=t&q={Uri.EscapeDataString(trimmed)}";
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2.5));
-            var response = await _httpClient.GetStringAsync(url, cts.Token);
-            var json = JsonNode.Parse(response);
-
-            if (json is JsonArray rootArray && rootArray.Count > 0 && rootArray[0] is JsonArray sentences)
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+            using var content = new FormUrlEncodedContent(new[]
             {
-                var sb = new StringBuilder();
-                foreach (var s in sentences)
+                new KeyValuePair<string, string>("q", trimmed)
+            });
+            string url = $"https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl={sourceLang}&tl={targetLang}";
+            var response = await _httpClient.PostAsync(url, content, cts.Token);
+            if (response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync(cts.Token);
+                var json = JsonNode.Parse(responseBody);
+                string? translated = null;
+                if (json is JsonArray arr && arr.Count > 0)
                 {
-                    if (s is JsonArray item && item.Count > 0)
-                    {
-                        var segment = item[0]?.ToString();
-                        if (!string.IsNullOrEmpty(segment))
-                        {
-                            sb.Append(segment);
-                        }
-                    }
+                    translated = string.Join(" ", arr.Select(x => x?.ToString() ?? "")).Trim();
+                }
+                else if (json != null)
+                {
+                    translated = json.ToString().Trim();
                 }
 
-                string translated = sb.ToString().Trim();
-                if (!string.IsNullOrEmpty(translated))
+                if (!string.IsNullOrEmpty(translated) && (targetLang != "vi" || IsVietnamese(translated) || translated.Length < 6))
                 {
                     _cache.Set(cacheKey, translated, TimeSpan.FromDays(7));
                     return translated;
@@ -259,10 +331,180 @@ public class TranslationService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("Không thể dịch nhanh: {Message}", ex.Message);
+            _logger.LogWarning("clients5 Google Translate lỗi: {Message}", ex.Message);
+        }
+
+        // Tier 2: MyMemory Free API Fallback
+        if (trimmed.Length < 500)
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+                string memoryUrl = $"https://api.mymemory.translated.net/get?q={Uri.EscapeDataString(trimmed)}&langpair={sourceLang}|{targetLang}";
+                var responseBody = await _httpClient.GetStringAsync(memoryUrl, cts.Token);
+                var json = JsonNode.Parse(responseBody);
+                var translated = json?["responseData"]?["translatedText"]?.ToString()?.Trim();
+                if (!string.IsNullOrEmpty(translated) && !translated.Contains("MYMEMORY WARNING") && (targetLang != "vi" || IsVietnamese(translated)))
+                {
+                    _cache.Set(cacheKey, translated, TimeSpan.FromDays(7));
+                    return translated;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("MyMemory Translate lỗi: {Message}", ex.Message);
+            }
+        }
+
+        // Tier 3: Bộ lọc AI dịch thuật chuyên sâu (LM Studio Local -> Groq AI -> Cloud Gemini)
+        try
+        {
+            var aiResult = await TranslateWithAiAsync(trimmed, targetLang);
+            if (!string.IsNullOrWhiteSpace(aiResult) && (targetLang != "vi" || IsVietnamese(aiResult)))
+            {
+                _cache.Set(cacheKey, aiResult, TimeSpan.FromDays(7));
+                return aiResult;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("AI Culinary Translation Filter lỗi: {Message}", ex.Message);
         }
 
         return text;
+    }
+
+    /// <summary>
+    /// Bộ lọc AI dịch thuật chuyên sâu cho món ăn và các bước nấu (LM Studio Local Qwen2.5 -> Groq AI -> Cloud Gemini)
+    /// </summary>
+    public async Task<string?> TranslateWithAiAsync(string text, string targetLang = "vi")
+    {
+        if (string.IsNullOrWhiteSpace(text)) return text;
+
+        string prompt = "Bạn là dịch giả ẩm thực chuyên nghiệp. Hãy dịch nội dung công thức nấu ăn sau từ tiếng Anh sang tiếng Việt tự nhiên, chuẩn phong cách ẩm thực, giữ nguyên các bước đánh số thứ tự (1, 2, 3...) nếu có. Tuyệt đối CHỈ trả về duy nhất bản dịch tiếng Việt, không kèm bất kỳ giải thích, chú thích hay văn bản thừa nào.\n\nNội dung cần dịch:\n" + text;
+
+        // 1. Thử Groq Cloud AI (siêu tốc < 1s, 100% Cloud, tuyệt đối không dùng AI local)
+        string groqKey = _config["GROQ_API_KEY"]
+            ?? _config["AiKeys:GroqApiKey"]
+            ?? Environment.GetEnvironmentVariable("GROQ_API_KEY")
+            ?? "";
+        if (!string.IsNullOrWhiteSpace(groqKey))
+        {
+            string[] groqModels = { "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-120b" };
+            foreach (var gModel in groqModels)
+            {
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    var groqPayload = new
+                    {
+                        model = gModel,
+                        messages = new object[]
+                        {
+                            new { role = "system", content = "Dịch công thức ẩm thực sang tiếng Việt chuẩn xác. Chỉ trả về bản dịch tiếng Việt." },
+                            new { role = "user", content = prompt }
+                        },
+                        temperature = 0.2
+                    };
+                    using var msg = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
+                    msg.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", groqKey);
+                    msg.Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(groqPayload), Encoding.UTF8, "application/json");
+                    var resp = await _httpClient.SendAsync(msg, cts.Token);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        var resJson = await resp.Content.ReadAsStringAsync(cts.Token);
+                        var node = JsonNode.Parse(resJson);
+                        var output = node?["choices"]?[0]?["message"]?["content"]?.ToString()?.Trim();
+                        if (!string.IsNullOrWhiteSpace(output) && IsVietnamese(output))
+                        {
+                            _logger.LogInformation("Bộ lọc Groq Cloud AI ({Model}) dịch công thức thành công!", gModel);
+                            return output;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("Groq Cloud AI ({Model}) translate lỗi: {Message}", gModel, ex.Message);
+                }
+            }
+        }
+
+        // 2. Thử Google Gemini Cloud AI
+        string geminiKey = _config["GEMINI_API_KEY"]
+            ?? _config["AiKeys:GeminiApiKey"]
+            ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY")
+            ?? "";
+        if (!string.IsNullOrWhiteSpace(geminiKey))
+        {
+            string[] geminiModels = { "gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest" };
+            foreach (var gModel in geminiModels)
+            {
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+                    var geminiPayload = new
+                    {
+                        contents = new[]
+                        {
+                            new { parts = new object[] { new { text = prompt } } }
+                        }
+                    };
+                    string gUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{gModel}:generateContent?key={geminiKey}";
+                    using var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(geminiPayload), Encoding.UTF8, "application/json");
+                    var resp = await _httpClient.PostAsync(gUrl, content, cts.Token);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        var resJson = await resp.Content.ReadAsStringAsync(cts.Token);
+                        var node = JsonNode.Parse(resJson);
+                        var output = node?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString()?.Trim();
+                        if (!string.IsNullOrWhiteSpace(output) && IsVietnamese(output))
+                        {
+                            _logger.LogInformation("Bộ lọc Gemini Cloud AI ({Model}) dịch công thức thành công!", gModel);
+                            return output;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("Gemini Cloud AI ({Model}) translate lỗi: {Message}", gModel, ex.Message);
+                }
+            }
+        }
+
+        // 3. Fallback dự phòng trực tiếp clients5 Google Translate (nhanh, chuẩn xác, không bao giờ mất kết nối)
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            using var formContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("q", text.Trim())
+            });
+            string url = $"https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=en&tl={targetLang}";
+            var response = await _httpClient.PostAsync(url, formContent, cts.Token);
+            if (response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync(cts.Token);
+                var json = JsonNode.Parse(responseBody);
+                string? translated = null;
+                if (json is JsonArray arr && arr.Count > 0)
+                {
+                    translated = string.Join(" ", arr.Select(x => x?.ToString() ?? "")).Trim();
+                }
+                else if (json != null)
+                {
+                    translated = json.ToString().Trim();
+                }
+
+                if (!string.IsNullOrEmpty(translated) && IsVietnamese(translated))
+                {
+                    _logger.LogInformation("Bộ lọc Fallback Google Translate dịch công thức thành công!");
+                    return translated;
+                }
+            }
+        }
+        catch { }
+
+        return null;
     }
 
     /// <summary>
@@ -346,6 +588,38 @@ public class TranslationService
         string lower = raw.ToLowerInvariant();
 
         // 1. Kiểm tra các lỗi dịch sai ngữ cảnh nghiêm trọng thường gặp:
+        if (lower.Equals("garlic") || lower.Contains("garlic clove") || lower.Contains("clove of garlic") || lower.Contains("cloves of garlic"))
+        {
+            return "Tỏi";
+        }
+        if (lower.Contains("tomato puree") || lower.Contains("tomato purée") || lower.Contains("tomato paste"))
+        {
+            return "Sốt cà chua cô đặc";
+        }
+        if (lower.Contains("chicken stock") || lower.Contains("chicken broth"))
+        {
+            return "Nước dùng gà";
+        }
+        if (lower.Contains("beef stock") || lower.Contains("beef broth"))
+        {
+            return "Nước dùng bò";
+        }
+        if (lower.Contains("vegetable stock") || lower.Contains("vegetable broth"))
+        {
+            return "Nước dùng rau củ";
+        }
+        if (lower.Contains("white wine"))
+        {
+            return "Rượu vang trắng";
+        }
+        if (lower.Contains("red wine"))
+        {
+            return "Rượu vang đỏ";
+        }
+        if (lower.Contains("chorizo"))
+        {
+            return "Xúc xích Chorizo";
+        }
         if (lower.Contains("spring onion") || lower.Contains("scallion") || lower.Contains("green onion"))
         {
             return "Hành lá";
@@ -413,6 +687,26 @@ public class TranslationService
         if (lower.Equals("raw king prawns") || lower.Equals("king prawns") || lower.Equals("tiger prawns"))
         {
             return "Tôm tươi";
+        }
+        if (lower.Contains("scotch bonnet"))
+        {
+            return "Ớt cay Scotch Bonnet";
+        }
+        if (lower.Contains("shortening"))
+        {
+            return "Mỡ trừu (shortening làm bánh)";
+        }
+        if (lower.Contains("jerk"))
+        {
+            return "Gia vị Jerk Jamaica";
+        }
+        if (lower.Contains("allspice"))
+        {
+            return "Tiêu Jamaica (Allspice)";
+        }
+        if (lower.Equals("roti"))
+        {
+            return "Bánh Roti";
         }
 
         // 2. Tra cứu trực tiếp từ điển QuickDictionary

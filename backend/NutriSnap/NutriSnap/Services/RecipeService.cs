@@ -177,20 +177,31 @@ public class RecipeService
     }
 
     /// <summary>
-    /// Lấy chi tiết món ăn đầy đủ từ Cơ sở dữ liệu cục bộ và tự động dịch 100% sang Tiếng Việt bằng TranslationService
+    /// Lấy chi tiết món ăn đầy đủ từ Cơ sở dữ liệu cục bộ và tự động dịch 100% sang Tiếng Việt bằng TranslationService & AI Filter
     /// </summary>
-    public async Task<RecommendedMealDto?> GetMealDetailAsync(string idMeal, string lang = "vi")
+    public async Task<RecommendedMealDto?> GetMealDetailAsync(string idMeal, string lang = "vi", bool forceAi = false)
     {
         string cacheKey = $"local_meal_detail_{idMeal}_{lang}";
-        if (_cache.TryGetValue(cacheKey, out RecommendedMealDto? cached) && cached != null)
+        if (!forceAi && _cache.TryGetValue(cacheKey, out RecommendedMealDto? cached) && cached != null)
         {
-            return cached;
+            // Đảm bảo nếu lang == "vi", bản dịch cách nấu trong cache thực sự là tiếng Việt
+            if (!lang.Equals("vi", StringComparison.OrdinalIgnoreCase) || 
+                (TranslationService.IsVietnamese(cached.StrInstructionsVi) && 
+                 (cached.IngredientsVi == null || cached.IngredientsVi.All(TranslationService.IsVietnamese))))
+            {
+                return cached;
+            }
         }
 
         try
         {
             var all = await GetAllDatabaseRecipesAsync();
             var rawMeal = all.FirstOrDefault(m => string.Equals(m.IdMeal, idMeal, StringComparison.OrdinalIgnoreCase));
+
+            if (rawMeal == null && idMeal.StartsWith("vn_home_", StringComparison.OrdinalIgnoreCase))
+            {
+                rawMeal = MultiSourceCatalogService.GetAllRecipes().FirstOrDefault(m => string.Equals(m.IdMeal, idMeal, StringComparison.OrdinalIgnoreCase));
+            }
 
             if (rawMeal == null)
             {
@@ -228,12 +239,22 @@ public class RecipeService
 
             if (lang.Equals("vi", StringComparison.OrdinalIgnoreCase))
             {
-                var taskTitle = (string.IsNullOrWhiteSpace(meal.StrMealVi) || meal.StrMealVi == meal.StrMeal)
-                    ? _translationService.TranslateAsync(meal.StrMeal, "vi", "en")
+                bool needsTitleTrans = forceAi ||
+                    string.IsNullOrWhiteSpace(meal.StrMealVi) || 
+                    meal.StrMealVi == meal.StrMeal || 
+                    !TranslationService.IsVietnamese(meal.StrMealVi);
+
+                bool needsInstructionsTrans = forceAi ||
+                    string.IsNullOrWhiteSpace(meal.StrInstructionsVi) || 
+                    meal.StrInstructionsVi == meal.StrInstructions || 
+                    !TranslationService.IsVietnamese(meal.StrInstructionsVi);
+
+                var taskTitle = needsTitleTrans
+                    ? _translationService.TranslateAsync(meal.StrMeal, "vi", "en", false)
                     : Task.FromResult(meal.StrMealVi!);
 
-                var taskInstructions = (string.IsNullOrWhiteSpace(meal.StrInstructionsVi) && !string.IsNullOrWhiteSpace(meal.StrInstructions))
-                    ? _translationService.TranslateAsync(meal.StrInstructions, "vi", "en")
+                var taskInstructions = needsInstructionsTrans
+                    ? _translationService.TranslateAsync(meal.StrInstructions ?? "", "vi", "en", forceAi)
                     : Task.FromResult(meal.StrInstructionsVi ?? "");
 
                 await Task.WhenAll(taskTitle, taskInstructions);
@@ -254,9 +275,9 @@ public class RecipeService
                 for (int i = 0; i < sanitizedIngredients.Count; i++)
                 {
                     string item = sanitizedIngredients[i];
-                    if (string.Equals(item, meal.Ingredients[i], StringComparison.OrdinalIgnoreCase))
+                    if (!TranslationService.IsVietnamese(item) || string.Equals(item, meal.Ingredients[i], StringComparison.OrdinalIgnoreCase))
                     {
-                        sanitizedIngredients[i] = await _translationService.TranslateAsync(item, "vi", "en");
+                        sanitizedIngredients[i] = await _translationService.TranslateAsync(meal.Ingredients[i], "vi", "en", false);
                     }
                 }
                 meal.IngredientsVi = sanitizedIngredients;
@@ -265,7 +286,15 @@ public class RecipeService
                 SanitizeMealMeasures(meal);
             }
 
-            _cache.Set(cacheKey, meal, TimeSpan.FromDays(7));
+            // Chỉ lưu cache dài 7 ngày nếu đã có bản dịch tiếng Việt hợp lệ
+            if (!lang.Equals("vi", StringComparison.OrdinalIgnoreCase) || TranslationService.IsVietnamese(meal.StrInstructionsVi))
+            {
+                _cache.Set(cacheKey, meal, TimeSpan.FromDays(7));
+            }
+            else
+            {
+                _cache.Set(cacheKey, meal, TimeSpan.FromSeconds(30));
+            }
             return meal;
         }
         catch (Exception ex)
@@ -486,51 +515,11 @@ public class RecipeService
         // Giữ nguyên ảnh chụp món gốc từ TheMealDB
         if (current.Contains("themealdb.com", StringComparison.OrdinalIgnoreCase)) return;
 
-        bool isOverusedRibs = current.Contains("photo-1544025162-d76694265947");
-        bool isGenericSalad = current.Contains("photo-1546069901-ba9599a7e63c");
-        bool isSaladBowl = current.Contains("photo-1540420773420-3366772f4999");
-        bool isEmpty = string.IsNullOrWhiteSpace(current);
-
-        if (!isOverusedRibs && !isGenericSalad && !isSaladBowl && !isEmpty) return;
-
-        string titleLower = (meal.StrMealVi ?? meal.StrMeal ?? "").ToLowerInvariant();
-
-        // 1. Món Bò xào rau củ / xào rau muống / xào cải ngọt (dùng ảnh chảo xào/đĩa xào nóng hổi, tuyệt đối không dùng đĩa salad)
-        if ((titleLower.Contains("bò") || titleLower.Contains("beef")) &&
-            (titleLower.Contains("xào") || titleLower.Contains("stir") || titleLower.Contains("spinach") || titleLower.Contains("cải") || titleLower.Contains("muống") || titleLower.Contains("bông cải")))
+        // Tuyệt đối không gán ảnh Unsplash ngẫu nhiên không liên quan (như đĩa than vinyl, búp cải trong đất...)
+        // Để chuỗi rỗng để Client hiển thị Icon món ăn chuẩn xác theo nhóm thực phẩm
+        if (current.Contains("unsplash.com", StringComparison.OrdinalIgnoreCase))
         {
-            int seed = Math.Abs((meal.IdMeal ?? "1").GetHashCode()) % 3;
-            meal.StrMealThumb = seed switch
-            {
-                0 => "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=600&q=80",
-                1 => "https://images.unsplash.com/photo-1541832676-9b763b0239ab?auto=format&fit=crop&w=600&q=80",
-                _ => "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&q=80"
-            };
-        }
-        // 2. Món Mực ống / hải sản
-        else if (titleLower.Contains("mực") || titleLower.Contains("squid") || titleLower.Contains("calamari"))
-        {
-            meal.StrMealThumb = "https://images.unsplash.com/photo-1532550907401-a500c9a57435?auto=format&fit=crop&w=600&q=80";
-        }
-        // 3. Món Thịt heo xào / luộc
-        else if (titleLower.Contains("heo") || titleLower.Contains("pork") || titleLower.Contains("lợn"))
-        {
-            meal.StrMealThumb = "https://images.unsplash.com/photo-1529042410759-befb1204b468?auto=format&fit=crop&w=600&q=80";
-        }
-        // 4. Món Đậu phụ / Tofu
-        else if (titleLower.Contains("đậu") || titleLower.Contains("tofu"))
-        {
-            meal.StrMealThumb = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&q=80";
-        }
-        // 5. Món Trứng
-        else if (titleLower.Contains("trứng") || titleLower.Contains("egg"))
-        {
-            meal.StrMealThumb = "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=600&q=80";
-        }
-        // 6. Món Bò kho / Bò hầm
-        else if (titleLower.Contains("bò kho") || titleLower.Contains("hầm") || titleLower.Contains("stew"))
-        {
-            meal.StrMealThumb = "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=600&q=80";
+            meal.StrMealThumb = "";
         }
     }
 
@@ -892,8 +881,10 @@ public class RecipeService
 
         // 4. SẮP XẾP DANH SÁCH MÓN ĂN THEO ĐỘ PHÙ HỢP
         // Khi người dùng chỉ chọn rau: Món thuần rau củ / món chay BẮT BUỘC lên đầu 100%
+        // Ưu tiên món ăn Việt Nam quen thuộc (vn_home_ hoặc Vietnamese) lên đầu
         var sorted = candidatePool.Values
             .OrderByDescending(m => (hasVeggie && !hasMeat) ? (!IsMeatRecipe(m) ? 1 : 0) : 0)
+            .ThenByDescending(m => (m.StrArea == "Vietnamese" || m.IdMeal.StartsWith("vn_home_")) ? 1 : 0)
             .ThenByDescending(m => m.MatchScore)
             .ThenByDescending(m => m.Badges.Count)
             .Take(limit)
@@ -969,7 +960,7 @@ public class RecipeService
         string cleanKey = ing.CleanKey.ToLower();
         string viKey = ing.ViKey.ToLower();
 
-        // 1. Kiểm tra nguyên liệu tiếng Anh (loại bỏ nước dùng / hạt nêm gà, bò)
+        // 1. Kiểm tra nguyên liệu tiếng Anh (loại bỏ nước dùng / hạt nêm gà, bò, và nước dùng rau củ khi tìm rau)
         if (recipe.Ingredients != null && recipe.Ingredients.Any(i =>
         {
             string lower = i.ToLower();
@@ -980,6 +971,22 @@ public class RecipeService
             if (cleanKey == "beef" && (lower.Contains("stock") || lower.Contains("broth") || lower.Contains("bouillon") || lower.Contains("cube") || lower.Contains("powder")))
             {
                 return false;
+            }
+            if (ing.IsVeggie && (lower.Contains("stock") || lower.Contains("broth") || lower.Contains("bouillon") || lower.Contains("powder")))
+            {
+                return false;
+            }
+
+            // Với Rau muống (Water Spinach / Morning Glory)
+            if (cleanKey == "water spinach" || viKey == "rau muống")
+            {
+                return lower.Contains("water spinach") || lower.Contains("morning glory") || lower.Contains("rau muống");
+            }
+
+            // Với Cải ngồng (Chinese Broccoli / Gai Lan)
+            if (cleanKey == "chinese broccoli" || viKey == "cải ngồng")
+            {
+                return lower.Contains("chinese broccoli") || lower.Contains("gai lan") || lower.Contains("cải ngồng");
             }
 
             if (lower.Equals(cleanKey, StringComparison.OrdinalIgnoreCase) ||
@@ -996,6 +1003,7 @@ public class RecipeService
             if (cleanKey == "cheese" && (lower.Contains("cheddar") || lower.Contains("mozzarella") || lower.Contains("parmesan") || lower.Contains("feta") || lower.Contains("cheese"))) return true;
             if (cleanKey == "coconut" && (lower.Contains("coconut") || lower.Contains("coconut milk") || lower.Contains("coconut cream"))) return true;
             if (cleanKey == "squid" && (lower.Contains("squid") || lower.Contains("calamari"))) return true;
+            if (cleanKey == "clam" && (lower.Contains("clam") || lower.Contains("mussel"))) return true;
 
             return false;
         }))
@@ -1011,19 +1019,33 @@ public class RecipeService
             {
                 return true;
             }
-            if ((cleanKey == "shrimp" || cleanKey == "fish" || cleanKey == "squid") && catLower.Contains("seafood")) return true;
+            if ((cleanKey == "shrimp" || cleanKey == "fish" || cleanKey == "squid" || cleanKey == "clam") && catLower.Contains("seafood")) return true;
         }
 
         // 3. Kiểm tra tên món
         string mealEn = (recipe.StrMeal ?? "").ToLower();
         string mealVi = (recipe.StrMealVi ?? "").ToLower();
-        if (mealEn.Contains(cleanKey) || mealEn.Contains(rawLower) ||
+        if (cleanKey == "water spinach" || viKey == "rau muống")
+        {
+            if (mealEn.Contains("morning glory") || mealEn.Contains("water spinach") || (!string.IsNullOrEmpty(mealVi) && mealVi.Contains("rau muống")))
+            {
+                return true;
+            }
+        }
+        else if (cleanKey == "chinese broccoli" || viKey == "cải ngồng")
+        {
+            if (mealEn.Contains("chinese broccoli") || mealEn.Contains("gai lan") || (!string.IsNullOrEmpty(mealVi) && (mealVi.Contains("cải ngồng") || mealVi.Contains("cải ngọt"))))
+            {
+                return true;
+            }
+        }
+        else if (mealEn.Contains(cleanKey) || mealEn.Contains(rawLower) ||
             (!string.IsNullOrEmpty(mealVi) && (mealVi.Contains(viKey) || mealVi.Contains(rawLower))))
         {
             return true;
         }
 
-        // 4. Kiểm tra nguyên liệu tiếng Việt (loại bỏ nấm đùi gà, trứng gà, nước dùng gà/bò bị tính là thịt)
+        // 4. Kiểm tra nguyên liệu tiếng Việt (loại bỏ nấm đùi gà, trứng gà, nước dùng gà/bò, và rau thơm / nước hầm khi tìm rau củ)
         if (recipe.IngredientsVi != null && recipe.IngredientsVi.Count > 0)
         {
             foreach (var viIng in recipe.IngredientsVi)
@@ -1037,6 +1059,39 @@ public class RecipeService
                 {
                     continue;
                 }
+
+                // Khi tìm kiếm rau củ: TUYỆT ĐỐI LOẠI TRỪ các loại rau thơm/ngò rí/rau răm trang trí và nước hầm rau củ
+                if (ing.IsVeggie)
+                {
+                    bool isAromaticOrBroth = lowerIng.Contains("ngò rí") || lowerIng.Contains("ngò gai") || lowerIng.Contains("rau mùi") ||
+                                             lowerIng.Contains("rau răm") || lowerIng.Contains("rau thơm") || lowerIng.Contains("hành lá") ||
+                                             lowerIng.Contains("nước hầm") || lowerIng.Contains("nước dùng");
+                    if (isAromaticOrBroth && viKey != "ngò" && viKey != "mùi" && viKey != "rau răm" && viKey != "rau thơm" && viKey != "hành")
+                    {
+                        continue;
+                    }
+                }
+
+                // Với rau muống: chỉ khớp nếu có chữ "muống" hoặc "water spinach"
+                if (viKey == "rau muống" || cleanKey == "water spinach")
+                {
+                    if (lowerIng.Contains("muống") || lowerIng.Contains("water spinach") || lowerIng.Contains("morning glory"))
+                    {
+                        return true;
+                    }
+                    continue;
+                }
+
+                // Với cải ngồng: chỉ khớp cải ngồng
+                if (viKey == "cải ngồng" || cleanKey == "chinese broccoli")
+                {
+                    if (lowerIng.Contains("cải ngồng") || lowerIng.Contains("chinese broccoli") || lowerIng.Contains("gai lan"))
+                    {
+                        return true;
+                    }
+                    continue;
+                }
+
                 if (lowerIng.Contains(viKey) || lowerIng.Contains(rawLower) || (!string.IsNullOrEmpty(cleanKey) && lowerIng.Contains(cleanKey)))
                 {
                     return true;
@@ -1161,6 +1216,13 @@ public class RecipeService
             viKey = "cua";
             isMeat = true;
         }
+        // Ngao / nghêu / sò
+        else if (lower.Contains("ngao") || lower.Contains("nghêu") || lower.Contains("sò") || clean.Contains("clam") || clean.Contains("mussel"))
+        {
+            clean = "clam";
+            viKey = "ngao";
+            isMeat = true;
+        }
         // Cà chua
         else if (lower.Contains("cà chua") || clean.Contains("tomato"))
         {
@@ -1266,11 +1328,60 @@ public class RecipeService
             viKey = "đậu phụ";
             isVeggie = true;
         }
-        // Bắp cải / xà lách / rau
-        else if (lower.Contains("rau") || lower.Contains("bắp cải") || lower.Contains("cải") || lower.Contains("xà lách"))
+        // Mướp
+        else if (lower.Contains("mướp") || clean.Contains("luffa"))
+        {
+            clean = "luffa";
+            viKey = "mướp";
+            isVeggie = true;
+        }
+        // Rau muống (Water Spinach / Morning Glory)
+        else if (lower.Contains("rau muống") || lower.Contains("muống") || clean.Contains("water_spinach") || clean.Contains("morning_glory") || clean.Contains("water spinach"))
+        {
+            clean = "water spinach";
+            viKey = "rau muống";
+            isVeggie = true;
+        }
+        // Cải ngồng (Chinese Broccoli / Gai Lan)
+        else if (lower.Contains("cải ngồng") || clean.Contains("chinese_broccoli") || clean.Contains("chinese broccoli") || clean.Contains("gai lan"))
+        {
+            clean = "chinese broccoli";
+            viKey = "cải ngồng";
+            isVeggie = true;
+        }
+        // Rau cải (Cải thìa, cải ngọt, cải xanh, cải chua, bok choy, choy sum)
+        else if (lower.Contains("cải thìa") || lower.Contains("cải ngọt") || lower.Contains("cải xanh") || lower.Contains("cải chua") || lower.Contains("cải") || clean.Contains("bok choy") || clean.Contains("pak choi") || clean.Contains("choy sum") || clean.Contains("mustard_greens") || clean.Contains("pickled_greens"))
+        {
+            clean = "bok choy";
+            viKey = "rau cải";
+            isVeggie = true;
+        }
+        // Rau bina / Cải bó xôi (Spinach)
+        else if (lower.Contains("bina") || lower.Contains("bó xôi") || lower.Contains("chân vịt") || clean.Contains("spinach"))
+        {
+            clean = "spinach";
+            viKey = "cải bó xôi";
+            isVeggie = true;
+        }
+        // Bắp cải (Cabbage)
+        else if (lower.Contains("bắp cải") || clean.Contains("cabbage"))
         {
             clean = "cabbage";
-            viKey = lower;
+            viKey = "bắp cải";
+            isVeggie = true;
+        }
+        // Xà lách (Lettuce / Salad)
+        else if (lower.Contains("xà lách") || clean.Contains("lettuce"))
+        {
+            clean = "lettuce";
+            viKey = "xà lách";
+            isVeggie = true;
+        }
+        // Các loại rau xanh khác
+        else if (lower.Contains("rau"))
+        {
+            clean = "greens";
+            viKey = "rau";
             isVeggie = true;
         }
         // Phô mai
@@ -1573,10 +1684,19 @@ public class RecipeService
             ["mật_ong"] = "honey",
             ["măng_tây"] = "asparagus",
             ["bắp_cải"] = "cabbage",
-            ["rau_muống"] = "spinach",
+            ["rau_muống"] = "water_spinach",
+            ["muống"] = "water_spinach",
+            ["cải_ngồng"] = "chinese_broccoli",
+            ["cải_ngọt"] = "choy_sum",
+            ["cải_thìa"] = "bok_choy",
+            ["cải_xanh"] = "mustard_greens",
+            ["cải_chua"] = "pickled_greens",
+            ["dưa_cải"] = "pickled_greens",
             ["cải_bó_xôi"] = "spinach",
             ["rau_bina"] = "spinach",
-            ["cải_thìa"] = "cabbage",
+            ["mướp"] = "luffa",
+            ["ngao"] = "clam",
+            ["nghêu"] = "clam",
             ["xà_lách"] = "lettuce",
             ["dưa_leo"] = "cucumber",
             ["dưa_chuột"] = "cucumber",

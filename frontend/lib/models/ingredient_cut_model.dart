@@ -130,8 +130,13 @@ class IngredientCutModel {
     // Đậu khô
     if (lowerId.contains('bean') || lowerName.contains('đậu đen') || lowerName.contains('đậu xanh') || lowerName.contains('đậu đỏ')) return 2.4;
 
-    // Thịt gà, bò, heo
-    if (lowerCat.contains('thịt') || lowerId.contains('chicken') || lowerId.contains('beef') || lowerId.contains('pork')) {
+    // Trứng luộc (giữ nguyên khối lượng ~100%, không ngót nước như thịt)
+    if (lowerId.contains('egg') || lowerName.contains('trứng') || lowerId.contains('yolk')) {
+      return 1.0;
+    }
+
+    // Thịt gà, bò, heo (áp chảo/luộc ngót nước ~25%)
+    if ((lowerCat.contains('thịt') && !lowerName.contains('trứng')) || lowerId.contains('chicken') || lowerId.contains('beef') || lowerId.contains('pork')) {
       return 0.75; // Ngót ~25% khi nấu
     }
     // Thủy hải sản
@@ -162,6 +167,9 @@ class IngredientCutModel {
     if (lowerId.contains('oats') || lowerName.contains('yến mạch')) return 'cháo yến mạch';
     if (lowerId.contains('bean') || lowerName.contains('đậu')) return 'đậu ninh nhừ';
     if (lowerId.contains('chicken_breast') || lowerName.contains('ức gà')) return 'ức gà chín (áp chảo/luộc)';
+    if (lowerId.contains('egg_white') || lowerName.contains('lòng trắng')) return 'lòng trắng trứng luộc';
+    if (lowerId.contains('egg_yolk') || lowerName.contains('lòng đỏ')) return 'lòng đỏ trứng luộc';
+    if (lowerId.contains('egg') || lowerName.contains('trứng')) return '$name luộc';
     if (lowerCat.contains('thịt')) return '$name chín (áp chảo/luộc)';
     if (lowerCat.contains('hải sản') || lowerCat.contains('thủy')) return '$name chín';
     if (lowerId.contains('sweet_potato') || lowerName.contains('khoai lang')) return 'khoai lang hấp/nướng';
@@ -189,6 +197,7 @@ class IngredientCutModel {
     if (lowerId.contains('chicken_thigh') || lowerName.contains('đùi gà')) return 'Đùi gà chín (luộc/nướng)';
     if (lowerId.contains('chicken_drumstick') || lowerName.contains('má đùi')) return 'Má đùi gà chín';
     if (lowerId.contains('egg_white')) return 'Lòng trắng trứng luộc';
+    if (lowerId.contains('egg_yolk') || lowerName.contains('lòng đỏ')) return 'Lòng đỏ trứng luộc';
     if (lowerId.contains('egg') || lowerName.contains('trứng')) return '$name luộc';
 
     if (lowerCat.contains('thịt')) return '$name chín (áp chảo/luộc)';

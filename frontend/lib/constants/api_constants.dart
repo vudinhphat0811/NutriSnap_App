@@ -13,7 +13,7 @@ class ApiConstants {
 
   // Địa chỉ IP của máy tính trong mạng Wi-Fi (cho trường hợp test local)
   static const String localHostIp = '192.168.1.14';
-
+ //dotnet run --urls "http://localhost:5065"
   // Đặt true nếu cắm cáp USB và đã chạy lệnh `adb reverse tcp:5065 tcp:5065`
   static const bool useAdbReverse = true;
 

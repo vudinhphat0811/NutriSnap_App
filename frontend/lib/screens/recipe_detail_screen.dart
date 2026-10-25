@@ -6,6 +6,7 @@ import '../constants/app_translations.dart';
 import '../services/app_state_service.dart';
 import '../services/meal_db_service.dart';
 import '../services/recipe_translator.dart';
+import '../widgets/recipe_image_widget.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   final Function(int) onNavigate;
@@ -24,6 +25,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   String? _currentMealId;
   String? _currentVideoId;
   bool _isLoadingDetail = false;
+  bool _isAiFiltering = false;
 
   @override
   void initState() {
@@ -82,16 +84,29 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     final lang = AppStateService.instance.currentLanguage;
     if (meal == null || meal.idMeal.isEmpty) return;
 
-    // Cần tải đầy đủ nếu: chưa có nguyên liệu HOẶC chưa có hướng dẫn HOẶC chưa có bản dịch tiếng Việt
+    final bool isVi = lang == 'vi';
+    final bool instructionsNotVi = isVi &&
+        (meal.strInstructionsVi == null ||
+            meal.strInstructionsVi!.trim().isEmpty ||
+            meal.strInstructionsVi == meal.strInstructions ||
+            !RecipeTranslator.hasVietnameseDiacritics(meal.strInstructionsVi));
+
+    // Cần tải đầy đủ nếu: chưa có nguyên liệu HOẶC chưa có hướng dẫn HOẶC chưa có bản dịch tiếng Việt hợp lệ
     final bool needsDetail = meal.ingredients.isEmpty ||
         meal.strInstructions == null ||
         meal.strInstructions!.trim().isEmpty ||
-        (lang == 'vi' && (meal.strInstructionsVi == null || meal.strInstructionsVi!.trim().isEmpty || meal.ingredientsVi.isEmpty));
+        instructionsNotVi ||
+        (isVi && meal.ingredientsVi.isEmpty);
 
     if (needsDetail) {
       if (_isLoadingDetail) return;
       _isLoadingDetail = true;
-      final fullDetail = await TheMealDbService.getMealDetail(meal.idMeal, lang: lang);
+      if (mounted) setState(() {});
+      final fullDetail = await TheMealDbService.getMealDetail(
+        meal.idMeal,
+        lang: lang,
+        forceAi: instructionsNotVi,
+      );
       if (mounted && fullDetail != null) {
         AppStateService.instance.setSelectedMeal(fullDetail);
         setState(() {
@@ -100,6 +115,39 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       } else {
         if (mounted) setState(() => _isLoadingDetail = false);
       }
+    }
+  }
+
+  Future<void> _triggerAiFilter() async {
+    final meal = AppStateService.instance.selectedMeal;
+    if (meal == null || _isAiFiltering) return;
+
+    setState(() {
+      _isAiFiltering = true;
+    });
+
+    final updated = await TheMealDbService.getMealDetail(meal.idMeal, lang: 'vi', forceAi: true);
+    if (mounted) {
+      if (updated != null) {
+        AppStateService.instance.setSelectedMeal(updated);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Expanded(child: Text('Bộ lọc AI đã tối ưu và dịch 100% công thức sang Tiếng Việt!')),
+              ],
+            ),
+            backgroundColor: Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      setState(() {
+        _isAiFiltering = false;
+      });
     }
   }
 
@@ -112,12 +160,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
 
   void _handleBack(BuildContext context) {
     _youtubeController?.pauseVideo();
-    if (Navigator.canPop(context)) {
-      Navigator.pop(context);
-      return;
-    }
+    // Luôn quay về tab trước đó trong MainShellScreen, tuyệt đối không pop route tránh văng ra Login
     final prevIndex = AppStateService.instance.previousScreenIndex;
-    widget.onNavigate(prevIndex);
+    widget.onNavigate(prevIndex == 6 ? 0 : prevIndex);
   }
 
   @override
@@ -252,16 +297,13 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       borderRadius: BorderRadius.circular(24),
       child: Stack(
         children: [
-          Image.network(
-            meal.strMealThumb,
+          RecipeImageWidget(
+            imageUrl: meal.strMealThumb,
+            mealName: meal.strMealVi ?? meal.strMeal,
+            category: meal.strCategory,
             height: 230,
             width: double.infinity,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-              height: 230,
-              color: Colors.grey.shade200,
-              child: const Center(child: Icon(Icons.restaurant, size: 50, color: Colors.grey)),
-            ),
+            isHeroBanner: true,
           ),
           Container(
             height: 230,
@@ -682,7 +724,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     String instructions;
 
     if (isVi) {
-      if (meal.strInstructionsVi != null && meal.strInstructionsVi!.trim().isNotEmpty) {
+      if (meal.strInstructionsVi != null &&
+          meal.strInstructionsVi!.trim().isNotEmpty &&
+          RecipeTranslator.hasVietnameseDiacritics(meal.strInstructionsVi)) {
         instructions = meal.strInstructionsVi!;
       } else {
         instructions = meal.strInstructions ??
@@ -708,18 +752,95 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                AppTranslations.tr('cooking_steps'),
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    AppTranslations.tr('cooking_steps'),
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                  ),
+                  if (isVi) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.auto_awesome, size: 10, color: Color(0xFF16A34A)),
+                          SizedBox(width: 3),
+                          Text(
+                            'AI Filter',
+                            style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF16A34A)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              if (_isLoadingDetail)
+              if (_isLoadingDetail || _isAiFiltering)
                 const SizedBox(
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                )
+              else if (isVi)
+                InkWell(
+                  onTap: _triggerAiFilter,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.refresh_rounded, size: 12, color: Color(0xFF64748B)),
+                        SizedBox(width: 4),
+                        Text(
+                          'Dịch lại AI',
+                          style: TextStyle(fontSize: 10.5, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
             ],
           ),
+          if (_isAiFiltering) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF16A34A)),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Bộ lọc AI đang tối ưu hóa và dịch thuật công thức...',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF15803D), fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           if (rawSteps.isNotEmpty)
             ...rawSteps.asMap().entries.map((entry) {

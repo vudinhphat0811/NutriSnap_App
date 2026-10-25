@@ -10,6 +10,9 @@ import '../services/app_state_service.dart';
 import '../services/recipe_translator.dart';
 import '../services/offline_food_db.dart';
 import '../widgets/marquee_text.dart';
+import '../widgets/recipe_image_widget.dart';
+import '../models/barcode_product_model.dart';
+import '../widgets/barcode_scanner_sheet.dart';
 
 class IngredientScanScreen extends StatefulWidget {
   final Function(int) onNavigate;
@@ -83,7 +86,7 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
       _matchingMeals = [];
       _selectedIngredientIndices.clear();
       _selectedIngredientIndices.add(0);
-      _aiStatusMessage = 'AI Cloud đang kiểm tra & nhận diện nguyên liệu...';
+      _aiStatusMessage = 'AI Local (LM Studio) đang kiểm tra & nhận diện nguyên liệu...';
     });
 
     try {
@@ -100,7 +103,7 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
           _aiStatusMessage = 'Từ chối: Không phải nguyên liệu thực phẩm';
         } else {
           final count = result.ingredients.length;
-          _aiStatusMessage = 'Phát hiện $count nguyên liệu (${_aiService.lastUsedProvider ?? 'AI'})';
+          _aiStatusMessage = 'Phát hiện $count nguyên liệu (${result.providerName ?? _aiService.lastUsedProvider ?? 'Local AI'})';
         }
       });
 
@@ -228,6 +231,37 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(color: Color(0xFFE0F2FE), shape: BoxShape.circle),
+                  child: const Icon(Icons.photo_library_rounded, color: Color(0xFF0284C7)),
+                ),
+                title: const Text('Chọn ảnh từ thư viện', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Tải ảnh món ăn hoặc nguyên liệu từ album điện thoại', style: TextStyle(fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndAnalyzeImage(ImageSource.gallery);
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(color: Color(0xFFFEE2E2), shape: BoxShape.circle),
+                  child: const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFFDC2626)),
+                ),
+                title: const Text('Quét mã vạch siêu thị & bao bì', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Quét camera thời gian thực Google ML Kit siêu tốc (<0.05s)', style: TextStyle(fontSize: 11)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final product = await BarcodeScannerSheet.show(context);
+                  if (product != null && mounted) {
+                    _addBarcodeProductToScan(product);
+                  }
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
                   decoration: const BoxDecoration(color: Color(0xFFDCFCE7), shape: BoxShape.circle),
                   child: const Icon(Icons.edit_note_rounded, color: AppColors.primaryDark),
                 ),
@@ -243,6 +277,47 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
         ),
       ),
     );
+  }
+
+  /// Nạp trực tiếp sản phẩm mã vạch vào danh sách phân tích và gợi ý món ăn
+  void _addBarcodeProductToScan(BarcodeProductModel product) {
+    final newIng = DetectedIngredientItem(
+      name: product.productName,
+      englishName: product.cutEquivalentId ?? 'Ingredient',
+      calories: '${product.caloriesPer100g.round()} kcal',
+      calorieNumber: product.caloriesPer100g.round(),
+      weight: product.servingSize,
+      protein: '${product.proteinPer100g.toStringAsFixed(1)}g Protein',
+      carbs: '${product.carbsPer100g.toStringAsFixed(1)}g Carbs',
+      fat: '${product.fatPer100g.toStringAsFixed(1)}g Fat',
+      nutritionComment: product.notes.isNotEmpty ? product.notes : 'Sản phẩm ${product.brand}',
+    );
+
+    setState(() {
+      _isLoading = false;
+      final currentList = _analysisResult?.ingredients.toList() ?? [];
+      currentList.insert(0, newIng);
+
+      _analysisResult = IngredientAnalysisResult(
+        isIngredient: true,
+        name: product.productName,
+        englishName: product.cutEquivalentId ?? 'Ingredient',
+        calories: '${product.caloriesPer100g.round()} kcal',
+        calorieNumber: product.caloriesPer100g.round(),
+        weight: product.servingSize,
+        protein: '${product.proteinPer100g.toStringAsFixed(1)}g Protein',
+        carbs: '${product.carbsPer100g.toStringAsFixed(1)}g Carbs',
+        fat: '${product.fatPer100g.toStringAsFixed(1)}g Fat',
+        nutritionComment: product.notes,
+        context: 'Đã nhận diện sản phẩm qua mã vạch GS1: ${product.productName} (${product.brand}).',
+        ingredients: currentList,
+      );
+      _selectedIngredientIndices.clear();
+      _selectedIngredientIndices.add(0);
+      _aiStatusMessage = 'Đã quét mã vạch: ${product.productName}';
+    });
+
+    _fetchMealsForSelectedIngredients();
   }
 
   /// HỘP THOẠI NHẬP TAY NGUYÊN LIỆU (100% OFFLINE)
@@ -1700,7 +1775,7 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    res.englishName.toUpperCase(),
+                    AppStateService.instance.currentLanguage == 'vi' ? res.name.toUpperCase() : res.englishName.toUpperCase(),
                     style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textBlack),
                   ),
                 ),
@@ -1976,9 +2051,13 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
                                 const SizedBox(width: 6),
                                 const Text('•', style: TextStyle(color: AppColors.textLightGray, fontSize: 10)),
                                 const SizedBox(width: 6),
-                                Text(
-                                  item.protein,
-                                  style: const TextStyle(fontSize: 11, color: Color(0xFF2563EB)),
+                                Flexible(
+                                  child: Text(
+                                    item.protein,
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFF2563EB)),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                               ],
                             ),
@@ -2149,17 +2228,53 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
   Widget _buildMealTile(MealItem meal) {
     return InkWell(
       onTap: () async {
-        // Tải chi tiết món ăn với ngôn ngữ hiện tại
+        // Tải chi tiết món ăn với ngôn ngữ hiện tại và bộ lọc AI
         final navigator = Navigator.of(context);
+        final lang = AppStateService.instance.currentLanguage;
+        final bool isViLang = lang == 'vi';
+        final bool needsAi = isViLang &&
+            (meal.strInstructionsVi == null ||
+                meal.strInstructionsVi!.trim().isEmpty ||
+                meal.strInstructionsVi == meal.strInstructions ||
+                !RecipeTranslator.hasVietnameseDiacritics(meal.strInstructionsVi));
+
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
+          builder: (_) => Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              margin: const EdgeInsets.symmetric(horizontal: 40),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 16)],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+                  ),
+                  const SizedBox(width: 14),
+                  Flexible(
+                    child: Text(
+                      needsAi ? 'Bộ lọc AI đang tải & dịch công thức...' : 'Đang mở công thức...',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textBlack),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         );
 
         final detail = await TheMealDbService.getMealDetail(
           meal.idMeal,
-          lang: AppStateService.instance.currentLanguage,
+          lang: lang,
+          forceAi: needsAi,
         );
         navigator.pop(); // Đóng loading
 
@@ -2184,20 +2299,13 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
         ),
         child: Row(
           children: [
-            ClipRRect(
+            RecipeImageWidget(
+              imageUrl: meal.strMealThumb,
+              mealName: meal.strMealVi ?? meal.strMeal,
+              category: meal.strCategory,
+              width: 64,
+              height: 64,
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                meal.strMealThumb,
-                width: 64,
-                height: 64,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 64,
-                  height: 64,
-                  color: Colors.grey.shade200,
-                  child: const Icon(Icons.fastfood, color: Colors.grey),
-                ),
-              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -2207,7 +2315,9 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
                   // Hiệu ứng chữ chạy LED (Marquee) khi tên món dài
                   MarqueeText(
                     text: AppStateService.instance.currentLanguage == 'vi'
-                        ? RecipeTranslator.translateDishName(meal.strMeal)
+                        ? ((meal.strMealVi != null && meal.strMealVi!.trim().isNotEmpty)
+                            ? meal.strMealVi!
+                            : RecipeTranslator.translateDishName(meal.strMeal))
                         : meal.strMeal,
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textBlack),
                   ),

@@ -160,10 +160,49 @@ class RecipeTranslator {
     'tomato puree': 'Sốt cà chua nhuyễn',
     'tomato paste': 'Cà chua cô đặc',
     'tomato sauce': 'Sốt cà chua',
+    'scotch bonnet': 'Ớt cay Scotch Bonnet',
+    'scotch bonnet pepper': 'Ớt cay Scotch Bonnet',
+    'shortening': 'Mỡ trừu (shortening làm bánh)',
+    'vegetable shortening': 'Mỡ trừu (shortening làm bánh)',
+    'jerk': 'Gia vị Jerk Jamaica',
+    'jerk seasoning': 'Gia vị Jerk Jamaica',
+    'allspice': 'Tiêu Jamaica (Allspice)',
+    'ground allspice': 'Bột tiêu Jamaica (Allspice)',
+    'roti': 'Bánh Roti',
   };
 
-  /// Hiển thị tên món (Backend đã tự động dịch vào trường strMealVi)
+  static final Map<String, String> _commonDishTranslations = {
+    'chicken and potato roti': 'Bánh Roti gà và khoai tây',
+    'roti': 'Bánh Roti',
+    'stir-fried morning glory with garlic': 'Rau muống xào tỏi',
+    'water spinach stir-fried with fermented tofu': 'Rau muống xào chao',
+    'stir-fried beef with water spinach': 'Thịt bò xào rau muống',
+    'stir fried morning glory with garlic': 'Rau muống xào tỏi',
+    'morning glory with garlic': 'Rau muống xào tỏi',
+    'stir-fried morning glory': 'Rau muống xào tỏi',
+    'boiled morning glory': 'Rau muống luộc',
+    'beef stir fry': 'Thịt bò xào',
+    'stir fried beef': 'Thịt bò xào',
+    'chicken stir fry': 'Thịt gà xào',
+    'stir fried chicken': 'Thịt gà xào',
+  };
+
+  /// Hiển thị tên món (ưu tiên bản dịch từ điển hoặc giữ nguyên nếu đã là tiếng Việt)
   static String translateDishName(String name) {
+    if (name.trim().isEmpty) return name;
+    final lower = name.trim().toLowerCase();
+
+    if (_commonDishTranslations.containsKey(lower)) {
+      return _commonDishTranslations[lower]!;
+    }
+
+    if (lower.contains('morning glory') || lower.contains('water spinach')) {
+      if (lower.contains('garlic')) return 'Rau muống xào tỏi';
+      if (lower.contains('beef')) return 'Thịt bò xào rau muống';
+      if (lower.contains('tofu') || lower.contains('fermented')) return 'Rau muống xào chao';
+      return 'Rau muống xào tỏi';
+    }
+
     return name;
   }
 
@@ -382,7 +421,9 @@ class RecipeTranslator {
     if (lower.contains('gừng') || lower.contains('ginger')) return '1 nhánh nhỏ';
     if (lower.contains('ớt') || lower.contains('chili') || lower.contains('chilli')) return '1 - 2 quả cắt lát';
     if (lower.contains('hồi') || lower.contains('quế') || lower.contains('ngò') || lower.contains('mùi') ||
-        lower.contains('húng') || lower.contains('basil') || lower.contains('cilantro') || lower.contains('parsley')) return '1 nhúm nhỏ';
+        lower.contains('húng') || lower.contains('basil') || lower.contains('cilantro') || lower.contains('parsley')) {
+      return '1 nhúm nhỏ';
+    }
 
     // 6. Nước sốt, dầu mỡ & chất béo
     if (lower.contains('nước mắm') || lower.contains('nước tương') || lower.contains('xì dầu') ||
@@ -407,6 +448,13 @@ class RecipeTranslator {
     if (lower.contains('mè') || lower.contains('đậu phộng') || lower.contains('lạc') || lower.contains('sesame') || lower.contains('peanut') || lower.contains('nut')) return '1 muỗng canh';
 
     return 'Vừa đủ dùng';
+  }
+
+  /// Kiểm tra xem văn bản đã có dấu Tiếng Việt hợp lệ hay chưa
+  static bool hasVietnameseDiacritics(String? text) {
+    if (text == null || text.trim().isEmpty) return false;
+    final regex = RegExp(r'[àáảãạăắằẳẵặâấầẩẫậđèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬĐÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴ]');
+    return regex.hasMatch(text);
   }
 
   /// Hiển thị bước nấu (Backend đã dịch vào trường strInstructionsVi)

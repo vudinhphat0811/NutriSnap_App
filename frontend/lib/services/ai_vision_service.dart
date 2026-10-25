@@ -27,8 +27,18 @@ class DetectedIngredientItem {
     this.nutritionComment = '',
   });
 
+  static String _cleanMacro(String? val, String fallback) {
+    if (val == null) return fallback;
+    final s = val.trim();
+    if (s.isEmpty || s.contains('<') || s.contains('>') || s.toLowerCase().contains('estimated')) {
+      return fallback;
+    }
+    return s;
+  }
+
   factory DetectedIngredientItem.fromJson(Map<String, dynamic> json) {
-    final calStr = json['calories']?.toString() ?? '100 kcal';
+    final rawCal = json['calories']?.toString() ?? '100 kcal';
+    final calStr = _cleanMacro(rawCal, '100 kcal');
     int calNum = 100;
     if (json['calorieNumber'] != null) {
       calNum = int.tryParse(json['calorieNumber'].toString()) ?? 100;
@@ -39,16 +49,19 @@ class DetectedIngredientItem {
       }
     }
 
+    final rawNut = json['nutritionComment']?.toString() ?? '';
+    final nutComment = (rawNut.contains('<') || rawNut.toLowerCase().contains('estimated')) ? '' : rawNut.trim();
+
     return DetectedIngredientItem(
       name: json['name']?.toString() ?? 'Nguyên liệu',
       englishName: json['englishName']?.toString() ?? 'Chicken',
       calories: calStr,
       calorieNumber: calNum,
-      weight: json['weight']?.toString() ?? '~100g',
-      protein: json['protein']?.toString() ?? '10g Protein',
-      carbs: json['carbs']?.toString() ?? '5g Carbs',
-      fat: json['fat']?.toString() ?? '2g Fat',
-      nutritionComment: json['nutritionComment']?.toString() ?? '',
+      weight: _cleanMacro(json['weight']?.toString(), '~100g'),
+      protein: _cleanMacro(json['protein']?.toString(), '10g Protein'),
+      carbs: _cleanMacro(json['carbs']?.toString(), '5g Carbs'),
+      fat: _cleanMacro(json['fat']?.toString(), '2g Fat'),
+      nutritionComment: nutComment,
     );
   }
 }
@@ -116,7 +129,8 @@ class IngredientAnalysisResult {
       }
     }
 
-    final calStr = json['calories']?.toString() ?? '150 kcal';
+    final rawCal = json['calories']?.toString() ?? '150 kcal';
+    final calStr = DetectedIngredientItem._cleanMacro(rawCal, '150 kcal');
     int calNum = 150;
     if (json['calorieNumber'] != null) {
       calNum = int.tryParse(json['calorieNumber'].toString()) ?? 150;
@@ -133,13 +147,23 @@ class IngredientAnalysisResult {
         englishName: json['englishName']?.toString() ?? 'chicken',
         calories: calStr,
         calorieNumber: calNum,
-        weight: json['weight']?.toString() ?? '~150g',
-        protein: json['protein']?.toString() ?? '20g Protein',
-        carbs: json['carbs']?.toString() ?? '5g Carbs',
-        fat: json['fat']?.toString() ?? '3g Fat',
+        weight: DetectedIngredientItem._cleanMacro(json['weight']?.toString(), '~150g'),
+        protein: DetectedIngredientItem._cleanMacro(json['protein']?.toString(), '20g Protein'),
+        carbs: DetectedIngredientItem._cleanMacro(json['carbs']?.toString(), '5g Carbs'),
+        fat: DetectedIngredientItem._cleanMacro(json['fat']?.toString(), '3g Fat'),
         nutritionComment: json['nutritionComment']?.toString() ?? '',
       ));
     }
+
+    final rawNut = json['nutritionComment']?.toString() ?? json['calorieAdvice']?.toString() ?? '';
+    final nutComment = (rawNut.contains('<') || rawNut.toLowerCase().contains('estimated') || rawNut.trim().isEmpty)
+        ? (parsedIngredients.isNotEmpty && parsedIngredients.first.nutritionComment.isNotEmpty
+            ? parsedIngredients.first.nutritionComment
+            : 'Nguyên liệu tươi ngon, cung cấp nguồn năng lượng và dưỡng chất thiết yếu cho cơ thể.')
+        : rawNut.trim();
+
+    final rawCtx = json['context']?.toString() ?? '';
+    final cleanCtx = (rawCtx.contains('<') || rawCtx.toLowerCase().contains('estimated')) ? '' : rawCtx.trim();
 
     return IngredientAnalysisResult(
       isIngredient: true,
@@ -147,14 +171,12 @@ class IngredientAnalysisResult {
       englishName: json['englishName']?.toString() ?? parsedIngredients.first.englishName,
       calories: calStr,
       calorieNumber: calNum,
-      weight: json['weight']?.toString() ?? '~150g',
-      nutritionComment: json['nutritionComment']?.toString() ??
-          json['calorieAdvice']?.toString() ??
-          'Nguyên liệu tươi ngon, cung cấp nguồn năng lượng và dưỡng chất thiết yếu cho cơ thể.',
-      protein: json['protein']?.toString() ?? '20g Protein',
-      carbs: json['carbs']?.toString() ?? '5g Carbs',
-      fat: json['fat']?.toString() ?? '3g Fat',
-      context: json['context']?.toString() ?? '',
+      weight: DetectedIngredientItem._cleanMacro(json['weight']?.toString(), '~150g'),
+      nutritionComment: nutComment,
+      protein: DetectedIngredientItem._cleanMacro(json['protein']?.toString(), '20g Protein'),
+      carbs: DetectedIngredientItem._cleanMacro(json['carbs']?.toString(), '5g Carbs'),
+      fat: DetectedIngredientItem._cleanMacro(json['fat']?.toString(), '3g Fat'),
+      context: cleanCtx,
       providerName: provider ?? json['providerName']?.toString(),
       ingredients: parsedIngredients,
     );
@@ -165,6 +187,20 @@ class IngredientAnalysisResult {
 /// (Mọi thuật toán, API key, luân phiên provider và prompt đều do Backend C# đảm nhiệm)
 class AIVisionService {
   String? lastUsedProvider;
+
+  /// Kiểm tra trạng thái AI Backend (Local LM Studio vs Cloud)
+  Future<Map<String, dynamic>?> checkAiStatus() async {
+    try {
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/recipes/ai-status');
+      final response = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('[Frontend AI] Kiểm tra trạng thái AI thất bại: $e');
+    }
+    return null;
+  }
 
   /// Gửi ảnh lên Backend C# để phân tích và nhận dữ liệu hiển thị
   Future<IngredientAnalysisResult> analyzeIngredient(Uint8List imageBytes) async {
@@ -182,7 +218,7 @@ class AIVisionService {
               'contentType': 'image/jpeg',
             }),
           )
-          .timeout(const Duration(seconds: 45));
+          .timeout(const Duration(seconds: 120));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;

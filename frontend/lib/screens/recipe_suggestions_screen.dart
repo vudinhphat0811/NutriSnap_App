@@ -4,6 +4,7 @@ import '../constants/app_translations.dart';
 import '../services/meal_db_service.dart';
 import '../services/app_state_service.dart';
 import '../services/recipe_translator.dart';
+import '../widgets/recipe_image_widget.dart';
 
 class RecipeSuggestionsScreen extends StatefulWidget {
   final Function(int) onNavigate;
@@ -587,12 +588,52 @@ class _RecipeSuggestionsScreenState extends State<RecipeSuggestionsScreen> {
 
     return InkWell(
       onTap: () async {
+        final lang = AppStateService.instance.currentLanguage;
+        final bool isViLang = lang == 'vi';
+        final bool needsAi = isViLang &&
+            (meal.strInstructionsVi == null ||
+                meal.strInstructionsVi!.trim().isEmpty ||
+                meal.strInstructionsVi == meal.strInstructions ||
+                !RecipeTranslator.hasVietnameseDiacritics(meal.strInstructionsVi));
+
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
+          builder: (_) => Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              margin: const EdgeInsets.symmetric(horizontal: 40),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 16)],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+                  ),
+                  const SizedBox(width: 14),
+                  Flexible(
+                    child: Text(
+                      needsAi ? 'Bộ lọc AI đang tải & dịch công thức...' : 'Đang mở công thức...',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textBlack),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         );
-        final detail = await TheMealDbService.getMealDetail(meal.idMeal, lang: AppStateService.instance.currentLanguage);
+
+        final detail = await TheMealDbService.getMealDetail(
+          meal.idMeal,
+          lang: lang,
+          forceAi: needsAi,
+        );
         if (!mounted) return;
         Navigator.pop(context);
 
@@ -618,19 +659,13 @@ class _RecipeSuggestionsScreenState extends State<RecipeSuggestionsScreen> {
             // Ảnh món ăn kèm Match Score badge
             Stack(
               children: [
-                ClipRRect(
+                RecipeImageWidget(
+                  imageUrl: meal.strMealThumb,
+                  mealName: meal.strMealVi ?? meal.strMeal,
+                  category: meal.strCategory,
+                  height: 165,
+                  width: double.infinity,
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                  child: Image.network(
-                    meal.strMealThumb,
-                    height: 165,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 165,
-                      color: Colors.grey.shade200,
-                      child: const Center(child: Icon(Icons.restaurant, color: Colors.grey, size: 40)),
-                    ),
-                  ),
                 ),
                 // Badge điểm phù hợp
                 Positioned(

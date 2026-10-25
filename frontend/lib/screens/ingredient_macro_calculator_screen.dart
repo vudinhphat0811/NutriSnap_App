@@ -1125,10 +1125,10 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
       body: Column(
         children: [
           // ========================================================
-          // PHẦN 1 (TRÊN): TÌM KIẾM & CHỌN NGUYÊN LIỆU (Flex 5)
+          // PHẦN 1 (TRÊN): TÌM KIẾM & CHỌN NGUYÊN LIỆU (Flex 6 khi giỏ trống, 5 khi đã chọn)
           // ========================================================
           Expanded(
-            flex: 5,
+            flex: selectedCount == 0 ? 6 : 5,
             child: Container(
               color: Colors.white,
               child: Column(
@@ -1407,10 +1407,10 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
           ),
 
           // ========================================================
-          // PHẦN 2 (DƯỚI): NGUYÊN LIỆU ĐÃ CHỌN & TỔNG CALO (Flex 5)
+          // PHẦN 2 (DƯỚI): NGUYÊN LIỆU ĐÃ CHỌN & TỔNG CALO (Flex 4 khi giỏ trống, 5 khi đã chọn)
           // ========================================================
           Expanded(
-            flex: 5,
+            flex: selectedCount == 0 ? 4 : 5,
             child: Container(
               color: const Color(0xFFF8FAFC),
               child: Column(
@@ -1455,22 +1455,24 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                   Expanded(
                     child: selectedCount == 0
                         ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24.0),
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               child: Column(
+                                mainAxisSize: MainAxisSize.min,
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.add_shopping_cart_rounded, size: 38, color: Colors.grey.shade400),
-                                  const SizedBox(height: 8),
+                                  Icon(Icons.add_shopping_cart_rounded, size: 28, color: Colors.grey.shade400),
+                                  const SizedBox(height: 6),
                                   const Text(
                                     'Chưa chọn nguyên liệu nào',
-                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 3),
                                   const Text(
                                     'Nhấn nút [+] ở danh sách trên để thêm nguyên liệu thô.',
                                     textAlign: TextAlign.center,
-                                    style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
+                                    style: TextStyle(fontSize: 11, color: AppColors.textGray),
                                   ),
                                 ],
                               ),
@@ -1899,37 +1901,51 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  const Text(
-                    'TỔNG CALO: ',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
-                  ),
-                  Text(
-                    '${totals.calories} kcal',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF15803D),
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    const Text(
+                      'TỔNG CALO: ',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
                     ),
-                  ),
-                ],
+                    Flexible(
+                      child: Text(
+                        '${totals.calories} kcal',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF15803D),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${totals.totalWeight.round()}g thô (${totals.itemCount} món)',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
-                  ),
-                  if (totals.totalCookedWeight > 0)
+              const SizedBox(width: 8),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
                     Text(
-                      'Thành phẩm: ~${totals.totalCookedWeight.round()}g chín',
-                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF0D9488)),
+                      '${totals.totalWeight.round()}g thô (${totals.itemCount} món)',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                ],
+                    if (totals.totalCookedWeight > 0)
+                      Text(
+                        'Thành phẩm: ~${totals.totalCookedWeight.round()}g chín',
+                        style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF0D9488)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
               ),
             ],
           ),

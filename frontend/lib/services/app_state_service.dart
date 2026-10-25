@@ -22,6 +22,7 @@ class UserProfile {
   double targetFat;
   int dailyWaterGoalMl;
   bool hasProfile;
+  bool hasPassword;
   String? avatarPath;
   String? googleEmail;
   String? facebookName;
@@ -43,6 +44,7 @@ class UserProfile {
     this.targetFat = 0.0,
     this.dailyWaterGoalMl = 0,
     this.hasProfile = false,
+    this.hasPassword = false,
     this.avatarPath,
     this.googleEmail,
     this.facebookName,
@@ -109,6 +111,7 @@ class UserProfile {
         'targetFat': targetFat,
         'dailyWaterGoalMl': dailyWaterGoalMl,
         'hasProfile': hasProfile,
+        'hasPassword': hasPassword,
         'avatarPath': avatarPath,
         'googleEmail': googleEmail,
         'facebookName': facebookName,
@@ -131,6 +134,7 @@ class UserProfile {
         targetFat: (map['targetFat'] as num?)?.toDouble() ?? 0.0,
         dailyWaterGoalMl: map['dailyWaterGoalMl'] ?? 0,
         hasProfile: map['hasProfile'] ?? false,
+        hasPassword: map['hasPassword'] ?? false,
         avatarPath: map['avatarPath'],
         googleEmail: map['googleEmail'],
         facebookName: map['facebookName'],
@@ -192,6 +196,46 @@ class MealLogEntry {
       return '${parts[2]}/${parts[1]} ${time.isNotEmpty && time != 'Hôm nay' ? time : ''}'.trim();
     }
     return loggedDate;
+  }
+
+  /// Trích xuất danh sách nguyên liệu con (nếu mục này là combo nguyên liệu gom)
+  List<String> get parsedIngredients {
+    if (title.startsWith('Dinh dưỡng:') || title.startsWith('Khẩu phần:')) {
+      final content = title.replaceFirst(RegExp(r'^(Dinh dưỡng|Khẩu phần):\s*'), '');
+      return content.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    }
+    if (title.contains('g thô') || title.contains('g chín')) {
+      return title.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    }
+    return [];
+  }
+
+  bool get isMultiIngredientMeal => parsedIngredients.isNotEmpty;
+
+  /// Tiêu đề hiển thị ngắn gọn, thoáng đãng
+  String get displayCardTitle {
+    if (isMultiIngredientMeal) {
+      return 'Khẩu phần (${parsedIngredients.length} nguyên liệu)';
+    }
+    return title;
+  }
+
+  /// Icon / emoji đại diện cho nguyên liệu con
+  static String resolveIngredientIcon(String rawText) {
+    final lower = rawText.toLowerCase();
+    if (lower.contains('gà') || lower.contains('chicken')) return '🍗';
+    if (lower.contains('bò') || lower.contains('beef') || lower.contains('thăn') || lower.contains('heo') || lower.contains('pork') || lower.contains('thịt')) return '🥩';
+    if (lower.contains('trứng') || lower.contains('egg')) return '🥚';
+    if (lower.contains('cá') || lower.contains('fish') || lower.contains('tôm') || lower.contains('hải sản') || lower.contains('salmon')) return '🐟';
+    if (lower.contains('gạo') || lower.contains('cơm') || lower.contains('rice')) return '🍚';
+    if (lower.contains('khoai') || lower.contains('potato')) return '🥔';
+    if (lower.contains('yến mạch') || lower.contains('oat')) return '🥣';
+    if (lower.contains('bánh mì') || lower.contains('bread')) return '🍞';
+    if (lower.contains('rau') || lower.contains('cải') || lower.contains('xà lách') || lower.contains('cà chua') || lower.contains('dưa')) return '🥦';
+    if (lower.contains('chuối') || lower.contains('táo') || lower.contains('trái cây') || lower.contains('quả')) return '🍎';
+    if (lower.contains('sữa') || lower.contains('milk') || lower.contains('sữa chua')) return '🥛';
+    if (lower.contains('đậu') || lower.contains('bean') || lower.contains('hạt')) return '🥜';
+    return '🥗';
   }
 
   /// Phân giải ảnh đại diện thông minh chính xác theo tên món ăn hoặc tên nguyên liệu
@@ -539,6 +583,7 @@ class AppStateService extends ChangeNotifier {
       targetFat: (data['targetFat'] as num?)?.toDouble() ?? 0.0,
       dailyWaterGoalMl: (data['dailyWaterGoalMl'] as num?)?.toInt() ?? 0,
       hasProfile: !isNew && serverHasProfile && rawHeight > 0 && rawWeight > 0 && rawAge > 0,
+      hasPassword: data['hasPassword'] == true,
     );
 
     isGuestMode = false; // Đã liên kết tài khoản -> Hết trạng thái Khách
@@ -632,12 +677,49 @@ class AppStateService extends ChangeNotifier {
     }
   }
 
-  /// Gửi yêu cầu đổi email đăng ký mới (hệ thống gửi OTP 6 số qua email mới)
+  /// Đảm bảo có phiên JWT Token hợp lệ từ máy chủ Backend C# (hỗ trợ cả Khách & Đăng ký nâng cấp)
+  Future<bool> ensureBackendGuestSession() async {
+    try {
+      final res = await http.post(
+        Uri.parse('${ApiConstants.baseUrl}/api/auth/guest-login'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        final token = data['token']?.toString();
+        if (token != null && token.isNotEmpty) {
+          authToken = token;
+          isGuestMode = true;
+          await saveToLocalStorage();
+          notifyListeners();
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[ensureBackendGuestSession] Error: $e');
+      return false;
+    }
+  }
+
+  /// Gửi yêu cầu đổi hoặc liên kết email đăng ký mới (hệ thống gửi OTP 6 số qua email mới)
   Future<Map<String, dynamic>> requestChangeEmail(String newEmail) async {
     try {
+      // 1. Nếu chưa có phiên đăng nhập trên máy chủ hoặc đang là token giả lập, tự động cấp phiên Khách từ backend
+      if (authToken == null || authToken!.isEmpty || authToken!.startsWith('mock_') || authToken!.startsWith('google_auth_')) {
+        final ok = await ensureBackendGuestSession();
+        if (!ok) {
+          return {
+            'success': false,
+            'message': 'Không thể kết nối máy chủ backend để gửi mã OTP. Vui lòng kiểm tra mạng hoặc khởi động lại backend!'
+          };
+        }
+      }
+
       final token = authToken;
       if (token == null || token.isEmpty) {
-        return {'success': false, 'message': 'Vui lòng đăng nhập để thực hiện đổi email!'};
+        return {'success': false, 'message': 'Phiên làm việc không hợp lệ. Vui lòng thử lại!'};
       }
 
       final uri = Uri.parse('${ApiConstants.baseUrl}/api/user/request-change-email');
@@ -670,18 +752,27 @@ class AppStateService extends ChangeNotifier {
     }
   }
 
-  /// Xác nhận mã OTP và hoàn tất đổi email đăng ký mới
+  /// Xác nhận mã OTP và hoàn tất đổi / liên kết email đăng ký mới
   Future<Map<String, dynamic>> confirmChangeEmail({
     required String newEmail,
     required String otpCode,
+    String? newPassword,
   }) async {
     try {
-      final token = authToken;
-      if (token == null || token.isEmpty) {
-        return {'success': false, 'message': 'Vui lòng đăng nhập để thực hiện đổi email!'};
+      if (authToken == null || authToken!.isEmpty) {
+        return {'success': false, 'message': 'Phiên đăng nhập đã hết hạn. Vui lòng thử lại!'};
       }
 
+      final token = authToken!;
       final uri = Uri.parse('${ApiConstants.baseUrl}/api/user/confirm-change-email');
+      final Map<String, dynamic> reqBody = {
+        'newEmail': newEmail.trim(),
+        'otpCode': otpCode.trim(),
+      };
+      if (newPassword != null && newPassword.trim().isNotEmpty) {
+        reqBody['newPassword'] = newPassword.trim();
+      }
+
       final response = await http
           .post(
             uri,
@@ -689,10 +780,7 @@ class AppStateService extends ChangeNotifier {
               'Content-Type': 'application/json; charset=utf-8',
               'Authorization': 'Bearer $token',
             },
-            body: jsonEncode({
-              'newEmail': newEmail.trim(),
-              'otpCode': otpCode.trim(),
-            }),
+            body: jsonEncode(reqBody),
           )
           .timeout(const Duration(seconds: 15));
 
@@ -700,6 +788,11 @@ class AppStateService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final updatedEmail = data['newEmail']?.toString() ?? newEmail.trim();
         userProfile.email = updatedEmail;
+        if (data['hasPassword'] == true || (newPassword != null && newPassword.trim().isNotEmpty)) {
+          userProfile.hasPassword = true;
+        }
+        isGuestMode = false;
+        testGuestDaysOverride = null;
 
         final newToken = data['token']?.toString();
         if (newToken != null && newToken.isNotEmpty) {
@@ -708,9 +801,13 @@ class AppStateService extends ChangeNotifier {
 
         await saveToLocalStorage();
         notifyListeners();
+
+        // Đồng bộ các chỉ số sức khỏe của tài khoản lên server
+        syncProfileToServer();
+
         return {
           'success': true,
-          'message': data['message'] ?? 'Đổi email đăng ký thành công!',
+          'message': data['message'] ?? 'Liên kết và xác nhận email thành công!',
         };
       } else {
         return {
@@ -721,6 +818,77 @@ class AppStateService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[Confirm Change Email Error] $e');
       return {'success': false, 'message': 'Không thể kết nối đến máy chủ: $e'};
+    }
+  }
+
+  /// Thiết lập hoặc đổi mật khẩu tài khoản
+  Future<Map<String, dynamic>> setPassword(String newPassword) async {
+    try {
+      if (authToken == null || authToken!.isEmpty) {
+        return {'success': false, 'message': 'Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại!'};
+      }
+
+      final token = authToken!;
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/user/set-password');
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'newPassword': newPassword.trim()}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final Map<String, dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
+      if (response.statusCode == 200) {
+        userProfile.hasPassword = true;
+        await saveToLocalStorage();
+        notifyListeners();
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Thiết lập mật khẩu mới thành công!',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Không thể thiết lập mật khẩu (${response.statusCode})',
+        };
+      }
+    } catch (e) {
+      debugPrint('[Set Password Error] $e');
+      return {'success': false, 'message': 'Không thể kết nối đến máy chủ: $e'};
+    }
+  }
+
+  /// Tải thông tin mới nhất của người dùng từ máy chủ (bao gồm trạng thái mật khẩu)
+  Future<void> fetchUserProfileFromServer() async {
+    final token = authToken;
+    if (token == null || token.isEmpty || token.startsWith('mock_')) return;
+    try {
+      final uri = Uri.parse(ApiConstants.profile);
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data['hasPassword'] != null) {
+          userProfile.hasPassword = data['hasPassword'] == true;
+        }
+        if (data['email'] != null && data['email'].toString().isNotEmpty) {
+          userProfile.email = data['email'].toString();
+        }
+        await saveToLocalStorage();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[fetchUserProfileFromServer Error] $e');
     }
   }
 

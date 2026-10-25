@@ -10,6 +10,7 @@ import '../constants/app_translations.dart';
 import '../services/meal_db_service.dart';
 import '../services/app_state_service.dart';
 import '../services/recipe_translator.dart';
+import '../widgets/recipe_image_widget.dart';
 
 class ShakeRecipeScreen extends StatefulWidget {
   final Function(int) onNavigate;
@@ -397,15 +398,14 @@ class _ShakeRecipeScreenState extends State<ShakeRecipeScreen> with TickerProvid
                     borderRadius: BorderRadius.vertical(
                       top: Radius.circular(_showDropSuccess ? 0 : 24),
                     ),
-                    child: Image.network(
-                      meal.strMealThumb,
+                    child: RecipeImageWidget(
+                      imageUrl: meal.strMealThumb,
+                      mealName: displayName,
+                      category: meal.strCategory,
                       height: 195,
                       width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        height: 195,
-                        color: Colors.grey.shade200,
-                        child: const Center(child: Icon(Icons.restaurant, size: 40, color: Colors.grey)),
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(_showDropSuccess ? 0 : 24),
                       ),
                     ),
                   ),
@@ -853,17 +853,13 @@ class _ShakeRecipeScreenState extends State<ShakeRecipeScreen> with TickerProvid
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        meal.strMealThumb,
+                      child: RecipeImageWidget(
+                        imageUrl: meal.strMealThumb,
+                        mealName: name,
+                        category: meal.strCategory,
                         width: 55,
                         height: 55,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: 55,
-                          height: 55,
-                          color: Colors.grey.shade200,
-                          child: const Icon(Icons.restaurant, size: 24, color: Colors.grey),
-                        ),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     const SizedBox(width: 12),

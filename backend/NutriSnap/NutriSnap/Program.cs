@@ -90,7 +90,11 @@ builder.Services.AddHttpClient<RecipeCrawlerService>();
 builder.Services.AddHttpClient<TranslationService>();
 builder.Services.AddHttpClient<AiVisionService>();
 builder.Services.AddHttpClient<AiNutritionAdvisorService>();
-builder.Services.AddHttpClient<BarcodeNutritionService>();
+builder.Services.AddHttpClient<BarcodeNutritionService>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = System.Net.DecompressionMethods.All
+    });
 builder.Services.AddMemoryCache();
 
 // 5. Cấu hình CORS
@@ -147,7 +151,7 @@ using (var scope = app.Services.CreateScope())
         try
         {
             var creator = Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions.GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>(db.Database);
-            creator.CreateTables();
+            if (creator != null && !creator.HasTables()) creator.CreateTables();
         }
         catch
         {

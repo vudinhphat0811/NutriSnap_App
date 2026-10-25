@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -301,13 +302,14 @@ class TheMealDbService {
     return getMealsByMultipleIngredients([rawIngredient]);
   }
 
-  /// 2. Lấy chi tiết món ăn (được dịch tự động 100% tại Backend C#)
-  static Future<MealItem?> getMealDetail(String idMeal, {String? lang}) async {
+  /// 2. Lấy chi tiết món ăn (được dịch tự động 100% tại Backend C# & Bộ lọc AI NutriSnap)
+  static Future<MealItem?> getMealDetail(String idMeal, {String? lang, bool forceAi = false}) async {
     final effectiveLang = lang ?? 'vi';
     try {
-      final backendUrl = Uri.parse('${ApiConstants.baseUrl}/api/recipes/detail/$idMeal?lang=$effectiveLang');
-      debugPrint('[Backend Translation] Đang lấy chi tiết món từ backend: $backendUrl');
-      final response = await http.get(backendUrl).timeout(const Duration(seconds: 12));
+      final backendUrl = Uri.parse(
+          '${ApiConstants.baseUrl}/api/recipes/detail/$idMeal?lang=$effectiveLang&forceAi=$forceAi');
+      debugPrint('[Backend Translation] Đang lấy chi tiết món từ backend (forceAi=$forceAi): $backendUrl');
+      final response = await http.get(backendUrl).timeout(const Duration(seconds: 25));
       if (response.statusCode == 200) {
         AppStateService.instance.setOffline(false);
         final data = jsonDecode(utf8.decode(response.bodyBytes));
@@ -319,11 +321,18 @@ class TheMealDbService {
       }
     } catch (e) {
       debugPrint('[Backend Recipe Detail Error] Lỗi: $e');
-      AppStateService.instance.setOffline(true);
+      if (e is SocketException || e.toString().toLowerCase().contains('socketexception') || e.toString().toLowerCase().contains('connection refused')) {
+        AppStateService.instance.setOffline(true);
+      }
     }
 
     final cached = await getCachedMeals();
     return cached.firstWhere((m) => m.idMeal == idMeal, orElse: () => cached.first);
+  }
+
+  /// Kích hoạt bộ lọc AI dịch thuật công thức chuyên sâu
+  static Future<MealItem?> aiFilterRecipe(String idMeal) async {
+    return getMealDetail(idMeal, lang: 'vi', forceAi: true);
   }
 
   /// 3. Lấy món ăn ngẫu nhiên cho chức năng Lắc chọn món (C# Backend xử lý logic và tính điểm)
@@ -486,7 +495,7 @@ class TheMealDbService {
       idMeal: 'off_1',
       strMeal: 'Grilled Chicken Breast Salad',
       strMealVi: 'Salad Ức Gà Áp Chảo',
-      strMealThumb: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
+      strMealThumb: '',
       strCategory: 'Chicken',
       strArea: 'Healthy',
       ingredients: ['Chicken Breast', 'Broccoli', 'Tomato', 'Olive Oil', 'Black Pepper', 'Lettuce'],
@@ -506,7 +515,7 @@ class TheMealDbService {
       idMeal: 'off_2',
       strMeal: 'Beef Pho Noodle Soup',
       strMealVi: 'Phở Bò Tái Hà Nội',
-      strMealThumb: 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80',
+      strMealThumb: '',
       strCategory: 'Beef',
       strArea: 'Vietnamese',
       ingredients: ['Beef', 'Rice Noodles', 'Ginger', 'Onion', 'Cinnamon', 'Star Anise', 'Spring Onion'],
@@ -526,7 +535,7 @@ class TheMealDbService {
       idMeal: 'off_3',
       strMeal: 'Baked Salmon with Asparagus',
       strMealVi: 'Cá Hồi Nướng Măng Tây',
-      strMealThumb: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=600&q=80',
+      strMealThumb: '',
       strCategory: 'Seafood',
       strArea: 'Healthy',
       ingredients: ['Salmon', 'Asparagus', 'Lemon', 'Garlic', 'Olive Oil', 'Salt'],

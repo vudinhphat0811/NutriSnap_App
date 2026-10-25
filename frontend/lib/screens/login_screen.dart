@@ -434,6 +434,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           ElevatedButton(
                             onPressed: () {
+                              AppStateService.instance.setGuestMode(true);
                               Navigator.pushReplacement(
                                 context,
                                 MaterialPageRoute(

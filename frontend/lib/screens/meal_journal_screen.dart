@@ -745,118 +745,188 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
               ),
             );
           },
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-              border: Border.all(color: const Color(0xFFF1F5F9)),
-            ),
-            child: Row(
-              children: [
-                // Ảnh món ăn
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.network(
-                    log.displayImageUrl,
-                    width: 65,
-                    height: 65,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+          child: InkWell(
+            onTap: () => _showMealDetailSheet(context, log),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+                border: Border.all(color: const Color(0xFFF1F5F9)),
+              ),
+              child: Row(
+                children: [
+                  // Ảnh món ăn
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.network(
+                      log.displayImageUrl,
                       width: 65,
                       height: 65,
-                      color: const Color(0xFFF1F5F9),
-                      child: const Icon(Icons.restaurant_rounded, size: 28, color: AppColors.primary),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 65,
+                        height: 65,
+                        color: const Color(0xFFF1F5F9),
+                        child: const Icon(Icons.restaurant_rounded, size: 28, color: AppColors.primary),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 14),
+                  const SizedBox(width: 14),
 
-                // Thông tin món ăn
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: typeColor.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              log.displayMealType.toUpperCase(),
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: typeColor),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            log.displayTime,
-                            style: const TextStyle(fontSize: 11, color: AppColors.textGray),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        log.title,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textBlack),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          _buildMacroPill('${log.protein}g P', const Color(0xFF0284C7)),
-                          const SizedBox(width: 6),
-                          _buildMacroPill('${log.carbs}g C', const Color(0xFFD97706)),
-                          const SizedBox(width: 6),
-                          _buildMacroPill('${log.fat}g F', const Color(0xFFE11D48)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Lượng Calo & Nút Xóa
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+                  // Thông tin món ăn
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.local_fire_department_rounded, size: 16, color: Colors.deepOrange),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${log.calories}',
-                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: typeColor.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                log.displayMealType.toUpperCase(),
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: typeColor),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              log.displayTime,
+                              style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        if (log.isMultiIngredientMeal) ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  log.displayCardTitle,
+                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text('Chi tiết', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                                    SizedBox(width: 2),
+                                    Icon(Icons.arrow_forward_ios_rounded, size: 7, color: Color(0xFF2563EB)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: [
+                              ...log.parsedIngredients.take(2).map((item) {
+                                final icon = MealLogEntry.resolveIngredientIcon(item);
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '$icon $item',
+                                    style: const TextStyle(fontSize: 10, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              }),
+                              if (log.parsedIngredients.length > 2)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE2E8F0),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '+${log.parsedIngredients.length - 2} món nữa',
+                                    style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF475569)),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ] else ...[
+                          Text(
+                            log.title,
+                            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            _buildMacroPill('${log.protein}g P', const Color(0xFF0284C7)),
+                            const SizedBox(width: 6),
+                            _buildMacroPill('${log.carbs}g C', const Color(0xFFD97706)),
+                            const SizedBox(width: 6),
+                            _buildMacroPill('${log.fat}g F', const Color(0xFFE11D48)),
+                          ],
                         ),
                       ],
                     ),
-                    const Text('kcal', style: TextStyle(fontSize: 10, color: AppColors.textGray)),
-                    const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () {
-                        appState.removeMealLog(log.id);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('${AppTranslations.tr('deleted_meal')}: "${log.title}"'),
-                            duration: const Duration(seconds: 1),
+                  ),
+
+                  // Lượng Calo & Nút Xóa
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.local_fire_department_rounded, size: 16, color: Colors.deepOrange),
+                          const SizedBox(width: 2),
+                          Text(
+                            '${log.calories}',
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
                           ),
-                        );
-                      },
-                      child: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFF94A3B8)),
-                    ),
-                  ],
-                ),
-              ],
+                        ],
+                      ),
+                      const Text('kcal', style: TextStyle(fontSize: 10, color: AppColors.textGray)),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: () {
+                          appState.removeMealLog(log.id);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('${AppTranslations.tr('deleted_meal')}: "${log.title}"'),
+                              duration: const Duration(seconds: 1),
+                            ),
+                          );
+                        },
+                        child: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFF94A3B8)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -948,6 +1018,280 @@ class _MealJournalScreenState extends State<MealJournalScreen> {
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// HỘP THOẠI XEM CHI TIẾT BỮA ĂN (HIỂN THỊ TRỌN VẸN CÁC NGUYÊN LIỆU ĐÃ CHỌN)
+  void _showMealDetailSheet(BuildContext parentContext, MealLogEntry log) {
+    final isMulti = log.isMultiIngredientMeal;
+    final ingredients = log.parsedIngredients;
+
+    // Tính % calo từng macro
+    final proCal = log.protein * 4.0;
+    final carbCal = log.carbs * 4.0;
+    final fatCal = log.fat * 9.0;
+    final totalMacroCal = (proCal + carbCal + fatCal) <= 0 ? 1.0 : (proCal + carbCal + fatCal);
+    final proPct = ((proCal / totalMacroCal) * 100).round();
+    final carbPct = ((carbCal / totalMacroCal) * 100).round();
+    final fatPct = (100 - proPct - carbPct).clamp(0, 100).toInt();
+
+    showModalBottomSheet(
+      context: parentContext,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetCtx).size.height * 0.85,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Thanh gạt
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 6),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Ảnh món ăn
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Image.network(
+                            log.displayImageUrl,
+                            width: double.infinity,
+                            height: 170,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: double.infinity,
+                              height: 170,
+                              color: const Color(0xFFF1F5F9),
+                              child: const Icon(Icons.restaurant_rounded, size: 50, color: AppColors.primary),
+                            ),
+                          ),
+                        ),
+                        // Badge Bữa ăn
+                        Positioned(
+                          top: 12,
+                          left: 12,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  log.displayMealType.toUpperCase(),
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                                ),
+                                const Text(' • ', style: TextStyle(color: Colors.white70)),
+                                Text(
+                                  log.displayTime,
+                                  style: const TextStyle(fontSize: 11, color: Colors.white),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // Nút Đóng
+                        Positioned(
+                          top: 12,
+                          right: 12,
+                          child: InkWell(
+                            onTap: () => Navigator.pop(sheetCtx),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.5),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Tiêu đề
+                    Text(
+                      isMulti ? 'Khẩu phần dinh dưỡng tự chọn' : log.title,
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Đã ghi nhận trong ${log.displayMealType.toLowerCase()} (${log.displayTime})',
+                      style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Khối tổng Calo & Macros
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.local_fire_department_rounded, color: Colors.deepOrange, size: 22),
+                                  SizedBox(width: 6),
+                                  Text('TỔNG NĂNG LƯỢNG', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                                ],
+                              ),
+                              Text(
+                                '${log.calories} kcal',
+                                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF15803D)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          const Divider(height: 1),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              _buildMacroDetailCard('Chất Đạm (P)', '${log.protein}g', '$proPct%', const Color(0xFF0284C7)),
+                              const SizedBox(width: 8),
+                              _buildMacroDetailCard('Tinh Bột (C)', '${log.carbs}g', '$carbPct%', const Color(0xFFD97706)),
+                              const SizedBox(width: 8),
+                              _buildMacroDetailCard('Chất Béo (F)', '${log.fat}g', '$fatPct%', const Color(0xFFE11D48)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // DANH SÁCH CHI TIẾT TỪNG NGUYÊN LIỆU (nếu là combo nhiều nguyên liệu)
+                    if (isMulti && ingredients.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          const Icon(Icons.kitchen_rounded, size: 18, color: AppColors.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Chi Tiết Các Nguyên Liệu (${ingredients.length} món)',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: ingredients.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1, indent: 16, endIndent: 16),
+                          itemBuilder: (context, idx) {
+                            final ing = ingredients[idx];
+                            final icon = MealLogEntry.resolveIngredientIcon(ing);
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                              child: Row(
+                                children: [
+                                  Text(icon, style: const TextStyle(fontSize: 20)),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      ing,
+                                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                    ),
+                                  ),
+                                  const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF16A34A)),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+
+                    // Nút xóa bữa ăn khỏi nhật ký
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(sheetCtx);
+                          appState.removeMealLog(log.id);
+                          ScaffoldMessenger.of(parentContext).showSnackBar(
+                            SnackBar(
+                              content: Text('Đã xóa "${log.title}" khỏi nhật ký'),
+                              duration: const Duration(seconds: 2),
+                              backgroundColor: AppColors.primaryDark,
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFDC2626)),
+                        label: const Text('Xóa Bữa Ăn Này Khỏi Nhật Ký', style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 13)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFFCA5A5)),
+                          backgroundColor: const Color(0xFFFEF2F2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMacroDetailCard(String label, String value, String pct, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          children: [
+            Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color)),
+            const SizedBox(height: 4),
+            Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: color)),
+            const SizedBox(height: 2),
+            Text(pct, style: TextStyle(fontSize: 9.5, color: color.withValues(alpha: 0.8), fontWeight: FontWeight.w600)),
           ],
         ),
       ),

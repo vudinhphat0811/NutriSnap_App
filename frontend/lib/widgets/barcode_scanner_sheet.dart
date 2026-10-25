@@ -1,13 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../constants/app_colors.dart';
 import '../models/barcode_product_model.dart';
 import '../services/barcode_nutrition_service.dart';
 
 /// Modal Quét Mã Vạch Siêu Thị & Bao Bì Thực Phẩm
 /// Hỗ trợ:
-/// 1. Viewfinder laser scan mô phỏng
-/// 2. Chụp ảnh / Chọn ảnh từ thư viện bằng ImagePicker
+/// 1. Quét Camera thời gian thực siêu tốc (<0.05s) bằng Google ML Kit
+/// 2. Chụp ảnh / Chọn ảnh từ thư viện để AI Vision đọc bao bì
 /// 3. Nhập mã vạch 13 số trực tiếp
 /// 4. Danh sách các khay thịt & đồ gym mẫu siêu thị thực tế
 class BarcodeScannerSheet extends StatefulWidget {
@@ -32,11 +35,20 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
 
   final TextEditingController _barcodeInputController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
+  MobileScannerController? _scannerController;
 
   int _currentTab = 0; // 0: Viewfinder & Camera, 1: Nhập tay, 2: Sản phẩm mẫu
   bool _isSearching = false;
+  bool _isFlashOn = false;
+  String? _lastScannedCode;
+  DateTime? _lastScannedTime;
+  String? _scannedRawCode;
+  BarcodeFormat? _scannedFormat;
   String? _errorMessage;
   BarcodeProductModel? _scannedProduct;
+  bool _cameraInitialized = false;
+  bool _cameraError = false;
+  String? _cameraErrorMessage;
 
   @override
   void initState() {
@@ -49,13 +61,101 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
     _laserAnimation = Tween<double>(begin: 0.05, end: 0.95).animate(
       CurvedAnimation(parent: _laserController, curve: Curves.easeInOut),
     );
+
+    _initMobileScanner();
+  }
+
+  void _initMobileScanner() {
+    try {
+      _scannerController = MobileScannerController(
+        autoStart: !kIsWeb, // Trên web không tự động start ngay trong constructor để tránh uncaught browser exception
+        detectionSpeed: DetectionSpeed.noDuplicates,
+        detectionTimeoutMs: 800,
+        facing: CameraFacing.back,
+        torchEnabled: false,
+        formats: const [
+          BarcodeFormat.ean13,
+          BarcodeFormat.ean8,
+          BarcodeFormat.upcA,
+          BarcodeFormat.upcE,
+          BarcodeFormat.code128,
+          BarcodeFormat.code39,
+          BarcodeFormat.qrCode,
+        ],
+      );
+
+      if (kIsWeb) {
+        // Trên web, khởi động sau khi render frame đầu tiên với try-catch an toàn
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _startWebScannerSafely();
+        });
+      } else {
+        _cameraInitialized = true;
+      }
+    } catch (e) {
+      debugPrint('[BarcodeScanner] Error creating MobileScannerController: $e');
+      _cameraError = true;
+      _cameraErrorMessage = e.toString();
+      _scannerController = null;
+    }
+  }
+
+  Future<void> _startWebScannerSafely() async {
+    if (!mounted || _scannerController == null) return;
+    try {
+      await _scannerController!.start();
+      if (mounted) {
+        setState(() {
+          _cameraInitialized = true;
+          _cameraError = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[BarcodeScanner] Web camera start caught gracefully: $e');
+      if (mounted) {
+        setState(() {
+          _cameraError = true;
+          _cameraErrorMessage = 'Trình duyệt chưa cho phép mở camera hoặc không tìm thấy webcam.';
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
     _laserController.dispose();
     _barcodeInputController.dispose();
+    _scannerController?.dispose();
     super.dispose();
+  }
+
+  void _onBarcodeDetected(BarcodeCapture capture) {
+    if (_isSearching || _scannedProduct != null) return;
+    final barcodes = capture.barcodes;
+    if (barcodes.isEmpty) return;
+
+    final barcodeItem = barcodes.first;
+    final code = barcodeItem.rawValue;
+    if (code == null || code.trim().isEmpty) return;
+    final clean = code.trim();
+
+    // Tránh quét liên tục cùng 1 mã trong 3 giây
+    final now = DateTime.now();
+    if (_lastScannedCode == clean && _lastScannedTime != null && now.difference(_lastScannedTime!).inSeconds < 3) {
+      return;
+    }
+
+    _lastScannedCode = clean;
+    _lastScannedTime = now;
+    _scannedRawCode = clean;
+    _scannedFormat = barcodeItem.format;
+
+    if (!kIsWeb) {
+      try {
+        HapticFeedback.mediumImpact();
+      } catch (_) {}
+    }
+    _searchBarcode(clean);
   }
 
   Future<void> _searchBarcode(String code) async {
@@ -76,7 +176,7 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
         if (product != null) {
           _scannedProduct = product;
         } else {
-          _errorMessage = 'Không tìm thấy thông tin cho mã vạch "$clean". Vui lòng kiểm tra lại hoặc thử danh sách mẫu.';
+          _errorMessage = 'Không tìm thấy thông tin cho mã vạch "$clean" trên CSDL Open Food Facts hay iCheck Việt Nam. Vui lòng kiểm tra lại hoặc chụp ảnh bao bì.';
         }
       });
     }
@@ -84,8 +184,9 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
 
   Future<void> _handlePickImage(ImageSource source) async {
     try {
+      final actualSource = kIsWeb ? ImageSource.gallery : source;
       final photo = await _picker.pickImage(
-        source: source,
+        source: actualSource,
         maxWidth: 1024,
         maxHeight: 1024,
         imageQuality: 85,
@@ -93,25 +194,27 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
 
       if (photo == null) return;
 
-      // Mô phỏng nhận diện mã vạch từ ảnh chụp bao bì/tem cân siêu thị
-      setState(() => _isSearching = true);
-      await Future.delayed(const Duration(milliseconds: 1200));
+      setState(() {
+        _isSearching = true;
+        _errorMessage = null;
+        _scannedProduct = null;
+      });
 
-      // Thử bóc tách số từ tên file nếu có, hoặc nhận diện mẫu thịt siêu thị
-      final nameLower = photo.name.toLowerCase();
-      String testBarcode = '201024503504'; // Mặc định: Khay Ức Gà MeatDeli 350g
+      final bytes = await photo.readAsBytes();
+      final product = await BarcodeNutritionService.scanBarcodeFromImage(bytes);
 
-      if (nameLower.contains('milk') || nameLower.contains('sua')) {
-        testBarcode = '8936036010017';
-      } else if (nameLower.contains('oat') || nameLower.contains('yen')) {
-        testBarcode = '0030000010402';
-      } else if (nameLower.contains('beef') || nameLower.contains('bo')) {
-        testBarcode = '201011002808';
-      } else if (nameLower.contains('whey')) {
-        testBarcode = '0748927028669';
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+          if (product != null) {
+            _scannedProduct = product;
+            _scannedRawCode = product.barcode;
+            _scannedFormat = product.barcodeType.toLowerCase().contains('qr') ? BarcodeFormat.qrCode : BarcodeFormat.ean13;
+          } else {
+            _errorMessage = 'Không nhận diện được mã vạch hoặc tem siêu thị từ ảnh này. Vui lòng chụp rõ góc tem cân hoặc nhập 13 số.';
+          }
+        });
       }
-
-      await _searchBarcode(testBarcode);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -120,13 +223,6 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
         });
       }
     }
-  }
-
-  void _onSelectProduct(BarcodeProductModel product) {
-    setState(() {
-      _scannedProduct = product;
-      _errorMessage = null;
-    });
   }
 
   void _confirmAndApply() {
@@ -139,7 +235,6 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final samples = BarcodeNutritionService.getSampleProducts();
 
     return Container(
       height: mediaQuery.size.height * 0.88,
@@ -223,9 +318,8 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
             ),
             child: Row(
               children: [
-                _buildSegmentButton(0, '📷 Viewfinder & Camera', isDark),
-                _buildSegmentButton(1, '⌨️ Nhập 13 Số', isDark),
-                _buildSegmentButton(2, '🛒 Mẫu Siêu Thị', isDark),
+                _buildSegmentButton(0, '📷 Quét Trực Tiếp', isDark),
+                _buildSegmentButton(1, '⌨️ Nhập Mã Số / Link', isDark),
               ],
             ),
           ),
@@ -280,11 +374,10 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                   if (_scannedProduct != null && !_isSearching)
                     _buildScannedResultCard(_scannedProduct!, isDark),
 
-                  // Nội dung các Tab
-                  if (!_isSearching) ...[
+                  // Nội dung các Tab (chỉ hiển thị camera/nhập liệu khi chưa có sản phẩm được quét)
+                  if (!_isSearching && _scannedProduct == null) ...[
                     if (_currentTab == 0) _buildViewfinderTab(isDark),
                     if (_currentTab == 1) _buildManualInputTab(isDark),
-                    if (_currentTab == 2) _buildSampleProductsTab(samples, isDark),
                   ],
                 ],
               ),
@@ -308,7 +401,12 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () {
-                        setState(() => _scannedProduct = null);
+                        setState(() {
+                          _scannedProduct = null;
+                          _scannedRawCode = null;
+                          _scannedFormat = null;
+                          _errorMessage = null;
+                        });
                       },
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -394,94 +492,173 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
     );
   }
 
-  // === TAB 0: VIEWFINDER & CAMERA ===
+  // === TAB 0: VIEWFINDER & CAMERA (GOOGLE ML KIT REAL-TIME SCANNER) ===
   Widget _buildViewfinderTab(bool isDark) {
+    final showLiveCamera = _currentTab == 0 &&
+        _scannedProduct == null &&
+        _scannerController != null &&
+        _cameraInitialized &&
+        !_cameraError;
+
     return Column(
       children: [
         const SizedBox(height: 8),
-        // Khung quét laser
+        // Khung quét camera thời gian thực với Google ML Kit / Web ZXing
         ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: Container(
-            height: 220,
+            height: 250,
             width: double.infinity,
             decoration: BoxDecoration(
               color: const Color(0xFF0F141C),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.primary.withValues(alpha: 0.4), width: 1.5),
+              border: Border.all(color: AppColors.primary.withValues(alpha: 0.5), width: 1.5),
             ),
             child: Stack(
+              fit: StackFit.expand,
               children: [
-                // 4 góc căn chỉnh
+                // 1. Live Camera Barcode Scanner hoặc Fallback Card an toàn
+                if (showLiveCamera)
+                  MobileScanner(
+                    controller: _scannerController,
+                    onDetect: _onBarcodeDetected,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error) {
+                      return _buildCameraFallbackView(
+                        isDark,
+                        message: 'Không thể mở luồng camera (${error.errorCode.name}). Bạn có thể tải ảnh bao bì từ máy tính!',
+                      );
+                    },
+                  )
+                else
+                  _buildCameraFallbackView(
+                    isDark,
+                    message: kIsWeb
+                        ? 'Trình duyệt Web chưa cấp quyền camera hoặc máy tính không có webcam. Bạn có thể tải ảnh bao bì từ máy tính hoặc dùng danh sách mẫu!'
+                        : (_cameraErrorMessage ?? 'Không thể kết nối máy ảnh. Vui lòng kiểm tra quyền truy cập.'),
+                  ),
+
+                // 2. 4 góc căn chỉnh
                 Positioned.fill(
                   child: Padding(
-                    padding: const EdgeInsets.all(18),
+                    padding: const EdgeInsets.all(22),
                     child: CustomPaint(painter: _ScannerCornersPainter()),
                   ),
                 ),
 
-                // Đường laser quét chạy lên xuống
-                AnimatedBuilder(
-                  animation: _laserAnimation,
-                  builder: (context, child) {
-                    return Positioned(
-                      top: 220 * _laserAnimation.value,
-                      left: 20,
-                      right: 20,
-                      child: Container(
-                        height: 3,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [
-                              Colors.transparent,
-                              AppColors.primary,
-                              Colors.white,
-                              AppColors.primary,
-                              Colors.transparent,
+                // 3. Đường laser quét chạy lên xuống (khi camera hoặc chế độ quét sẵn sàng)
+                if (showLiveCamera)
+                  AnimatedBuilder(
+                    animation: _laserAnimation,
+                    builder: (context, child) {
+                      return Positioned(
+                        top: 250 * _laserAnimation.value,
+                        left: 24,
+                        right: 24,
+                        child: Container(
+                          height: 3,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [
+                                Colors.transparent,
+                                AppColors.primary,
+                                Colors.white,
+                                AppColors.primary,
+                                Colors.transparent,
+                              ],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: 0.8),
+                                blurRadius: 10,
+                                spreadRadius: 2,
+                              ),
                             ],
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.8),
-                              blurRadius: 10,
-                              spreadRadius: 2,
-                            ),
-                          ],
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
 
-                // Dòng chữ hướng dẫn
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.65),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.barcode_reader, color: AppColors.primary, size: 18),
-                            SizedBox(width: 8),
-                            Text(
-                              'Đưa mã vạch bao bì hoặc tem cân vào khung',
-                              style: TextStyle(color: Colors.white, fontSize: 12),
+                // 4. Các nút điều khiển nhanh (Bật/Tắt Flash & Đổi Camera)
+                if (showLiveCamera && !kIsWeb)
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            iconSize: 20,
+                            icon: Icon(
+                              _isFlashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+                              color: _isFlashOn ? Colors.amber : Colors.white,
                             ),
-                          ],
+                            tooltip: 'Bật/Tắt đèn pin',
+                            onPressed: () async {
+                              try {
+                                await _scannerController?.toggleTorch();
+                                if (mounted) setState(() => _isFlashOn = !_isFlashOn);
+                              } catch (_) {}
+                            },
+                          ),
                         ),
+                        const SizedBox(width: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            iconSize: 20,
+                            icon: const Icon(Icons.cameraswitch_rounded, color: Colors.white),
+                            tooltip: 'Đổi camera trước/sau',
+                            onPressed: () async {
+                              try {
+                                await _scannerController?.switchCamera();
+                              } catch (_) {}
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // 5. Badge nhãn hướng dẫn phía dưới
+                Positioned(
+                  bottom: 12,
+                  left: 16,
+                  right: 16,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.75),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Hỗ trợ EAN-13 GS1 & Tem cân siêu thị (WinMart, Aeon, CP, MeatDeli)',
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 10.5),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.bolt_rounded, color: AppColors.primary, size: 16),
+                          SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              kIsWeb
+                                  ? 'Web Mode: Quét Webcam hoặc Tải Ảnh Bao Bì Máy Tính'
+                                  : 'Google ML Kit: Tự động bắt mã vạch tức thì (<0.05s)',
+                              style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w500),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],
@@ -491,14 +668,14 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
 
         const SizedBox(height: 16),
 
-        // Nút mở Camera và Thư Viện Ảnh
+        // Nút mở Camera và Thư Viện Ảnh (Tối ưu cho cả Web và Mobile)
         Row(
           children: [
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: () => _handlePickImage(ImageSource.camera),
-                icon: const Icon(Icons.camera_alt_rounded, size: 18),
-                label: const Text('Chụp Bao Bì / Tem'),
+                onPressed: () => _handlePickImage(kIsWeb ? ImageSource.gallery : ImageSource.camera),
+                icon: const Icon(kIsWeb ? Icons.upload_file_rounded : Icons.camera_alt_rounded, size: 18),
+                label: const Text(kIsWeb ? 'Tải Ảnh Bao Bì' : 'Chụp Bao Bì / Tem'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -525,7 +702,7 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
 
         const SizedBox(height: 14),
 
-        // Gợi ý nhanh thử quét ngay
+        // Hướng dẫn tra cứu CSDL bên thứ 3
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -536,27 +713,28 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.bolt_rounded, color: Colors.amber, size: 18),
-                  SizedBox(width: 6),
+                  const Icon(Icons.public_rounded, color: AppColors.primary, size: 18),
+                  const SizedBox(width: 8),
                   Text(
-                    'Thử nghiệm nhanh quét khay thịt siêu thị:',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                    'Tra Cứu Trực Tiếp CSDL Bên Thứ 3',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildQuickScanChip('🥩 MeatDeli Ức Gà 350g', '201024503504'),
-                  _buildQuickScanChip('🥩 Bò Thăn Úc 280g', '201011002808'),
-                  _buildQuickScanChip('🥓 Nạc Thăn Heo 450g', '201030004502'),
-                  _buildQuickScanChip('🥛 TH True Milk 180ml', '8936036010017'),
-                  _buildQuickScanChip('💪 Whey ON 30g', '0748927028669'),
-                ],
+              const SizedBox(height: 6),
+              Text(
+                'Mỗi khi quét hoặc nhập mã vạch/QR, ứng dụng sẽ gửi yêu cầu trực tiếp đến Cơ sở Dữ liệu Thực phẩm Mở Quốc tế (Open Food Facts API) và bóc tách thông số dinh dưỡng thực tế từ nhãn bao bì.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.4,
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
               ),
             ],
           ),
@@ -565,13 +743,63 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
     );
   }
 
-  Widget _buildQuickScanChip(String label, String code) {
-    return ActionChip(
-      label: Text(label, style: const TextStyle(fontSize: 11.5)),
-      avatar: const Icon(Icons.qr_code_2_rounded, size: 14, color: AppColors.primary),
-      onPressed: () => _searchBarcode(code),
-      backgroundColor: AppColors.primary.withValues(alpha: 0.08),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+  Widget _buildCameraFallbackView(bool isDark, {required String message}) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              kIsWeb ? Icons.photo_camera_back_rounded : Icons.videocam_off_rounded,
+              color: AppColors.primary,
+              size: 34,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              kIsWeb ? 'Chế độ Quét Trên Web (Chrome)' : 'Không Thể Mở Camera',
+              style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              message,
+              style: TextStyle(color: Colors.grey[300], fontSize: 11, height: 1.3),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _handlePickImage(ImageSource.gallery),
+                  icon: const Icon(Icons.upload_file_rounded, size: 15),
+                  label: const Text('Chọn file ảnh bao bì', style: TextStyle(fontSize: 11.5)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  ),
+                ),
+                if (kIsWeb)
+                  OutlinedButton.icon(
+                    onPressed: _startWebScannerSafely,
+                    icon: const Icon(Icons.refresh_rounded, size: 15, color: Colors.white),
+                    label: const Text('Thử mở Webcam', style: TextStyle(fontSize: 11.5, color: Colors.white)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.white38),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -598,7 +826,7 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                 onChanged: (_) => setState(() {}),
                 onSubmitted: (val) => _searchBarcode(val),
                 decoration: InputDecoration(
-                  hintText: 'Ví dụ: 8936036010017 hoặc 201024503504',
+                  hintText: 'Ví dụ: 3017620422003, 5449000000996 hoặc đường link QR...',
                   prefixIcon: const Icon(Icons.pin_rounded, color: AppColors.primary),
                   filled: true,
                   fillColor: isDark ? const Color(0xFF262E38) : const Color(0xFFF8FAFC),
@@ -635,7 +863,7 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  isScale ? '🏷️ Nhận diện: Tem Cân Siêu Thị (Tiền tố 20..29)' : '📦 Nhận diện: Mã vạch EAN-13 GS1',
+                  isScale ? 'Nhận diện: Tem Cân Siêu Thị (Tiền tố 20..29)' : 'Nhận diện: Mã vạch chuẩn EAN-13 / UPC / QR',
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.bold,
@@ -651,19 +879,23 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.amber.withValues(alpha: 0.1),
+            color: Colors.blue.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+            border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
           ),
-          child: const Row(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.info_outline_rounded, color: Colors.amber, size: 20),
-              SizedBox(width: 10),
+              const Icon(Icons.info_outline_rounded, color: Colors.blue, size: 20),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '💡 Mẹo: Tem dán trên khay thịt tươi tại WinMart, Aeon, Co.opmart bắt đầu bằng số 20-29. NutriSnap sẽ tự động bóc tách đúng số gram của khay thịt đó!',
-                  style: TextStyle(fontSize: 12, height: 1.4),
+                  'Tem dán trên khay thực phẩm tươi sống có tiền tố 20-29 sẽ tự động được trích xuất khối lượng tịnh (gam) trực tiếp từ cấu trúc mã số vạch.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: isDark ? Colors.grey[300] : Colors.grey[700],
+                  ),
                 ),
               ),
             ],
@@ -673,132 +905,9 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
     );
   }
 
-  // === TAB 2: SẢN PHẨM MẪU SIÊU THỊ ===
-  Widget _buildSampleProductsTab(List<BarcodeProductModel> samples, bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 4),
-        Text(
-          'Chọn sản phẩm siêu thị hoặc khay thịt tươi để kiểm tra ngay:',
-          style: TextStyle(fontSize: 12.5, color: isDark ? Colors.grey[400] : Colors.grey[600]),
-        ),
-        const SizedBox(height: 10),
-        ListView.separated(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: samples.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (context, idx) {
-            final item = samples[idx];
-            final isCurrent = _scannedProduct?.barcode == item.barcode;
-
-            return InkWell(
-              onTap: () => _onSelectProduct(item),
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isCurrent
-                      ? AppColors.primary.withValues(alpha: 0.1)
-                      : (isDark ? const Color(0xFF262E38) : const Color(0xFFF8FAFC)),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: isCurrent
-                        ? AppColors.primary
-                        : (isDark ? Colors.grey[800]! : Colors.grey[200]!),
-                    width: isCurrent ? 1.5 : 1.0,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E242B) : Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(item.categoryIcon, style: const TextStyle(fontSize: 22)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.productName,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  item.brand,
-                                  style: const TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: (item.isScaleBarcode ? Colors.teal : Colors.blue).withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  item.isScaleBarcode ? 'Khay ${item.netWeightG.round()}g' : '${item.netWeightG.round()}g/ml',
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: item.isScaleBarcode ? Colors.teal : Colors.blue,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                '${item.caloriesPer100g.round()} kcal/100g',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(
-                      isCurrent ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
-                      color: isCurrent ? AppColors.primary : Colors.grey,
-                      size: 20,
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  // === THẺ KẾT QUẢ SẢN PHẨM ĐÃ QUÉT ===
+  // === THẺ THÔNG SỐ SẢN PHẨM & DINH DƯỠNG TRÍCH XUẤT TỪ MÃ VẠCH (CSDL BÊN THỨ 3) ===
   Widget _buildScannedResultCard(BarcodeProductModel product, bool isDark) {
-    final portionMacros = product.calculateForWeight(product.netWeightG);
+    final isQr = product.barcodeType.contains('QR') || _scannedFormat == BarcodeFormat.qrCode;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -806,10 +915,13 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF232B35) : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary, width: 1.5),
+        border: Border.all(
+          color: isQr ? Colors.purple : AppColors.primary,
+          width: 1.5,
+        ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.12),
+            color: (isQr ? Colors.purple : AppColors.primary).withValues(alpha: 0.12),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -818,20 +930,113 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Tầng 1: Icon + Tên + Badge
+          // 1. Dãy mã vạch thực tế & Nguồn CSDL Bên Thứ 3
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1A222C) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isQr ? Colors.purple.withValues(alpha: 0.3) : AppColors.primary.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isQr ? Icons.qr_code_2_rounded : Icons.barcode_reader,
+                  size: 20,
+                  color: isQr ? Colors.purple : AppColors.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isQr ? 'MÃ QR THỰC TẾ:' : 'MÃ VẠCH THỰC TẾ:',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.4,
+                              color: isQr ? Colors.purple : AppColors.primary,
+                            ),
+                          ),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                product.source.isNotEmpty ? product.source : 'CSDL Bên Thứ 3',
+                                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: AppColors.primary),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _scannedRawCode ?? product.barcode,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'monospace',
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // 2. Thông tin chính thức từ CSDL: Tên + Hãng + Khối lượng (Có ảnh thật từ OpenFoodFacts nếu có)
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
+              if (product.imageUrl.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.network(
+                    product.imageUrl,
+                    width: 56,
+                    height: 56,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: (isQr ? Colors.purple : AppColors.primary).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(Icons.qr_code_scanner_rounded, color: isQr ? Colors.purple : AppColors.primary, size: 28),
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: (isQr ? Colors.purple : AppColors.primary).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.inventory_2_outlined, color: isQr ? Colors.purple : AppColors.primary, size: 28),
                 ),
-                alignment: Alignment.center,
-                child: Text(product.categoryIcon, style: const TextStyle(fontSize: 26)),
-              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -839,7 +1044,7 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                   children: [
                     Text(
                       product.productName,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -848,11 +1053,9 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                       spacing: 6,
                       runSpacing: 4,
                       children: [
-                        _buildBadge(product.brand, AppColors.primary),
-                        _buildBadge(
-                          product.isScaleBarcode ? 'Tem Cân Siêu Thị' : 'Mã EAN-13',
-                          product.isScaleBarcode ? Colors.teal : Colors.blue,
-                        ),
+                        if (product.brand.isNotEmpty)
+                          _buildBadge(product.brand, AppColors.primary),
+                        _buildBadge(product.barcodeType, isQr ? Colors.purple : Colors.blue),
                         _buildBadge('Tịnh: ${product.netWeightG.round()}g', Colors.orange),
                       ],
                     ),
@@ -864,35 +1067,59 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
 
           const SizedBox(height: 14),
           const Divider(height: 1),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          // Tầng 2: Dinh dưỡng toàn bộ khẩu phần (khay cân hoặc bao bì)
+          // 3. Bảng Dinh Dưỡng Thực Tế (Nutrition Facts trên 100g)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Dinh Dưỡng Theo Khay/Gói (${product.netWeightG.round()}g):',
-                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+              const Text(
+                'Bảng Thông Số Dinh Dưỡng (100g):',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
               ),
               Text(
-                '${portionMacros.calories.round()} Kcal',
+                '${product.caloriesPer100g.round()} Kcal',
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primary),
               ),
             ],
           ),
           const SizedBox(height: 8),
 
-          // 4 thông số Macro chính
+          // 4 thông số chính: Đạm, Tinh bột, Béo, Xơ
           Row(
             children: [
-              _buildMacroMiniCol('Đạm (Protein)', '${portionMacros.protein}g', Colors.redAccent),
-              _buildMacroMiniCol('Tinh Bột', '${portionMacros.carbs}g', Colors.amber),
-              _buildMacroMiniCol('Chất Béo', '${portionMacros.fat}g', Colors.blue),
-              _buildMacroMiniCol('Chất Xơ', '${portionMacros.fiber}g', Colors.green),
+              _buildMacroMiniCol('Đạm (Protein)', '${product.proteinPer100g}g', Colors.redAccent),
+              _buildMacroMiniCol('Tinh Bột (Carbs)', '${product.carbsPer100g}g', Colors.amber),
+              _buildMacroMiniCol('Chất Béo (Fat)', '${product.fatPer100g}g', Colors.blue),
+              _buildMacroMiniCol('Chất Xơ (Fiber)', '${product.fiberPer100g}g', Colors.green),
             ],
           ),
 
-          if (product.notes.isNotEmpty) ...[
+          // Thông số chi tiết phụ: Đường, Chất béo bão hòa, Natri
+          if (product.sugarsPer100g != null || product.saturatedFatPer100g != null || product.sodiumMg != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E242B) : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  if (product.sugarsPer100g != null)
+                    Text('Đường: ${product.sugarsPer100g}g', style: const TextStyle(fontSize: 11)),
+                  if (product.saturatedFatPer100g != null)
+                    Text('Béo bão hòa: ${product.saturatedFatPer100g}g', style: const TextStyle(fontSize: 11)),
+                  if (product.sodiumMg != null)
+                    Text('Natri: ${product.sodiumMg!.round()}mg', style: const TextStyle(fontSize: 11)),
+                ],
+              ),
+            ),
+          ],
+
+          // 4. Thành phần nguyên liệu thực tế từ nhãn bao bì
+          if (product.ingredientsText.isNotEmpty) ...[
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(8),
@@ -900,25 +1127,45 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                 color: isDark ? const Color(0xFF1E242B) : const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.auto_awesome_rounded, size: 14, color: AppColors.primary),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      product.notes,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.grey[300] : Colors.grey[700],
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  const Text(
+                    'Thành Phần Nguyên Liệu (Trên Bao Bì):',
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    product.ingredientsText,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.grey[300] : Colors.grey[700],
                     ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
           ],
+
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () {
+              setState(() {
+                _scannedProduct = null;
+                _scannedRawCode = null;
+                _scannedFormat = null;
+                _errorMessage = null;
+              });
+            },
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text('Quét mã khác (Mở lại camera)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(38),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
         ],
       ),
     );

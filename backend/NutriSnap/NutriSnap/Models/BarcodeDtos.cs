@@ -15,9 +15,12 @@ public class BarcodeProductDto
     public double CarbsPer100g { get; set; }
     public double FatPer100g { get; set; }
     public double FiberPer100g { get; set; }
+    public double? SugarsPer100g { get; set; }
+    public double? SaturatedFatPer100g { get; set; }
     public double? SodiumMg { get; set; }
+    public string IngredientsText { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
-    public string Source { get; set; } = "NutriSnap Supermarket DB";
+    public string Source { get; set; } = "Open Food Facts (CSDL Bên Thứ 3)";
     public string? CutEquivalentId { get; set; }
     public string Notes { get; set; } = string.Empty;
     public CalculatedCutMacroDto? CalculatedPortionMacros { get; set; }
