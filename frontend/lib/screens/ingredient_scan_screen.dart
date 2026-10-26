@@ -2356,7 +2356,7 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: _matchingMeals.length > 8 ? 8 : _matchingMeals.length,
+            itemCount: _matchingMeals.length > 12 ? 12 : _matchingMeals.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
               final meal = _matchingMeals[index];
@@ -2483,15 +2483,27 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF0FDF4),
+                              color: meal.badges.first.contains('TheMealDB')
+                                  ? const Color(0xFFEFF6FF)
+                                  : const Color(0xFFF0FDF4),
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFBBF7D0)),
+                              border: Border.all(
+                                color: meal.badges.first.contains('TheMealDB')
+                                    ? const Color(0xFFBFDBFE)
+                                    : const Color(0xFFBBF7D0),
+                              ),
                             ),
                             child: Text(
                               meal.badges.first,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: meal.badges.first.contains('TheMealDB')
+                                    ? const Color(0xFF1D4ED8)
+                                    : const Color(0xFF166534),
+                              ),
                             ),
                           ),
                         ),

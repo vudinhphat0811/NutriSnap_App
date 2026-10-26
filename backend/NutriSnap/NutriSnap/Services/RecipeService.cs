@@ -831,6 +831,14 @@ public class RecipeService
                 cloned.MatchScore = Math.Min(99, 94 + (matchCount * 2) - Math.Min(4, missingMajor));
                 cloned.Badges.RemoveAll(b => b.StartsWith("✨ Khớp") || b.StartsWith("Khớp"));
                 cloned.Badges.Insert(0, $"✨ Khớp {matchCount}/{totalSelected} NL");
+                if (cloned.IdMeal.StartsWith("vn_home_") || cloned.StrArea == "Vietnamese")
+                {
+                    if (!cloned.Badges.Contains("🇻🇳 Món Việt")) cloned.Badges.Add("🇻🇳 Món Việt");
+                }
+                else
+                {
+                    if (!cloned.Badges.Contains("🌍 TheMealDB")) cloned.Badges.Add("🌍 TheMealDB");
+                }
                 if (matchedIngs.Any(i => i.IsMeat) && matchedIngs.Any(i => i.IsVeggie) && !cloned.Badges.Contains("🥗 Cân bằng Dinh dưỡng"))
                 {
                     cloned.Badges.Add("🥗 Cân bằng Dinh dưỡng");
@@ -863,14 +871,43 @@ public class RecipeService
             .ThenByDescending(m => m.MatchScore)
             .ToList();
 
-        // Từng nhóm single-match: Ưu tiên món Việt Nam, ít thiếu nguyên liệu chính nhất, điểm match cao
+        // Từng nhóm single-match: Phân bổ công bằng và xen kẽ giữa món Việt Nam (vn_home_) và món Quốc Tế TheMealDB
         foreach (var key in singleMatchPerIngredient.Keys.ToList())
         {
-            singleMatchPerIngredient[key] = singleMatchPerIngredient[key]
-                .OrderByDescending(m => (m.StrArea == "Vietnamese" || m.IdMeal.StartsWith("vn_home_")) ? 1 : 0)
-                .ThenBy(m => GetMissingMajorIngredientsCount(m, classifiedList))
+            var allItems = singleMatchPerIngredient[key];
+            var vnList = allItems
+                .Where(m => m.IdMeal.StartsWith("vn_home_") || m.StrArea == "Vietnamese")
+                .OrderBy(m => GetMissingMajorIngredientsCount(m, classifiedList))
                 .ThenByDescending(m => m.MatchScore)
                 .ToList();
+
+            var themealdbList = allItems
+                .Where(m => !m.IdMeal.StartsWith("vn_home_") && m.StrArea != "Vietnamese")
+                .OrderBy(m => GetMissingMajorIngredientsCount(m, classifiedList))
+                .ThenByDescending(m => m.MatchScore)
+                .ToList();
+
+            // Gắn nhãn phân biệt nguồn gốc dữ liệu rõ ràng cho người dùng
+            foreach (var m in vnList)
+            {
+                m.Badges.RemoveAll(b => b.Contains("Món Việt") || b.Contains("TheMealDB"));
+                m.Badges.Insert(0, "🇻🇳 Món Việt");
+            }
+            foreach (var m in themealdbList)
+            {
+                m.Badges.RemoveAll(b => b.Contains("Món Việt") || b.Contains("TheMealDB"));
+                m.Badges.Insert(0, "🌍 TheMealDB");
+            }
+
+            // Xen kẽ công bằng: 1 món Việt, 1 món TheMealDB quốc tế
+            var blended = new List<RecommendedMealDto>();
+            int maxItems = Math.Max(vnList.Count, themealdbList.Count);
+            for (int i = 0; i < maxItems; i++)
+            {
+                if (i < vnList.Count) blended.Add(vnList[i]);
+                if (i < themealdbList.Count) blended.Add(themealdbList[i]);
+            }
+            singleMatchPerIngredient[key] = blended;
         }
 
         // 5. TRỘN KẾT QUẢ CÔNG BẰNG (FAIR ROUND-ROBIN INTERLEAVE)
