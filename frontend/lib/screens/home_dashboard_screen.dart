@@ -5,8 +5,11 @@ import '../widgets/calorie_ring_painter.dart';
 import '../widgets/user_avatar_widget.dart';
 import '../widgets/ai_nutrition_report_sheet.dart';
 import '../services/app_state_service.dart';
+import '../services/fridge_service.dart';
 import '../models/ingredient_cut_model.dart';
+import '../widgets/notification_center_sheet.dart';
 import 'ingredient_macro_calculator_screen.dart';
+import 'smart_fridge_screen.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
   final Function(int) onNavigate;
@@ -19,17 +22,21 @@ class HomeDashboardScreen extends StatefulWidget {
 
 class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   final appState = AppStateService.instance;
+  final fridgeService = FridgeService.instance;
 
   @override
   void initState() {
     super.initState();
     appState.addListener(_onStateChanged);
+    fridgeService.addListener(_onStateChanged);
+    fridgeService.init();
     appState.checkAndResetForNewDay();
   }
 
   @override
   void dispose() {
     appState.removeListener(_onStateChanged);
+    fridgeService.removeListener(_onStateChanged);
     super.dispose();
   }
 
@@ -72,6 +79,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               const SizedBox(height: 16),
               _buildQuickActions(),
               const SizedBox(height: 16),
+              _buildSmartFridgeBanner(),
+              const SizedBox(height: 16),
               _buildWaterTracker(),
               const SizedBox(height: 20),
               _buildMealLogSection(),
@@ -85,6 +94,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
   Widget _buildHeader() {
     final profile = appState.userProfile;
+    final expiringCount = fridgeService.expiringCount;
+    final isWaterBehind = appState.waterIntakeMl < (appState.waterGoalMl * 0.6) && DateTime.now().hour >= 14;
+    final totalAlerts = expiringCount + (isWaterBehind ? 1 : 0);
+
     return Row(
       children: [
         const UserAvatarWidget(
@@ -122,6 +135,54 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               const Icon(Icons.local_fire_department, size: 14, color: AppColors.primary),
               const SizedBox(width: 4),
               Text('${AppTranslations.tr('streak')} ${appState.streakDays} ${AppTranslations.tr('days')}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryDark)),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Chuông thông báo hạn dùng tủ lạnh & nhắc uống nước
+        InkWell(
+          onTap: () {
+            NotificationCenterSheet.show(context, onNavigate: widget.onNavigate);
+          },
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.notifications_outlined, size: 20, color: AppColors.textBlack),
+              ),
+              if (totalAlerts > 0)
+                Positioned(
+                  top: -3,
+                  right: -3,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    child: Center(
+                      child: Text(
+                        '$totalAlerts',
+                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -414,6 +475,91 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSmartFridgeBanner() {
+    final totalItems = fridgeService.items.length;
+    final expiringCount = fridgeService.expiringCount;
+
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => SmartFridgeScreen(onNavigate: widget.onNavigate)),
+        );
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: expiringCount > 0 ? const Color(0xFFFCD34D) : Colors.grey.shade200,
+            width: expiringCount > 0 ? 1.4 : 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: expiringCount > 0 ? const Color(0xFFFEF3C7) : const Color(0xFFEFF6FF),
+                shape: BoxShape.circle,
+              ),
+              child: const Text('🧊', style: TextStyle(fontSize: 20)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Tủ Lạnh Thông Minh',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                      ),
+                      const SizedBox(width: 6),
+                      if (expiringCount > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '⚠️ $expiringCount cần nấu',
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    totalItems > 0
+                        ? '$totalItems món lưu trữ • Quản lý hạn dùng & chống lãng phí'
+                        : 'Chưa có thực phẩm nào • Chạm để thêm đồ vào tủ',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textLightGray),
+          ],
+        ),
+      ),
     );
   }
 

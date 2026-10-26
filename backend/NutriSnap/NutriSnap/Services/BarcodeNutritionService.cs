@@ -252,6 +252,10 @@ Quan sát hình ảnh và đọc CHÍNH XÁC các thông số được in trên 
 8. Đọc bảng 'Thành phần dinh dưỡng / Nutrition Facts' in trên bao bì và quy đổi về trên 100g:
    'caloriesPer100g', 'proteinPer100g', 'carbsPer100g', 'fatPer100g', 'fiberPer100g', 'sodiumMg'.
    (Chỉ ước lượng dựa theo thành phần thực tế nếu mặt bao bì trong ảnh bị khuất bảng Nutrition Facts).
+9. 'manufacturingDate': Ngày sản xuất / NSX / MFG / NĐG in trên nhãn hoặc dập trên bao bì (chuẩn hóa dạng 'YYYY-MM-DD', nếu không có ghi null).
+10. 'expirationDate': Hạn sử dụng / HSD / EXP / BBE / Use By in trên nhãn hoặc dập trên bao bì (chuẩn hóa dạng 'YYYY-MM-DD', nếu không có ghi null).
+11. 'storageRecommendation': Vị trí bảo quản tối ưu ('Ngăn mát', 'Ngăn đông', 'Tủ đồ khô').
+12. 'shelfLifeDaysEstimate': Ước tính số ngày bảo quản còn an toàn (số nguyên, ví dụ rau 3, thịt 2, đồ khô 180).
 
 Trả về JSON thuần túy:
 {
@@ -269,6 +273,10 @@ Trả về JSON thuần túy:
   ""fiberPer100g"": 0.0,
   ""sodiumMg"": 0.0,
   ""hasPrintedNutritionTable"": true,
+  ""manufacturingDate"": ""YYYY-MM-DD hoặc null"",
+  ""expirationDate"": ""YYYY-MM-DD hoặc null"",
+  ""storageRecommendation"": ""Ngăn mát"",
+  ""shelfLifeDaysEstimate"": 3,
   ""notes"": ""Ghi chú thông số đọc được từ nhãn""
 }";
 
@@ -296,6 +304,14 @@ Trả về JSON thuần túy:
                 // Nếu tìm thấy dữ liệu chuẩn trên OpenFoodFacts hoặc Tem cân, và ảnh không chụp bảng Nutrition Facts chi tiết -> Dùng kết quả chuẩn
                 if (lookupResult.Success && lookupResult.Product != null && !hasPrintedTable)
                 {
+                    // Giữ lại NSX / HSD đọc được từ ảnh bao bì nếu có
+                    lookupResult.Product.ManufacturingDate = node?["manufacturingDate"]?.ToString();
+                    lookupResult.Product.ExpirationDate = node?["expirationDate"]?.ToString();
+                    lookupResult.Product.StorageRecommendation = node?["storageRecommendation"]?.ToString();
+                    if (int.TryParse(node?["shelfLifeDaysEstimate"]?.ToString(), out int shelfDays))
+                    {
+                        lookupResult.Product.ShelfLifeDaysEstimate = shelfDays;
+                    }
                     return lookupResult;
                 }
             }
@@ -330,7 +346,11 @@ Trả về JSON thuần túy:
                 FiberPer100g = ParseNodeDouble(node?["fiberPer100g"], 0),
                 SodiumMg = ParseNodeDouble(node?["sodiumMg"], 0),
                 Source = hasPrintedTable ? "Đọc trực tiếp từ Bảng Dinh Dưỡng bao bì" : "Quét mã vạch & Nhãn bao bì",
-                Notes = node?["notes"]?.ToString() ?? ""
+                Notes = node?["notes"]?.ToString() ?? "",
+                ManufacturingDate = node?["manufacturingDate"]?.ToString(),
+                ExpirationDate = node?["expirationDate"]?.ToString(),
+                StorageRecommendation = node?["storageRecommendation"]?.ToString(),
+                ShelfLifeDaysEstimate = int.TryParse(node?["shelfLifeDaysEstimate"]?.ToString(), out int sDays) ? sDays : null
             };
 
             PopulatePortionMacros(product);

@@ -23,6 +23,10 @@ public class BarcodeProductDto
     public string Source { get; set; } = "Open Food Facts (CSDL Bên Thứ 3)";
     public string? CutEquivalentId { get; set; }
     public string Notes { get; set; } = string.Empty;
+    public string? ManufacturingDate { get; set; }
+    public string? ExpirationDate { get; set; }
+    public string? StorageRecommendation { get; set; }
+    public int? ShelfLifeDaysEstimate { get; set; }
     public CalculatedCutMacroDto? CalculatedPortionMacros { get; set; }
 }
 

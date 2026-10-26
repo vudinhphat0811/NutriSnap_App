@@ -12,6 +12,8 @@ import '../services/offline_food_db.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/recipe_image_widget.dart';
 import '../models/barcode_product_model.dart';
+import '../models/fridge_item_model.dart';
+import '../services/fridge_service.dart';
 import '../widgets/barcode_scanner_sheet.dart';
 
 class IngredientScanScreen extends StatefulWidget {
@@ -1936,7 +1938,83 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
               Expanded(child: _buildMacroBadge('Chất béo (Fat)', res.fat, Colors.red.shade700, const Color(0xFFFEF2F2))),
             ],
           ),
+
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _saveIngredientsToFridge,
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF10B981), width: 1.2),
+                backgroundColor: const Color(0xFFF0FDF4),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              icon: const Text('🧊', style: TextStyle(fontSize: 16)),
+              label: Text(
+                'Cất ${res.ingredients.isNotEmpty ? res.ingredients.length : 1} nguyên liệu vào Tủ Lạnh (Lưu HSD)',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF047857)),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  void _saveIngredientsToFridge() {
+    if (_analysisResult == null) return;
+    final res = _analysisResult!;
+    final now = DateTime.now();
+    final fridgeService = FridgeService.instance;
+
+    final itemsToAdd = <FridgeItemModel>[];
+    if (res.ingredients.isNotEmpty) {
+      for (var ing in res.ingredients) {
+        final name = ing.name.isNotEmpty ? ing.name : ing.englishName;
+        final shelfDays = fridgeService.getSuggestedShelfLifeDays(name);
+        itemsToAdd.add(
+          FridgeItemModel(
+            id: 'scan_${DateTime.now().millisecondsSinceEpoch}_$name',
+            name: name,
+            category: 'Nguyên liệu tươi',
+            categoryIcon: '🥗',
+            quantity: ing.weight.isNotEmpty ? ing.weight : '1 phần',
+            storageLocation: 'fridge',
+            manufacturingDate: now,
+            expirationDate: now.add(Duration(days: shelfDays)),
+            addedAt: now,
+            caloriesPer100g: ing.calorieNumber.toDouble(),
+            notes: 'Quét từ ảnh thớt / bếp AI Vision',
+          ),
+        );
+      }
+    } else {
+      final name = res.name;
+      final shelfDays = fridgeService.getSuggestedShelfLifeDays(name);
+      itemsToAdd.add(
+        FridgeItemModel(
+          id: 'scan_${DateTime.now().millisecondsSinceEpoch}_$name',
+          name: name,
+          category: 'Nguyên liệu tươi',
+          categoryIcon: '🥗',
+          quantity: res.weight.isNotEmpty ? res.weight : '1 phần',
+          storageLocation: 'fridge',
+          manufacturingDate: now,
+          expirationDate: now.add(Duration(days: shelfDays)),
+          addedAt: now,
+          caloriesPer100g: res.calorieNumber.toDouble(),
+          notes: 'Quét từ ảnh thớt / bếp AI Vision',
+        ),
+      );
+    }
+
+    fridgeService.addItems(itemsToAdd);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('✅ Đã cất ${itemsToAdd.length} nguyên liệu vào Tủ Lạnh thành công!'),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }

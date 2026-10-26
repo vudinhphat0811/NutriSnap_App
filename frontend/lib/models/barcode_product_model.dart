@@ -22,6 +22,10 @@ class BarcodeProductModel {
   final String source;
   final String? cutEquivalentId;
   final String notes;
+  final String? manufacturingDate;
+  final String? expirationDate;
+  final String? storageRecommendation;
+  final int? shelfLifeDaysEstimate;
 
   const BarcodeProductModel({
     required this.barcode,
@@ -45,6 +49,10 @@ class BarcodeProductModel {
     this.source = 'Open Food Facts (CSDL Bên Thứ 3)',
     this.cutEquivalentId,
     this.notes = '',
+    this.manufacturingDate,
+    this.expirationDate,
+    this.storageRecommendation,
+    this.shelfLifeDaysEstimate,
   });
 
   bool get isScaleBarcode => barcodeType.contains('Cân') || barcode.startsWith('2');
@@ -72,6 +80,10 @@ class BarcodeProductModel {
       source: json['source'] ?? json['Source'] ?? 'Open Food Facts (CSDL Bên Thứ 3)',
       cutEquivalentId: json['cutEquivalentId'] ?? json['CutEquivalentId'],
       notes: json['notes'] ?? json['Notes'] ?? '',
+      manufacturingDate: json['manufacturingDate'] ?? json['ManufacturingDate'],
+      expirationDate: json['expirationDate'] ?? json['ExpirationDate'],
+      storageRecommendation: json['storageRecommendation'] ?? json['StorageRecommendation'],
+      shelfLifeDaysEstimate: json['shelfLifeDaysEstimate'] != null ? (json['shelfLifeDaysEstimate'] as num).toInt() : (json['ShelfLifeDaysEstimate'] != null ? (json['ShelfLifeDaysEstimate'] as num).toInt() : null),
     );
   }
 
@@ -97,6 +109,10 @@ class BarcodeProductModel {
     'source': source,
     'cutEquivalentId': cutEquivalentId,
     'notes': notes,
+    'manufacturingDate': manufacturingDate,
+    'expirationDate': expirationDate,
+    'storageRecommendation': storageRecommendation,
+    'shelfLifeDaysEstimate': shelfLifeDaysEstimate,
   };
 
   /// Chuyển đổi sang IngredientCutModel để nạp mượt mà vào Bộ Tính Calo

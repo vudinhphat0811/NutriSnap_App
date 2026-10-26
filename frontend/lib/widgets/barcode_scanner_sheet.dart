@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../constants/app_colors.dart';
 import '../models/barcode_product_model.dart';
+import '../models/fridge_item_model.dart';
 import '../services/barcode_nutrition_service.dart';
+import '../services/fridge_service.dart';
 
 /// Modal Quét Mã Vạch Siêu Thị & Bao Bì Thực Phẩm
 /// Hỗ trợ:
@@ -14,14 +16,16 @@ import '../services/barcode_nutrition_service.dart';
 /// 3. Nhập mã vạch 13 số trực tiếp
 /// 4. Danh sách các khay thịt & đồ gym mẫu siêu thị thực tế
 class BarcodeScannerSheet extends StatefulWidget {
-  const BarcodeScannerSheet({super.key});
+  final int initialMode; // 0: Ăn ngay & Tính Calo, 1: Cất vào Tủ Lạnh
 
-  static Future<BarcodeProductModel?> show(BuildContext context) {
+  const BarcodeScannerSheet({super.key, this.initialMode = 0});
+
+  static Future<BarcodeProductModel?> show(BuildContext context, {int initialMode = 0}) {
     return showModalBottomSheet<BarcodeProductModel>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => const BarcodeScannerSheet(),
+      builder: (ctx) => BarcodeScannerSheet(initialMode: initialMode),
     );
   }
 
@@ -36,6 +40,11 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
   final TextEditingController _barcodeInputController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
   MobileScannerController? _scannerController;
+
+  int _operatingMode = 0; // 0: Nhật ký ăn uống, 1: Cất vào Tủ lạnh
+  DateTime _nsxDate = DateTime.now();
+  DateTime _hsdDate = DateTime.now().add(const Duration(days: 4));
+  String _storageLocation = 'fridge'; // 'fridge', 'freezer', 'pantry'
 
   int _currentTab = 0; // 0: Viewfinder & Camera, 1: Nhập tay, 2: Sản phẩm mẫu
   bool _isSearching = false;
@@ -53,6 +62,7 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
   @override
   void initState() {
     super.initState();
+    _operatingMode = widget.initialMode;
     _laserController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -175,10 +185,31 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
         _isSearching = false;
         if (product != null) {
           _scannedProduct = product;
+          _setupDatesForProduct(product);
         } else {
           _errorMessage = 'Không tìm thấy thông tin cho mã vạch "$clean" trên CSDL Open Food Facts hay iCheck Việt Nam. Vui lòng kiểm tra lại hoặc chụp ảnh bao bì.';
         }
       });
+    }
+  }
+
+  void _setupDatesForProduct(BarcodeProductModel product) {
+    DateTime? parsedNsx = product.manufacturingDate != null ? DateTime.tryParse(product.manufacturingDate!) : null;
+    DateTime? parsedHsd = product.expirationDate != null ? DateTime.tryParse(product.expirationDate!) : null;
+
+    _nsxDate = parsedNsx ?? DateTime.now();
+    if (parsedHsd != null) {
+      _hsdDate = parsedHsd;
+    } else {
+      final days = FridgeService.instance.getSuggestedShelfLifeDays(product.productName, category: product.category);
+      _hsdDate = DateTime.now().add(Duration(days: days));
+    }
+    if (product.storageRecommendation != null && product.storageRecommendation!.contains('đông')) {
+      _storageLocation = 'freezer';
+    } else if (product.storageRecommendation != null && product.storageRecommendation!.contains('khô')) {
+      _storageLocation = 'pantry';
+    } else {
+      _storageLocation = 'fridge';
     }
   }
 
@@ -210,6 +241,7 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
             _scannedProduct = product;
             _scannedRawCode = product.barcode;
             _scannedFormat = product.barcodeType.toLowerCase().contains('qr') ? BarcodeFormat.qrCode : BarcodeFormat.ean13;
+            _setupDatesForProduct(product);
           } else {
             _errorMessage = 'Không nhận diện được mã vạch hoặc tem siêu thị từ ảnh này. Vui lòng chụp rõ góc tem cân hoặc nhập 13 số.';
           }
@@ -303,6 +335,98 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close_rounded),
                   splashRadius: 20,
+                ),
+              ],
+            ),
+          ),
+
+          // 2.1. Chuyển đổi 2 Chế Độ Hoạt Động
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF262D37) : const Color(0xFFE2E8F0),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _operatingMode = 0),
+                    borderRadius: BorderRadius.circular(13),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _operatingMode == 0
+                            ? (isDark ? const Color(0xFF1E242B) : Colors.white)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(13),
+                        boxShadow: _operatingMode == 0
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.06),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                )
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('🍽️', style: TextStyle(fontSize: 13)),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Ăn Ngay & Ghi Calo',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: _operatingMode == 0 ? FontWeight.bold : FontWeight.w500,
+                              color: _operatingMode == 0 ? AppColors.primaryDark : AppColors.textGray,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _operatingMode = 1),
+                    borderRadius: BorderRadius.circular(13),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _operatingMode == 1
+                            ? (isDark ? const Color(0xFF1E242B) : Colors.white)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(13),
+                        boxShadow: _operatingMode == 1
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.06),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                )
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('🧊', style: TextStyle(fontSize: 13)),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Cất Tủ Lạnh (Theo dõi HSD)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: _operatingMode == 1 ? FontWeight.bold : FontWeight.w500,
+                              color: _operatingMode == 1 ? AppColors.primaryDark : AppColors.textGray,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -419,7 +543,41 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                   Expanded(
                     flex: 2,
                     child: ElevatedButton(
-                      onPressed: _confirmAndApply,
+                      onPressed: () {
+                        if (_operatingMode == 0) {
+                          _confirmAndApply();
+                        } else {
+                          final prod = _scannedProduct!;
+                          FridgeService.instance.addItem(
+                            FridgeItemModel(
+                              id: 'barcode_${prod.barcode}_${DateTime.now().millisecondsSinceEpoch}',
+                              name: prod.productName,
+                              category: prod.category,
+                              categoryIcon: prod.categoryIcon,
+                              quantity: '${prod.netWeightG.toInt()}g',
+                              netWeightG: prod.netWeightG,
+                              storageLocation: _storageLocation,
+                              manufacturingDate: _nsxDate,
+                              expirationDate: _hsdDate,
+                              addedAt: DateTime.now(),
+                              barcode: prod.barcode,
+                              caloriesPer100g: prod.caloriesPer100g,
+                              proteinPer100g: prod.proteinPer100g,
+                              carbsPer100g: prod.carbsPer100g,
+                              fatPer100g: prod.fatPer100g,
+                              notes: prod.notes,
+                            ),
+                          );
+                          Navigator.pop(context, prod);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('✅ Đã cất "${prod.productName}" vào Tủ Lạnh (HSD: ${_hsdDate.day}/${_hsdDate.month})!'),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
@@ -427,15 +585,15 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         elevation: 0,
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.check_circle_rounded, size: 20),
-                          SizedBox(width: 8),
+                          Icon(_operatingMode == 1 ? Icons.inventory_2_rounded : Icons.check_circle_rounded, size: 20),
+                          const SizedBox(width: 8),
                           Flexible(
                             child: Text(
-                              'Nạp Vào Bộ Tính Calo',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              _operatingMode == 1 ? 'Cất Vào Tủ Lạnh' : 'Nạp Vào Bộ Tính Calo',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -1143,6 +1301,155 @@ class _BarcodeScannerSheetState extends State<BarcodeScannerSheet> with SingleTi
                     ),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // 5. Cấu hình Lưu Trữ & Hạn Sử Dụng (Chế độ Tủ Lạnh)
+          if (_operatingMode == 1) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E242B) : const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF86EFAC), width: 1.2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text('🧊', style: TextStyle(fontSize: 18)),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Thiết Lập Lưu Trữ & Hạn Dùng',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          product.expirationDate != null ? '⚡ OCR nhận diện' : '💡 HSD gợi ý',
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  const Text('Vị trí cất:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      ChoiceChip(
+                        label: const Text('❄️ Ngăn mát', style: TextStyle(fontSize: 11)),
+                        selected: _storageLocation == 'fridge',
+                        onSelected: (_) => setState(() => _storageLocation = 'fridge'),
+                      ),
+                      const SizedBox(width: 6),
+                      ChoiceChip(
+                        label: const Text('🧊 Ngăn đông', style: TextStyle(fontSize: 11)),
+                        selected: _storageLocation == 'freezer',
+                        onSelected: (_) => setState(() => _storageLocation = 'freezer'),
+                      ),
+                      const SizedBox(width: 6),
+                      ChoiceChip(
+                        label: const Text('📦 Tủ khô', style: TextStyle(fontSize: 11)),
+                        selected: _storageLocation == 'pantry',
+                        onSelected: (_) => setState(() => _storageLocation = 'pantry'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Ngày SX (NSX)', style: TextStyle(fontSize: 10, color: AppColors.textGray)),
+                              const SizedBox(height: 2),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '${_nsxDate.day}/${_nsxDate.month}/${_nsxDate.year}',
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                  ),
+                                  InkWell(
+                                    onTap: () async {
+                                      final picked = await showDatePicker(
+                                        context: context,
+                                        initialDate: _nsxDate,
+                                        firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                                        lastDate: DateTime.now(),
+                                      );
+                                      if (picked != null) setState(() => _nsxDate = picked);
+                                    },
+                                    child: const Icon(Icons.edit_calendar_rounded, size: 16, color: AppColors.primary),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFFCA5A5)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Hạn Dùng (HSD)', style: TextStyle(fontSize: 10, color: Colors.red)),
+                              const SizedBox(height: 2),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '${_hsdDate.day}/${_hsdDate.month}/${_hsdDate.year}',
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red),
+                                  ),
+                                  InkWell(
+                                    onTap: () async {
+                                      final picked = await showDatePicker(
+                                        context: context,
+                                        initialDate: _hsdDate,
+                                        firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                                        lastDate: DateTime.now().add(const Duration(days: 730)),
+                                      );
+                                      if (picked != null) setState(() => _hsdDate = picked);
+                                    },
+                                    child: const Icon(Icons.edit_calendar_rounded, size: 16, color: Colors.red),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

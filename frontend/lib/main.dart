@@ -10,6 +10,7 @@ import 'screens/profile_screen.dart';
 import 'screens/ingredient_scan_screen.dart';
 import 'screens/shake_recipe_screen.dart';
 import 'screens/recipe_detail_screen.dart';
+import 'screens/smart_fridge_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/onboarding_profile_screen.dart';
 import 'services/app_state_service.dart';
@@ -272,7 +273,7 @@ class _MainShellScreenState extends State<MainShellScreen>
     final guestDays = appState.guestUsageDays;
     final isGuestTrialExpired = appState.isGuestTrialExpired;
 
-    // Danh sách 7 màn hình của ứng dụng
+    // Danh sách 8 màn hình của ứng dụng
     final List<Widget> appScreens = [
       HomeDashboardScreen(onNavigate: _navigateTo),       // Index 0: Trang chủ
       MealJournalScreen(onNavigate: _navigateTo),         // Index 1: Nhật ký
@@ -281,6 +282,7 @@ class _MainShellScreenState extends State<MainShellScreen>
       IngredientScanScreen(onNavigate: _navigateTo),      // Index 4: Nhận diện AI
       ShakeRecipeScreen(onNavigate: _navigateTo),         // Index 5: Lắc chọn món
       RecipeDetailScreen(onNavigate: _navigateTo),        // Index 6: Chi tiết công thức
+      SmartFridgeScreen(onNavigate: _navigateTo),         // Index 7: Tủ lạnh thông minh
     ];
 
     return Stack(
