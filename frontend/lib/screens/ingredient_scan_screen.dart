@@ -2472,11 +2472,30 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
                         '~${meal.estimatedCalories} kcal',
                         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       Text(
                         '${meal.estimatedProtein}g Đạm',
                         style: const TextStyle(fontSize: 11, color: AppColors.textGray),
                       ),
+                      if (meal.badges.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0FDF4),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFBBF7D0)),
+                            ),
+                            child: Text(
+                              meal.badges.first,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],

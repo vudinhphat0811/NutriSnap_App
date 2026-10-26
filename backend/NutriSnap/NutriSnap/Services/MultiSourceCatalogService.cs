@@ -537,7 +537,73 @@ public static class MultiSourceCatalogService
                 "1. Trim and blanch Chinese broccoli for 45s in boiling salted water. 2. Fry crushed purple garlic until golden. 3. Flash fry greens over high flame with oyster sauce until tender-crisp.",
                 "1. Cải ngồng ngắt ngọn non rửa sạch, chần sơ 45 giây qua nước sôi có chút muối rồi vớt ra ngâm nước đá cho giòn xanh. 2. Phi thơm vàng giòn thật nhiều tỏi tía đập dập. 3. Cho cải ngồng vào chảo đảo nhanh tay trên lửa lớn cùng dầu hào và chút nước tương trong 1 phút là hoàn thành.",
                 "https://images.unsplash.com/photo-1486328228599-85db4443971f?auto=format&fit=crop&w=600&q=80",
-                ["🌱 Xanh Mướt Giòn Ngọt", "🧄 Tỏi Phi Vàng Giòn", "⚡ Dưới 10p"])
+                ["🌱 Xanh Mướt Giòn Ngọt", "🧄 Tỏi Phi Vàng Giòn", "⚡ Dưới 10p"]),
+
+            // 45. Cá hồi áp chảo sốt bơ tỏi chanh
+            M("vn_home_45", "Pan-seared Salmon with Garlic Butter & Lemon", "Cá Hồi Áp Chảo Sốt Bơ Tỏi Chanh", "Seafood", "Vietnamese", 380, 36, 2, 22,
+                ["Salmon Fillet", "Butter", "Garlic", "Lemon Juice", "Black Pepper", "Sea Salt"],
+                ["Phi lê cá hồi tươi", "Bơ lạt", "Tỏi băm", "Nước cốt chanh", "Tiêu đen xay", "Muối tinh"],
+                ["200g", "15g", "3 cloves", "1 tbsp", "1/2 tsp", "1/2 tsp"],
+                ["200g", "15g", "3 tép", "1 thìa canh", "1/2 thìa cà phê", "1/2 thìa cà phê"],
+                "1. Pat salmon dry, season with salt and pepper. 2. Sear skin-side down in hot pan for 3 minutes until crisp, flip for 2 minutes. 3. Melt butter with minced garlic and lemon juice, spoon sauce over salmon.",
+                "1. Thấm khô miếng cá hồi, ướp chút muối và tiêu đen xay. 2. Làm nóng chảo, áp chảo phần da trước 3 phút cho da giòn rụm rồi lật mặt áp chảo thêm 2 phút vừa chín tới giữ độ mọng nước. 3. Cho bơ lạt, tỏi băm và nước cốt chanh vào chảo đun tan chảy rồi rưới sốt bơ tỏi thơm ngậy lên miếng cá hồi.",
+                "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=600&q=80",
+                ["🐟 Giàu Omega 3", "🍋 Sốt Bơ Tỏi Chanh", "✨ Chuẩn Nhà Hàng", "⚡ 10 Phút"]),
+
+            // 46. Cá hồi sốt cam tươi đậm vị
+            M("vn_home_46", "Salmon in Fresh Orange Glaze", "Cá Hồi Sốt Cam Tươi Đậm Vị", "Seafood", "Vietnamese", 395, 35, 12, 21,
+                ["Salmon Fillet", "Fresh Orange Juice", "Butter", "Honey", "Garlic"],
+                ["Phi lê cá hồi", "Nước cam tươi vắt", "Bơ lạt", "Mật ong", "Tỏi băm"],
+                ["200g", "100ml", "10g", "1 tsp", "2 cloves"],
+                ["200g", "100ml", "10g", "1 thìa cà phê", "2 tép"],
+                "1. Sear seasoned salmon fillet until golden and flaky. 2. Simmer freshly squeezed orange juice with butter, honey and garlic until slightly thickened. 3. Drizzle fragrant orange glaze over salmon.",
+                "1. Ướp cá hồi với chút muối tiêu rồi áp chảo vàng ruộm hai mặt. 2. Phi thơm tỏi với chút bơ, đổ nước cam tươi nguyên chất và mật ong vào đun sôi lăn tăn cho sốt sánh sệt chua ngọt dịu dàng. 3. Rưới đều sốt cam óng ả lên cá hồi thưởng thức nóng hổi.",
+                "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=600&q=80",
+                ["🍊 Chua Ngọt Thanh Mát", "🐟 Thịt Cá Mềm Ngọt", "✨ Siêu Bổ Dưỡng"]),
+
+            // 47. Canh chua cá hồi thanh mát
+            M("vn_home_47", "Vietnamese Sour Soup with Salmon", "Canh Chua Cá Hồi Thanh Mát", "Seafood", "Vietnamese", 260, 28, 10, 11,
+                ["Salmon Fillet", "Tomatoes", "Pineapple", "Bean Sprouts", "Fresh Dill", "Tamarind"],
+                ["Cá hồi cắt khúc", "Cà chua chín", "Dứa thơm", "Giá đỗ", "Thì là hành hoa", "Nước cốt me"],
+                ["180g", "2 pieces", "80g", "50g", "3 stalks", "1 tbsp"],
+                ["180g", "2 quả", "80g", "50g", "3 nhánh", "1 thìa canh"],
+                "1. Sauté tomatoes and pineapple with salmon pieces. 2. Pour in boiling water and tamarind broth. 3. Add bean sprouts, fresh dill and scallions, season with fish sauce.",
+                "1. Phi thơm hành xào sơ cà chua và dứa cho lên màu đẹp. 2. Đổ nước sôi và nước cốt me vào đun bùng, thả cá hồi vào nấu lửa vừa trong 4 phút cho cá chín mềm không nát. 3. Thả giá đỗ, rắc thì là và hành hoa cắt khúc rồi tắt bếp ngay.",
+                "https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=600&q=80",
+                ["🍲 Canh Chua Đậm Đà", "🐟 Cá Hồi Béo Ngọt", "🌿 Thì Là Thơm Lừng"]),
+
+            // 48. Thịt ba chỉ luộc chấm mắm tỏi ớt
+            M("vn_home_48", "Boiled Pork Belly with Garlic Chili Sauce", "Thịt Ba Chỉ Luộc Chấm Mắm Tỏi Ớt", "Pork", "Vietnamese", 390, 26, 2, 30,
+                ["Pork Belly", "Shallots", "Garlic", "Chili", "Fish Sauce"],
+                ["Thịt ba chỉ tươi", "Hành tím đập dập", "Tỏi băm", "Ớt tươi", "Nước mắm ngon"],
+                ["250g", "3 pieces", "4 cloves", "1 piece", "2 tbsp"],
+                ["250g", "3 củ", "4 tép", "1 quả", "2 thìa canh"],
+                "1. Parboil pork belly with crushed shallots for 15-18 minutes until tender. 2. Plunge in ice water for firm skin and bright color. 3. Slice thinly and serve with garlic chili fish sauce.",
+                "1. Thịt ba chỉ rửa sạch, luộc ngập nước cùng vài củ hành tím đập dập trong 15-18 phút cho chín tới. 2. Vớt thịt ngâm ngay vào tô nước đá lạnh để bì giòn trắng và thớ thịt săn chắc. 3. Thái lát mỏng tang chấm nước mắm tỏi ớt chua cay đậm đà hao cơm.",
+                "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80",
+                ["🥩 Thịt Mềm Bì Giòn", "🇻🇳 Món Ngon Quốc Dân", "⚡ Dễ Làm Nhất"]),
+
+            // 49. Thịt heo kho tiêu đậm đà
+            M("vn_home_49", "Vietnamese Pepper Braised Pork", "Thịt Heo Kho Tiêu Đậm Đà", "Pork", "Vietnamese", 320, 30, 4, 18,
+                ["Lean Pork", "Crushed Black Pepper", "Fish Sauce", "Shallots", "Caramel Sauce"],
+                ["Thịt nạc vai heo", "Tiêu sọ đập dập", "Nước mắm ngon", "Hành tím băm", "Nước màu dừa"],
+                ["250g", "1 tbsp", "2 tbsp", "2 pieces", "1 tsp"],
+                ["250g", "1 thìa canh", "2 thìa canh", "2 củ", "1 thìa cà phê"],
+                "1. Cut lean pork into thick bite-sized cubes, marinate with shallots, fish sauce, caramel and plenty of black pepper. 2. Braise on low heat until sauce is caramelized and glossy.",
+                "1. Thịt nạc vai thái miếng con chì vừa ăn, ướp hành tím băm, nước mắm ngon, nước màu dừa và thật nhiều tiêu sọ giã thô. 2. Đảo săn thịt trên chảo rồi đun liu riu lửa nhỏ cho nước sốt ngấm sâu kẹo quánh lại bao quanh từng miếng thịt thơm cay nồng ấm.",
+                "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&q=80",
+                ["🔥 Tiêu Sọ Cay Nồng", "🥩 Đậm Đà Tốn Cơm", "🇻🇳 Chuẩn Cơm Mẹ Nấu"]),
+
+            // 50. Cá hồi nướng giấy bạc tiêu chanh
+            M("vn_home_50", "Foil-baked Salmon with Herbs & Lemon", "Cá Hồi Nướng Giấy Bạc Tiêu Chanh", "Seafood", "Vietnamese", 360, 36, 1, 20,
+                ["Salmon Fillet", "Lemon Slices", "Butter", "Black Pepper", "Fresh Dill"],
+                ["Phi lê cá hồi", "Chanh vàng thái lát", "Bơ lạt", "Tiêu đen xay", "Thì là tươi"],
+                ["200g", "3 slices", "10g", "1/2 tsp", "2 stalks"],
+                ["200g", "3 lát", "10g", "1/2 thìa cà phê", "2 nhánh"],
+                "1. Place salmon on foil sheet, top with butter pats, lemon slices, dill and pepper. 2. Wrap tightly and bake at 200°C for 12 minutes until tender and aromatic.",
+                "1. Đặt phi lê cá hồi lên giấy bạc, đặt vài lát bơ lạt, chanh vàng và nhánh thì là lên trên, rắc tiêu xay và xíu muối. 2. Gói kín giấy bạc rồi nướng ở 200 độ C trong 12-14 phút cho cá chín mềm mọng nước thơm ngát mùi thảo mộc.",
+                "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&w=600&q=80",
+                ["✨ Không Dầu Mỡ", "🐟 Giữ Trọn Dinh Dưỡng", "🍋 Thơm Lừng Tiêu Chanh"])
         ];
     }
 }

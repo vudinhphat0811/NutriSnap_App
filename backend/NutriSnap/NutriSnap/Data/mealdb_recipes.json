@@ -2156,6 +2156,309 @@
     ]
   },
   {
+    "IdMeal": "vn_home_45",
+    "StrMeal": "Pan-seared Salmon with Garlic Butter & Lemon",
+    "StrMealThumb": "",
+    "StrCategory": "Seafood",
+    "StrArea": "Vietnamese",
+    "StrInstructions": "1. Pat salmon dry, season with salt and pepper. 2. Sear skin-side down in hot pan for 3 minutes until crisp, flip for 2 minutes. 3. Melt butter with minced garlic and lemon juice, spoon sauce over salmon.",
+    "StrYoutube": null,
+    "Ingredients": [
+      "Salmon Fillet",
+      "Butter",
+      "Garlic",
+      "Lemon Juice",
+      "Black Pepper",
+      "Sea Salt"
+    ],
+    "Measures": [
+      "200g",
+      "15g",
+      "3 cloves",
+      "1 tbsp",
+      "1/2 tsp",
+      "1/2 tsp"
+    ],
+    "StrMealVi": "Cá Hồi Áp Chảo Sốt Bơ Tỏi Chanh",
+    "StrInstructionsVi": "1. Thấm khô miếng cá hồi, ướp chút muối và tiêu đen xay. 2. Làm nóng chảo, áp chảo phần da trước 3 phút cho da giòn rụm rồi lật mặt áp chảo thêm 2 phút vừa chín tới giữ độ mọng nước. 3. Cho bơ lạt, tỏi băm và nước cốt chanh vào chảo đun tan chảy rồi rưới sốt bơ tỏi thơm ngậy lên miếng cá hồi.",
+    "IngredientsVi": [
+      "Phi lê cá hồi tươi",
+      "Bơ lạt",
+      "Tỏi băm",
+      "Nước cốt chanh",
+      "Tiêu đen xay",
+      "Muối tinh"
+    ],
+    "MeasuresVi": [
+      "200g",
+      "15g",
+      "3 tép",
+      "1 thìa canh",
+      "1/2 thìa cà phê",
+      "1/2 thìa cà phê"
+    ],
+    "EstimatedCalories": 380,
+    "EstimatedProtein": 36,
+    "EstimatedCarbs": 2,
+    "EstimatedFat": 22,
+    "MatchScore": 98,
+    "Badges": [
+      "\uD83D\uDC1F Giàu Omega 3",
+      "\uD83C\uDF4B Sốt Bơ Tỏi Chanh",
+      "✨ Chuẩn Nhà Hàng",
+      "⚡ 10 Phút"
+    ]
+  },
+  {
+    "IdMeal": "vn_home_46",
+    "StrMeal": "Salmon in Fresh Orange Glaze",
+    "StrMealThumb": "",
+    "StrCategory": "Seafood",
+    "StrArea": "Vietnamese",
+    "StrInstructions": "1. Sear seasoned salmon fillet until golden and flaky. 2. Simmer freshly squeezed orange juice with butter, honey and garlic until slightly thickened. 3. Drizzle fragrant orange glaze over salmon.",
+    "StrYoutube": null,
+    "Ingredients": [
+      "Salmon Fillet",
+      "Fresh Orange Juice",
+      "Butter",
+      "Honey",
+      "Garlic"
+    ],
+    "Measures": [
+      "200g",
+      "100ml",
+      "10g",
+      "1 tsp",
+      "2 cloves"
+    ],
+    "StrMealVi": "Cá Hồi Sốt Cam Tươi Đậm Vị",
+    "StrInstructionsVi": "1. Ướp cá hồi với chút muối tiêu rồi áp chảo vàng ruộm hai mặt. 2. Phi thơm tỏi với chút bơ, đổ nước cam tươi nguyên chất và mật ong vào đun sôi lăn tăn cho sốt sánh sệt chua ngọt dịu dàng. 3. Rưới đều sốt cam óng ả lên cá hồi thưởng thức nóng hổi.",
+    "IngredientsVi": [
+      "Phi lê cá hồi",
+      "Nước cam tươi vắt",
+      "Bơ lạt",
+      "Mật ong",
+      "Tỏi băm"
+    ],
+    "MeasuresVi": [
+      "200g",
+      "100ml",
+      "10g",
+      "1 thìa cà phê",
+      "2 tép"
+    ],
+    "EstimatedCalories": 395,
+    "EstimatedProtein": 35,
+    "EstimatedCarbs": 12,
+    "EstimatedFat": 21,
+    "MatchScore": 98,
+    "Badges": [
+      "\uD83C\uDF4A Chua Ngọt Thanh Mát",
+      "\uD83D\uDC1F Thịt Cá Mềm Ngọt",
+      "✨ Siêu Bổ Dưỡng"
+    ]
+  },
+  {
+    "IdMeal": "vn_home_47",
+    "StrMeal": "Vietnamese Sour Soup with Salmon",
+    "StrMealThumb": "",
+    "StrCategory": "Seafood",
+    "StrArea": "Vietnamese",
+    "StrInstructions": "1. Sauté tomatoes and pineapple with salmon pieces. 2. Pour in boiling water and tamarind broth. 3. Add bean sprouts, fresh dill and scallions, season with fish sauce.",
+    "StrYoutube": null,
+    "Ingredients": [
+      "Salmon Fillet",
+      "Tomatoes",
+      "Pineapple",
+      "Bean Sprouts",
+      "Fresh Dill",
+      "Tamarind"
+    ],
+    "Measures": [
+      "180g",
+      "2 pieces",
+      "80g",
+      "50g",
+      "3 stalks",
+      "1 tbsp"
+    ],
+    "StrMealVi": "Canh Chua Cá Hồi Thanh Mát",
+    "StrInstructionsVi": "1. Phi thơm hành xào sơ cà chua và dứa cho lên màu đẹp. 2. Đổ nước sôi và nước cốt me vào đun bùng, thả cá hồi vào nấu lửa vừa trong 4 phút cho cá chín mềm không nát. 3. Thả giá đỗ, rắc thì là và hành hoa cắt khúc rồi tắt bếp ngay.",
+    "IngredientsVi": [
+      "Cá hồi cắt khúc",
+      "Cà chua chín",
+      "Dứa thơm",
+      "Giá đỗ",
+      "Thì là hành hoa",
+      "Nước cốt me"
+    ],
+    "MeasuresVi": [
+      "180g",
+      "2 quả",
+      "80g",
+      "50g",
+      "3 nhánh",
+      "1 thìa canh"
+    ],
+    "EstimatedCalories": 260,
+    "EstimatedProtein": 28,
+    "EstimatedCarbs": 10,
+    "EstimatedFat": 11,
+    "MatchScore": 98,
+    "Badges": [
+      "\uD83C\uDF72 Canh Chua Đậm Đà",
+      "\uD83D\uDC1F Cá Hồi Béo Ngọt",
+      "\uD83C\uDF3F Thì Là Thơm Lừng"
+    ]
+  },
+  {
+    "IdMeal": "vn_home_48",
+    "StrMeal": "Boiled Pork Belly with Garlic Chili Sauce",
+    "StrMealThumb": "",
+    "StrCategory": "Pork",
+    "StrArea": "Vietnamese",
+    "StrInstructions": "1. Parboil pork belly with crushed shallots for 15-18 minutes until tender. 2. Plunge in ice water for firm skin and bright color. 3. Slice thinly and serve with garlic chili fish sauce.",
+    "StrYoutube": null,
+    "Ingredients": [
+      "Pork Belly",
+      "Shallots",
+      "Garlic",
+      "Chili",
+      "Fish Sauce"
+    ],
+    "Measures": [
+      "250g",
+      "3 pieces",
+      "4 cloves",
+      "1 piece",
+      "2 tbsp"
+    ],
+    "StrMealVi": "Thịt Ba Chỉ Luộc Chấm Mắm Tỏi Ớt",
+    "StrInstructionsVi": "1. Thịt ba chỉ rửa sạch, luộc ngập nước cùng vài củ hành tím đập dập trong 15-18 phút cho chín tới. 2. Vớt thịt ngâm ngay vào tô nước đá lạnh để bì giòn trắng và thớ thịt săn chắc. 3. Thái lát mỏng tang chấm nước mắm tỏi ớt chua cay đậm đà hao cơm.",
+    "IngredientsVi": [
+      "Thịt ba chỉ tươi",
+      "Hành tím đập dập",
+      "Tỏi băm",
+      "Ớt tươi",
+      "Nước mắm ngon"
+    ],
+    "MeasuresVi": [
+      "250g",
+      "3 củ",
+      "4 tép",
+      "1 quả",
+      "2 thìa canh"
+    ],
+    "EstimatedCalories": 390,
+    "EstimatedProtein": 26,
+    "EstimatedCarbs": 2,
+    "EstimatedFat": 30,
+    "MatchScore": 98,
+    "Badges": [
+      "\uD83E\uDD69 Thịt Mềm Bì Giòn",
+      "\uD83C\uDDFB\uD83C\uDDF3 Món Ngon Quốc Dân",
+      "⚡ Dễ Làm Nhất"
+    ]
+  },
+  {
+    "IdMeal": "vn_home_49",
+    "StrMeal": "Vietnamese Pepper Braised Pork",
+    "StrMealThumb": "",
+    "StrCategory": "Pork",
+    "StrArea": "Vietnamese",
+    "StrInstructions": "1. Cut lean pork into thick bite-sized cubes, marinate with shallots, fish sauce, caramel and plenty of black pepper. 2. Braise on low heat until sauce is caramelized and glossy.",
+    "StrYoutube": null,
+    "Ingredients": [
+      "Lean Pork",
+      "Crushed Black Pepper",
+      "Fish Sauce",
+      "Shallots",
+      "Caramel Sauce"
+    ],
+    "Measures": [
+      "250g",
+      "1 tbsp",
+      "2 tbsp",
+      "2 pieces",
+      "1 tsp"
+    ],
+    "StrMealVi": "Thịt Heo Kho Tiêu Đậm Đà",
+    "StrInstructionsVi": "1. Thịt nạc vai thái miếng con chì vừa ăn, ướp hành tím băm, nước mắm ngon, nước màu dừa và thật nhiều tiêu sọ giã thô. 2. Đảo săn thịt trên chảo rồi đun liu riu lửa nhỏ cho nước sốt ngấm sâu kẹo quánh lại bao quanh từng miếng thịt thơm cay nồng ấm.",
+    "IngredientsVi": [
+      "Thịt nạc vai heo",
+      "Tiêu sọ đập dập",
+      "Nước mắm ngon",
+      "Hành tím băm",
+      "Nước màu dừa"
+    ],
+    "MeasuresVi": [
+      "250g",
+      "1 thìa canh",
+      "2 thìa canh",
+      "2 củ",
+      "1 thìa cà phê"
+    ],
+    "EstimatedCalories": 320,
+    "EstimatedProtein": 30,
+    "EstimatedCarbs": 4,
+    "EstimatedFat": 18,
+    "MatchScore": 98,
+    "Badges": [
+      "\uD83D\uDD25 Tiêu Sọ Cay Nồng",
+      "\uD83E\uDD69 Đậm Đà Tốn Cơm",
+      "\uD83C\uDDFB\uD83C\uDDF3 Chuẩn Cơm Mẹ Nấu"
+    ]
+  },
+  {
+    "IdMeal": "vn_home_50",
+    "StrMeal": "Foil-baked Salmon with Herbs & Lemon",
+    "StrMealThumb": "",
+    "StrCategory": "Seafood",
+    "StrArea": "Vietnamese",
+    "StrInstructions": "1. Place salmon on foil sheet, top with butter pats, lemon slices, dill and pepper. 2. Wrap tightly and bake at 200°C for 12 minutes until tender and aromatic.",
+    "StrYoutube": null,
+    "Ingredients": [
+      "Salmon Fillet",
+      "Lemon Slices",
+      "Butter",
+      "Black Pepper",
+      "Fresh Dill"
+    ],
+    "Measures": [
+      "200g",
+      "3 slices",
+      "10g",
+      "1/2 tsp",
+      "2 stalks"
+    ],
+    "StrMealVi": "Cá Hồi Nướng Giấy Bạc Tiêu Chanh",
+    "StrInstructionsVi": "1. Đặt phi lê cá hồi lên giấy bạc, đặt vài lát bơ lạt, chanh vàng và nhánh thì là lên trên, rắc tiêu xay và xíu muối. 2. Gói kín giấy bạc rồi nướng ở 200 độ C trong 12-14 phút cho cá chín mềm mọng nước thơm ngát mùi thảo mộc.",
+    "IngredientsVi": [
+      "Phi lê cá hồi",
+      "Chanh vàng thái lát",
+      "Bơ lạt",
+      "Tiêu đen xay",
+      "Thì là tươi"
+    ],
+    "MeasuresVi": [
+      "200g",
+      "3 lát",
+      "10g",
+      "1/2 thìa cà phê",
+      "2 nhánh"
+    ],
+    "EstimatedCalories": 360,
+    "EstimatedProtein": 36,
+    "EstimatedCarbs": 1,
+    "EstimatedFat": 20,
+    "MatchScore": 98,
+    "Badges": [
+      "✨ Không Dầu Mỡ",
+      "\uD83D\uDC1F Giữ Trọn Dinh Dưỡng",
+      "\uD83C\uDF4B Thơm Lừng Tiêu Chanh"
+    ]
+  },
+  {
     "IdMeal": "53483",
     "StrMeal": "Acaraje black-eyed pea fritters with shrimp filling",
     "StrMealThumb": "https://www.themealdb.com/images/media/meals/dxs5t71782678369.jpg",
