@@ -38,6 +38,10 @@ public class RecommendedMealDto
 public class MatchIngredientsRequest
 {
     public List<string> Ingredients { get; set; } = new();
+    public string? Goal { get; set; } = "LoseWeight";
+    public string? DietType { get; set; } = "HighProtein";
+    public int TargetCalories { get; set; } = 0;
+    public int RemainingCalories { get; set; } = 0;
     public string Lang { get; set; } = "vi";
     public int Limit { get; set; } = 25;
 }

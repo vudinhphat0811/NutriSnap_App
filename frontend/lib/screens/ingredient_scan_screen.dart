@@ -2308,6 +2308,21 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(Icons.track_changes_rounded, size: 14, color: AppColors.primary),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  'Lọc theo mục tiêu: ${AppStateService.instance.userProfile.goalDisplayName} • Calo còn lại: ${AppStateService.instance.remainingCalories} kcal',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF0F766E)),
+                ),
+              ),
+            ],
+          ),
         ],
         const SizedBox(height: 12),
 
@@ -2478,33 +2493,41 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
                         style: const TextStyle(fontSize: 11, color: AppColors.textGray),
                       ),
                       if (meal.badges.isNotEmpty) ...[
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         Flexible(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: meal.badges.first.contains('TheMealDB')
-                                  ? const Color(0xFFEFF6FF)
-                                  : const Color(0xFFF0FDF4),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: meal.badges.first.contains('TheMealDB')
-                                    ? const Color(0xFFBFDBFE)
-                                    : const Color(0xFFBBF7D0),
-                              ),
-                            ),
-                            child: Text(
-                              meal.badges.first,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.bold,
-                                color: meal.badges.first.contains('TheMealDB')
-                                    ? const Color(0xFF1D4ED8)
-                                    : const Color(0xFF166534),
-                              ),
-                            ),
+                          child: Wrap(
+                            spacing: 4,
+                            runSpacing: 2,
+                            children: meal.badges.take(2).map((b) {
+                              final isTheMealDb = b.contains('TheMealDB');
+                              final isGoal = b.contains('Giảm Cân') || b.contains('Tăng Cơ') || b.contains('Giữ Dáng') || b.contains('Calo') || b.contains('Ít Calo');
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isTheMealDb
+                                      ? const Color(0xFFEFF6FF)
+                                      : (isGoal ? const Color(0xFFFEF3C7) : const Color(0xFFF0FDF4)),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: isTheMealDb
+                                        ? const Color(0xFFBFDBFE)
+                                        : (isGoal ? const Color(0xFFFDE68A) : const Color(0xFFBBF7D0)),
+                                  ),
+                                ),
+                                child: Text(
+                                  b,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 9.0,
+                                    fontWeight: FontWeight.bold,
+                                    color: isTheMealDb
+                                        ? const Color(0xFF1D4ED8)
+                                        : (isGoal ? const Color(0xFFB45309) : const Color(0xFF166534)),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
                           ),
                         ),
                       ],

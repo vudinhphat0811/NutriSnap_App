@@ -736,7 +736,14 @@ public class RecipeService
     /// - Tuyệt đối không để Nước Mắm (Fish Sauce) bị nhận nhầm thành Cá / Cá hồi.
     /// - Trả về công thức đầy đủ cả tiếng Việt, hình ảnh, bước nấu chi tiết và dinh dưỡng.
     /// </summary>
-    public async Task<List<RecommendedMealDto>> GetMealsByMultipleIngredientsAsync(List<string> rawIngredients, string lang = "vi", int limit = 25)
+    public async Task<List<RecommendedMealDto>> GetMealsByMultipleIngredientsAsync(
+        List<string> rawIngredients,
+        string lang = "vi",
+        int limit = 25,
+        string? goal = null,
+        string? dietType = null,
+        int remainingCalories = 0,
+        int targetCalories = 0)
     {
         if (rawIngredients == null || rawIngredients.Count == 0)
         {
@@ -760,9 +767,12 @@ public class RecipeService
             return new List<RecommendedMealDto>();
         }
 
-        // Tạo cache key theo tập hợp các nguyên liệu
+        string effectiveGoal = string.IsNullOrWhiteSpace(goal) ? "LoseWeight" : goal;
+        string effectiveDiet = string.IsNullOrWhiteSpace(dietType) ? "HighProtein" : dietType;
+
+        // Tạo cache key theo tập hợp các nguyên liệu và mục tiêu cá nhân
         string cacheKeysJoined = string.Join("_", classifiedList.Select(c => c.CleanKey).OrderBy(x => x));
-        string cacheKey = $"meals_multi_ing_v3_{cacheKeysJoined}_{lang}_{limit}";
+        string cacheKey = $"meals_multi_ing_v5_{cacheKeysJoined}_{effectiveGoal}_{effectiveDiet}_{remainingCalories}_{lang}_{limit}";
         if (_cache.TryGetValue(cacheKey, out List<RecommendedMealDto>? cached) && cached != null)
         {
             return cached;
@@ -823,12 +833,51 @@ public class RecipeService
             };
             SanitizeMealMeasures(cloned);
 
+            // Tính toán mức độ phù hợp với Mục tiêu thể hình, chế độ ăn và calo còn lại của người dùng
+            int goalFitScore = CalculateMatchScore(cloned, effectiveGoal, effectiveDiet, remainingCalories);
+
+            // Thêm các huy hiệu mục tiêu chuẩn xác cho người dùng
+            if (effectiveGoal.Equals("LoseWeight", StringComparison.OrdinalIgnoreCase))
+            {
+                if (cloned.EstimatedCalories <= 420 && cloned.EstimatedProtein >= 24)
+                {
+                    cloned.Badges.Add("🎯 Chuẩn Giảm Cân");
+                }
+                else if (cloned.EstimatedCalories <= 380)
+                {
+                    cloned.Badges.Add("🥗 Ít Calo");
+                }
+            }
+            else if (effectiveGoal.Equals("GainWeight", StringComparison.OrdinalIgnoreCase) || effectiveGoal.Equals("GainMuscle", StringComparison.OrdinalIgnoreCase))
+            {
+                if (cloned.EstimatedProtein >= 30)
+                {
+                    cloned.Badges.Add("💪 Siêu Đạm Tăng Cơ");
+                }
+                else if (cloned.EstimatedCalories >= 450)
+                {
+                    cloned.Badges.Add("⚡ Năng Lượng Tăng Cân");
+                }
+            }
+            else
+            {
+                if (cloned.EstimatedCalories >= 350 && cloned.EstimatedCalories <= 520)
+                {
+                    cloned.Badges.Add("⚖️ Giữ Dáng Cân Bằng");
+                }
+            }
+
+            if (remainingCalories > 0 && cloned.EstimatedCalories <= remainingCalories)
+            {
+                cloned.Badges.Add("🔥 Vừa Vặn Calo Hôm Nay");
+            }
+
             int missingMajor = GetMissingMajorIngredientsCount(cloned, classifiedList);
 
             if (matchCount >= 2)
             {
-                // Tier 1: Món khớp từ 2 nguyên liệu trở lên (Món kết hợp đỉnh cao)
-                cloned.MatchScore = Math.Min(99, 94 + (matchCount * 2) - Math.Min(4, missingMajor));
+                // Tier 1: Món khớp từ 2 nguyên liệu trở lên (kết hợp nguyên liệu + mục tiêu)
+                cloned.MatchScore = Math.Min(99, (int)(0.55 * (94 + matchCount * 2 - Math.Min(4, missingMajor)) + 0.45 * goalFitScore));
                 cloned.Badges.RemoveAll(b => b.StartsWith("✨ Khớp") || b.StartsWith("Khớp"));
                 cloned.Badges.Insert(0, $"✨ Khớp {matchCount}/{totalSelected} NL");
                 if (cloned.IdMeal.StartsWith("vn_home_") || cloned.StrArea == "Vietnamese")
@@ -847,10 +896,9 @@ public class RecipeService
             }
             else
             {
-                // Tier 2: Món khớp 1 nguyên liệu duy nhất
+                // Tier 2: Món khớp 1 nguyên liệu duy nhất (kết hợp nguyên liệu + mục tiêu)
                 var matchedIng = matchedIngs[0];
-                // Ưu tiên các món có ít nguyên liệu chính bị thiếu (chỉ cần gia vị bếp là nấu được)
-                cloned.MatchScore = Math.Max(70, 95 - (missingMajor * 7));
+                cloned.MatchScore = Math.Clamp((int)(0.5 * (95 - missingMajor * 8) + 0.5 * goalFitScore), 55, 98);
                 cloned.Badges.RemoveAll(b => b.StartsWith("✨ Khớp") || b.StartsWith("Khớp") || b.StartsWith("🐟") || b.StartsWith("🥩") || b.StartsWith("🍗") || b.StartsWith("🌱") || b.StartsWith("🦐"));
 
                 string badgeTitle = GetIngredientBadge(matchedIng);
@@ -864,11 +912,11 @@ public class RecipeService
         }
 
         // 4. SẮP XẾP TỪNG NHÓM
-        // Nhóm multi-match: Ưu tiên món Việt Nam, điểm match cao, ít thiếu nguyên liệu
+        // Nhóm multi-match: Điểm match cao (bao gồm khớp mục tiêu), ưu tiên món Việt, ít thiếu nguyên liệu
         multiMatchList = multiMatchList
-            .OrderByDescending(m => (m.StrArea == "Vietnamese" || m.IdMeal.StartsWith("vn_home_")) ? 1 : 0)
+            .OrderByDescending(m => m.MatchScore)
+            .ThenByDescending(m => (m.StrArea == "Vietnamese" || m.IdMeal.StartsWith("vn_home_")) ? 1 : 0)
             .ThenBy(m => GetMissingMajorIngredientsCount(m, classifiedList))
-            .ThenByDescending(m => m.MatchScore)
             .ToList();
 
         // Từng nhóm single-match: Phân bổ công bằng và xen kẽ giữa món Việt Nam (vn_home_) và món Quốc Tế TheMealDB
@@ -877,14 +925,14 @@ public class RecipeService
             var allItems = singleMatchPerIngredient[key];
             var vnList = allItems
                 .Where(m => m.IdMeal.StartsWith("vn_home_") || m.StrArea == "Vietnamese")
-                .OrderBy(m => GetMissingMajorIngredientsCount(m, classifiedList))
-                .ThenByDescending(m => m.MatchScore)
+                .OrderByDescending(m => m.MatchScore)
+                .ThenBy(m => GetMissingMajorIngredientsCount(m, classifiedList))
                 .ToList();
 
             var themealdbList = allItems
                 .Where(m => !m.IdMeal.StartsWith("vn_home_") && m.StrArea != "Vietnamese")
-                .OrderBy(m => GetMissingMajorIngredientsCount(m, classifiedList))
-                .ThenByDescending(m => m.MatchScore)
+                .OrderByDescending(m => m.MatchScore)
+                .ThenBy(m => GetMissingMajorIngredientsCount(m, classifiedList))
                 .ToList();
 
             // Gắn nhãn phân biệt nguồn gốc dữ liệu rõ ràng cho người dùng

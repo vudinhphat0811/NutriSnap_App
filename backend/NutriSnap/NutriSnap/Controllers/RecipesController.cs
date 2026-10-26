@@ -248,7 +248,11 @@ public class RecipesController : ControllerBase
         var meals = await _recipeService.GetMealsByMultipleIngredientsAsync(
             request.Ingredients,
             request.Lang ?? "vi",
-            request.Limit > 0 ? request.Limit : 25);
+            request.Limit > 0 ? request.Limit : 25,
+            request.Goal,
+            request.DietType,
+            request.RemainingCalories,
+            request.TargetCalories);
         return Ok(meals);
     }
 
@@ -258,6 +262,10 @@ public class RecipesController : ControllerBase
     [HttpGet("match-multiple")]
     public async Task<IActionResult> MatchMultipleGet(
         [FromQuery] string ingredients,
+        [FromQuery] string? goal = null,
+        [FromQuery] string? dietType = null,
+        [FromQuery] int remainingCalories = 0,
+        [FromQuery] int targetCalories = 0,
         [FromQuery] string lang = "vi",
         [FromQuery] int limit = 25)
     {
@@ -266,7 +274,14 @@ public class RecipesController : ControllerBase
             return BadRequest(new { message = "Danh sách nguyên liệu không được để trống." });
         }
         var list = ingredients.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        var meals = await _recipeService.GetMealsByMultipleIngredientsAsync(list, lang, limit);
+        var meals = await _recipeService.GetMealsByMultipleIngredientsAsync(
+            list,
+            lang,
+            limit,
+            goal,
+            dietType,
+            remainingCalories,
+            targetCalories);
         return Ok(meals);
     }
 

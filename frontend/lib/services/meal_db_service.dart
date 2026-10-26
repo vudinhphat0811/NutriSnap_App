@@ -242,13 +242,20 @@ class TheMealDbService {
       final uri = Uri.parse('${ApiConstants.baseUrl}/api/recipes/match-multiple');
       debugPrint('[Backend Recipes] Đang gọi thuật toán khớp đa nguyên liệu C#: $rawIngredients');
 
+      final appState = AppStateService.instance;
+      final profile = appState.userProfile;
+
       final response = await http
           .post(
             uri,
             headers: {'Content-Type': 'application/json; charset=utf-8'},
             body: jsonEncode({
               'ingredients': rawIngredients,
-              'lang': 'vi',
+              'goal': profile.goal,
+              'dietType': profile.dietType,
+              'targetCalories': profile.targetCalories,
+              'remainingCalories': appState.remainingCalories,
+              'lang': appState.currentLanguage,
               'limit': 25,
             }),
           )
