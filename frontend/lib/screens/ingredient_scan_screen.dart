@@ -182,97 +182,233 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
     }
   }
 
-  void _showImageSourcePicker() {
+  Widget _buildSourceActionCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color iconBg,
+    required Color iconColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textBlack),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: AppColors.textGray),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// HỘP THOẠI ĐỔI ẢNH (DÀNH RIÊNG CHO NÚT 'ĐỔI ẢNH KHÁC')
+  void _showChangePhotoPicker() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 16.0),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: SafeArea(
+          top: false,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
                 width: 40,
                 height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
+                margin: const EdgeInsets.only(bottom: 14),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade300,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              Text(
-                AppTranslations.tr('scan_sheet_title'),
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+              const Text(
+                'Đổi Ảnh Nguyên Liệu',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
               ),
-              const SizedBox(height: 6),
-              Text(
-                AppTranslations.tr('scan_sheet_sub'),
-                style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+              const SizedBox(height: 4),
+              const Text(
+                'Chụp ảnh mới hoặc chọn từ thư viện để AI phân tích lại',
+                style: TextStyle(fontSize: 11, color: AppColors.textGray),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(color: AppColors.accentMint, shape: BoxShape.circle),
-                  child: const Icon(Icons.camera_alt, color: AppColors.primaryDark),
-                ),
-                title: Text(AppTranslations.tr('camera_option'), style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text(AppTranslations.tr('camera_option_sub'), style: const TextStyle(fontSize: 11)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickAndAnalyzeImage(ImageSource.camera);
-                },
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(color: Color(0xFFE0F2FE), shape: BoxShape.circle),
-                  child: const Icon(Icons.photo_library_rounded, color: Color(0xFF0284C7)),
-                ),
-                title: const Text('Chọn ảnh từ thư viện', style: TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: const Text('Tải ảnh món ăn hoặc nguyên liệu từ album điện thoại', style: TextStyle(fontSize: 11)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickAndAnalyzeImage(ImageSource.gallery);
-                },
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(color: Color(0xFFFEE2E2), shape: BoxShape.circle),
-                  child: const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFFDC2626)),
-                ),
-                title: const Text('Quét mã vạch siêu thị & bao bì', style: TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: const Text('Quét camera thời gian thực Google ML Kit siêu tốc (<0.05s)', style: TextStyle(fontSize: 11)),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  final product = await BarcodeScannerSheet.show(context);
-                  if (product != null && mounted) {
-                    _addBarcodeProductToScan(product);
-                  }
-                },
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(color: Color(0xFFDCFCE7), shape: BoxShape.circle),
-                  child: const Icon(Icons.edit_note_rounded, color: AppColors.primaryDark),
-                ),
-                title: const Text('Nhập tay nguyên liệu', style: TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: const Text('Tự gõ hoặc chọn nguyên liệu có sẵn trong bếp (100% Offline)', style: TextStyle(fontSize: 11)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showManualIngredientSheet();
-                },
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildSourceActionCard(
+                      icon: Icons.camera_alt_rounded,
+                      title: AppTranslations.tr('camera_option'),
+                      subtitle: 'Chụp ảnh mới',
+                      iconBg: AppColors.accentMint,
+                      iconColor: AppColors.primaryDark,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _pickAndAnalyzeImage(ImageSource.camera);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildSourceActionCard(
+                      icon: Icons.photo_library_rounded,
+                      title: 'Thư viện ảnh',
+                      subtitle: 'Chọn từ album',
+                      iconBg: const Color(0xFFE0F2FE),
+                      iconColor: const Color(0xFF0284C7),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _pickAndAnalyzeImage(ImageSource.gallery);
+                      },
+                    ),
+                  ),
+                ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// HỘP THOẠI QUÉT NGUYÊN LIỆU ĐẦY ĐỦ (2X2 GRID GỌN GÀNG, KHÔNG BAO GIỜ BỊ TRÀN)
+  void _showImageSourcePicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Text(
+                  AppTranslations.tr('scan_sheet_title'),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  AppTranslations.tr('scan_sheet_sub'),
+                  style: const TextStyle(fontSize: 11, color: AppColors.textGray),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildSourceActionCard(
+                        icon: Icons.camera_alt_rounded,
+                        title: AppTranslations.tr('camera_option'),
+                        subtitle: 'Chụp trực tiếp',
+                        iconBg: AppColors.accentMint,
+                        iconColor: AppColors.primaryDark,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _pickAndAnalyzeImage(ImageSource.camera);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildSourceActionCard(
+                        icon: Icons.photo_library_rounded,
+                        title: 'Thư viện ảnh',
+                        subtitle: 'Tải từ album',
+                        iconBg: const Color(0xFFE0F2FE),
+                        iconColor: const Color(0xFF0284C7),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _pickAndAnalyzeImage(ImageSource.gallery);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildSourceActionCard(
+                        icon: Icons.qr_code_scanner_rounded,
+                        title: 'Quét mã vạch',
+                        subtitle: 'Bao bì siêu thị GS1',
+                        iconBg: const Color(0xFFFEE2E2),
+                        iconColor: const Color(0xFFDC2626),
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          final product = await BarcodeScannerSheet.show(context);
+                          if (product != null && mounted) {
+                            _addBarcodeProductToScan(product);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildSourceActionCard(
+                        icon: Icons.edit_note_rounded,
+                        title: 'Nhập tay',
+                        subtitle: 'Tự chọn nguyên liệu',
+                        iconBg: const Color(0xFFDCFCE7),
+                        iconColor: AppColors.primaryDark,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _showManualIngredientSheet();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -957,7 +1093,7 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
     if (_imageBytes == null) return const SizedBox.shrink();
 
     return GestureDetector(
-      onTap: _showImageSourcePicker,
+      onTap: _showChangePhotoPicker,
       child: Stack(
         children: [
           Container(
@@ -1040,23 +1176,27 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
           Positioned(
             right: 12,
             bottom: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.refresh_rounded, size: 14, color: Colors.white),
-                  const SizedBox(width: 4),
-                  Text(
-                    AppTranslations.tr('change_photo'),
-                    style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600),
-                  ),
-                ],
+            child: InkWell(
+              onTap: _showChangePhotoPicker,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.refresh_rounded, size: 14, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text(
+                      AppTranslations.tr('change_photo'),
+                      style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1624,7 +1764,7 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: _showImageSourcePicker,
+              onPressed: _showChangePhotoPicker,
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Color(0xFFEF4444)),
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1725,7 +1865,9 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
                     Text(
                       res.ingredients.length > 1
                           ? 'Tổng khối lượng: ${res.weight} (${res.ingredients.length} loại)'
-                          : 'Ước tính khối lượng: ${res.weight}',
+                          : (res.weight.toLowerCase().contains('100g')
+                              ? 'Định mức khẩu phần: ${res.weight}'
+                              : 'Ước tính khối lượng: ${res.weight}'),
                       style: const TextStyle(fontSize: 12, color: AppColors.textGray),
                     ),
                   ],
@@ -1752,9 +1894,9 @@ class _IngredientScanScreenState extends State<IngredientScanScreen> with Single
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'NĂNG LƯỢNG (CALO)',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textGray),
+                      Text(
+                        res.weight.toLowerCase().contains('100g') ? 'NĂNG LƯỢNG (TRÊN 100G)' : 'NĂNG LƯỢNG (CALO)',
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textGray),
                       ),
                       const SizedBox(height: 2),
                       Text(

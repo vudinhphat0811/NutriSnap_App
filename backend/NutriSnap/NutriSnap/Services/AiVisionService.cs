@@ -58,34 +58,20 @@ public class AiVisionService
         "TUYỆT ĐỐI không chèn mã markdown ```json, không viết thêm bất kỳ văn bản nào ngoài chuỗi JSON.";
 
     private const string LmStudioVisionOnlyPrompt =
-        "You are an expert culinary vision analyst.\n" +
-        "TASK: Identify the raw cooking ingredients visible in the photo.\n\n" +
-        "RULES:\n" +
-        "1. NON-FOOD REJECTION:\n" +
-        "If the photo does NOT show food or raw cooking ingredients (e.g. human face, clothing, electronics, pets, furniture):\n" +
-        "Return strictly: {\"isIngredient\": false, \"rejectReason\": \"Ảnh không phải nguyên liệu thực phẩm. Vui lòng chụp ảnh nguyên liệu tươi sống (thịt, cá, trứng, rau, củ, quả...)!\"}\n\n" +
-        "2. RAW INGREDIENT RECOGNITION (VISION ONLY):\n" +
-        "- Inspect the image: shape, cut, natural color, leaves, meat grain.\n" +
-        "- \"name\": Exactly ONE concise Vietnamese culinary name (2 to 4 words). Do NOT use parentheses, do NOT use slashes, do NOT append alternate names.\n" +
-        "- \"englishName\": Standard culinary English name of the ingredient (e.g. \"Water Spinach\", \"Beef\", \"Pork\", \"Egg\").\n" +
-        "- \"weight\": Approximate visual portion with unit (e.g. \"~250g\" for greens, \"~300g\" for meats).\n" +
-        "- \"ingredients\": List EACH distinct ingredient visible with its name, englishName, and weight.\n" +
-        "- STRICTLY FORBIDDEN: Do NOT generate calories, protein, carbs, fat, or nutrition comments. Only name and weight.\n\n" +
-        "Return strictly valid JSON:\n" +
-        "{\n" +
-        "  \"isIngredient\": true,\n" +
-        "  \"name\": \"<concise Vietnamese food name>\",\n" +
-        "  \"englishName\": \"<English ingredient name>\",\n" +
-        "  \"weight\": \"<weight with g>\",\n" +
-        "  \"ingredients\": [\n" +
-        "    {\n" +
-        "      \"name\": \"<concise Vietnamese ingredient name>\",\n" +
-        "      \"englishName\": \"<English ingredient name>\",\n" +
-        "      \"weight\": \"<weight with g>\"\n" +
-        "    }\n" +
-        "  ]\n" +
-        "}\n" +
-        "TUYỆT ĐỐI không chèn mã markdown ```json, không viết thêm bất kỳ văn bản nào ngoài chuỗi JSON.";
+        "You are an expert Vietnamese culinary and clinical nutrition assistant.\n" +
+        "Analyze the food photo. Identify the main ingredient. State its Vietnamese name and English culinary name (e.g. Rau muống (Water spinach) or Thịt heo (Pork)).\n\n" +
+        "Output format strictly:\n" +
+        "Tên: [Tên tiếng Việt] ([English culinary name])\n" +
+        "Dinh dưỡng (trên 100g): [Calo] kcal (Protein: [P]g | Carbs: [C]g | Chất béo: [F]g)\n" +
+        "Miêu tả: [Miêu tả độ tươi ngon, màu sắc, tình trạng nguyên liệu và gợi ý 1-2 món ăn chế biến phù hợp]\n\n" +
+        "Ví dụ mẫu chuẩn:\n" +
+        "Tên: Rau muống (Water spinach)\n" +
+        "Dinh dưỡng (trên 100g): 23 kcal (Protein: 2.6g | Carbs: 3.1g | Chất béo: 0.2g)\n" +
+        "Miêu tả: Bó rau muống tươi non, cọng giòn ráo nước, rất thích hợp để làm món rau muống xào tỏi, luộc chấm tương hoặc nấu canh chua.\n\n" +
+        "Ví dụ thịt:\n" +
+        "Tên: Thịt heo nạc (Pork)\n" +
+        "Dinh dưỡng (trên 100g): 145 kcal (Protein: 21g | Carbs: 0g | Chất béo: 7g)\n" +
+        "Miêu tả: Miếng thịt nạc tươi ngon, thớ thịt săn chắc màu hồng sáng và khô ráo, rất thích hợp để làm các món thịt luộc chấm mắm, kho tiêu hoặc xào rau củ.\n";
 
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _config;
@@ -146,9 +132,16 @@ public class AiVisionService
                             return parsed;
                         }
 
-                        _logger.LogInformation("Local AI (LM Studio Qwen2.5-VL) nhận diện thành công: {Name} ({En}) - {Weight}. Đang chuyển giao cho AI API làm giàu dinh dưỡng & nhận xét tiếng Việt...", parsed.Name, parsed.EnglishName, parsed.Weight);
+                        _logger.LogInformation("Local AI (LM Studio Qwen2.5-VL) nhận diện thành công: {Name} ({En}) - {Calories} ({Weight}).", parsed.Name, parsed.EnglishName, parsed.Calories, parsed.Weight);
 
-                        // Tách bạch trách nhiệm: Local AI nhận diện ảnh xong, AI API đảm nhận toàn bộ tính toán dinh dưỡng & nhận xét
+                        // Nếu Local AI đã có nhận xét và thông số dinh dưỡng trên 100g, hoàn tất 100% thuần Offline
+                        if (!string.IsNullOrWhiteSpace(parsed.NutritionComment) && parsed.CalorieNumber > 0)
+                        {
+                            _logger.LogInformation("Hoàn tất phân tích 100% bằng Local AI (LM Studio Qwen2.5-VL)");
+                            return parsed;
+                        }
+
+                        // Tách bạch trách nhiệm dự phòng: nếu thiếu nhận xét/dinh dưỡng, AI API làm giàu thêm
                         await EnrichNutritionWithCloudAiAsync(parsed);
                         return parsed;
                     }
@@ -254,17 +247,12 @@ public class AiVisionService
                             {
                                 url = $"data:{contentType};base64,{base64}"
                             }
-                        },
-                        new
-                        {
-                            type = "text",
-                            text = "Identify what raw cooking ingredients are visible in this image. Return valid JSON containing isIngredient, name, englishName, weight, ingredients."
                         }
                     }
                 }
             },
             temperature = 0.1,
-            max_tokens = 400
+            max_tokens = 2048
         };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
@@ -331,7 +319,7 @@ public class AiVisionService
                     generationConfig = new
                     {
                         temperature = 0.1,
-                        maxOutputTokens = 1000
+                        maxOutputTokens = 800
                     }
                 };
 
@@ -399,7 +387,7 @@ public class AiVisionService
                 }
             },
             temperature = 0.1,
-            max_tokens = 800
+            max_tokens = 2048
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
@@ -930,10 +918,129 @@ public class AiVisionService
         return s;
     }
 
+    private IngredientAnalysisResultDto? ParseStructuredTextResponse(string rawText, string providerName)
+    {
+        try
+        {
+            var nameMatch = Regex.Match(rawText, @"Tên\s*:\s*(.+)", RegexOptions.IgnoreCase);
+            var nutMatch = Regex.Match(rawText, @"Dinh dưỡng.*:\s*(\d+)\s*kcal(?:\s*\((.*?)\))?", RegexOptions.IgnoreCase);
+            var descMatch = Regex.Match(rawText, @"Miêu tả\s*:\s*(.+)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+            if (!nameMatch.Success) return null;
+
+            string rawName = nameMatch.Groups[1].Value.Trim();
+            if (rawName.Contains('\n')) rawName = rawName.Substring(0, rawName.IndexOf('\n')).Trim();
+            if (rawName.StartsWith("[") && rawName.EndsWith("]")) rawName = rawName.Substring(1, rawName.Length - 2).Trim();
+
+            // Trích xuất tên tiếng Anh trong ngoặc nếu có: ví dụ "Rau muống (Water spinach)" hoặc "Rau diếp xanh (Water spinach)"
+            string extractedEng = "";
+            var parenMatch = Regex.Match(rawName, @"\(([^)]+)\)");
+            if (parenMatch.Success)
+            {
+                extractedEng = parenMatch.Groups[1].Value.Trim();
+            }
+
+            var (cleanName, cleanEngName) = ResolveStandardFoodName(rawName, extractedEng);
+
+            int calories = 150;
+            string protein = "20g Protein";
+            string carbs = "0g Carbs";
+            string fat = "5g Fat";
+
+            if (nutMatch.Success)
+            {
+                if (int.TryParse(nutMatch.Groups[1].Value, out int c)) calories = c;
+                string macroParen = nutMatch.Groups[2].Value;
+                if (!string.IsNullOrWhiteSpace(macroParen))
+                {
+                    var pMatch = Regex.Match(macroParen, @"Protein\s*:\s*([\d\.]+)g?", RegexOptions.IgnoreCase);
+                    if (pMatch.Success) protein = $"{pMatch.Groups[1].Value}g Protein";
+
+                    var cMatch = Regex.Match(macroParen, @"Carbs?\s*:\s*([\d\.]+)g?", RegexOptions.IgnoreCase);
+                    if (cMatch.Success) carbs = $"{cMatch.Groups[1].Value}g Carbs";
+
+                    var fMatch = Regex.Match(macroParen, @"(?:Chất béo|Fat)\s*:\s*([\d\.]+)g?", RegexOptions.IgnoreCase);
+                    if (fMatch.Success) fat = $"{fMatch.Groups[1].Value}g Fat";
+                }
+            }
+
+            string desc = $"{cleanName} tươi ngon, cung cấp nguồn năng lượng và dưỡng chất thiết yếu cho cơ thể.";
+            if (descMatch.Success)
+            {
+                desc = descMatch.Groups[1].Value.Trim();
+                if (desc.StartsWith("[") && desc.EndsWith("]")) desc = desc.Substring(1, desc.Length - 2).Trim();
+                if (desc.StartsWith("\"") && desc.EndsWith("\"")) desc = desc.Substring(1, desc.Length - 2).Trim();
+
+                // Chuẩn hóa tên hiển thị trong câu miêu tả nếu AI dùng tên dịch thô
+                string rawViNameOnly = rawName;
+                int pIdx = rawViNameOnly.IndexOf('(');
+                if (pIdx > 0) rawViNameOnly = rawViNameOnly.Substring(0, pIdx).Trim();
+                if (!string.IsNullOrWhiteSpace(rawViNameOnly) && !cleanName.Equals(rawViNameOnly, StringComparison.OrdinalIgnoreCase))
+                {
+                    desc = desc.Replace(rawViNameOnly, cleanName, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            // Hiệu chuẩn số liệu dinh dưỡng nếu AI 3B bị ảo giác (ví dụ thịt mà calo < 80 kcal)
+            string lowerName = cleanName.ToLower();
+            bool isMeat = lowerName.Contains("heo") || lowerName.Contains("lợn") || lowerName.Contains("bò") || lowerName.Contains("gà") || lowerName.Contains("cá") || lowerName.Contains("tôm") || lowerName.Contains("pork") || lowerName.Contains("beef");
+            if (isMeat && calories < 80)
+            {
+                var calibrated = new DetectedIngredientDto();
+                ApplyFoodTypeNutrition(calibrated, cleanName, "100g");
+                calories = calibrated.CalorieNumber;
+                protein = calibrated.Protein;
+                fat = calibrated.Fat;
+            }
+
+            var result = new IngredientAnalysisResultDto
+            {
+                IsIngredient = true,
+                ProviderName = providerName,
+                Name = cleanName,
+                EnglishName = cleanEngName,
+                Calories = $"{calories} kcal",
+                CalorieNumber = calories,
+                Weight = "100g (chuẩn)",
+                NutritionComment = desc,
+                Protein = protein,
+                Carbs = carbs,
+                Fat = fat,
+                Context = "Phân tích thuần Local AI (Qwen2.5-VL 3B)"
+            };
+
+            result.Ingredients.Add(new DetectedIngredientDto
+            {
+                Name = cleanName,
+                EnglishName = cleanEngName,
+                Calories = $"{calories} kcal",
+                CalorieNumber = calories,
+                Weight = "100g",
+                Protein = protein,
+                Carbs = carbs,
+                Fat = fat
+            });
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("ParseStructuredTextResponse thất bại: {Message}", ex.Message);
+            return null;
+        }
+    }
+
     private IngredientAnalysisResultDto? ParseAiResponse(string rawText, string providerName)
     {
         try
         {
+            // 1. Thử parse theo định dạng văn bản có cấu trúc tiếng Việt (Tên / Dinh dưỡng trên 100g / Miêu tả)
+            if (rawText.Contains("Tên:") && (rawText.Contains("Dinh dưỡng") || rawText.Contains("Miêu tả:")))
+            {
+                var textParsed = ParseStructuredTextResponse(rawText, providerName);
+                if (textParsed != null) return textParsed;
+            }
+
             int start = rawText.IndexOf('{');
             int end = rawText.LastIndexOf('}');
             if (start == -1 || end == -1 || end <= start) return null;
@@ -1085,27 +1192,39 @@ public class AiVisionService
                 }
             }
 
-            if (result.Ingredients.Count == 0)
+            // Đảm bảo nguyên liệu chính (cleanName) luôn luôn xuất hiện ở VỊ TRÍ ĐẦU TIÊN của danh sách ingredients
+            var primaryIdx = result.Ingredients.FindIndex(i =>
+                i.Name.Equals(cleanName, StringComparison.OrdinalIgnoreCase) ||
+                i.EnglishName.Equals(cleanEngName, StringComparison.OrdinalIgnoreCase));
+
+            if (primaryIdx > 0)
             {
-                result.Ingredients.Add(new DetectedIngredientDto
+                // Đưa nguyên liệu chính lên đầu danh sách nếu nó bị xếp phía sau đồ trang trí
+                var primary = result.Ingredients[primaryIdx];
+                result.Ingredients.RemoveAt(primaryIdx);
+                result.Ingredients.Insert(0, primary);
+            }
+            else if (primaryIdx == -1)
+            {
+                // Nếu AI quên cho nguyên liệu chính vào ingredients, tự động chèn lên đầu
+                result.Ingredients.Insert(0, new DetectedIngredientDto
                 {
-                    Name = result.Name,
-                    EnglishName = result.EnglishName,
+                    Name = cleanName,
+                    EnglishName = cleanEngName,
                     Calories = result.Calories,
                     CalorieNumber = result.CalorieNumber,
-                    Weight = result.Weight,
+                    Weight = cleanWeight,
                     Protein = result.Protein,
                     Carbs = result.Carbs,
                     Fat = result.Fat,
                     NutritionComment = result.NutritionComment
                 });
             }
-            else if (result.Ingredients.Count == 1)
-            {
-                // Đồng bộ tên gốc với nguyên liệu duy nhất
-                result.Name = result.Ingredients[0].Name;
-                result.EnglishName = result.Ingredients[0].EnglishName;
-            }
+
+            // Đồng bộ tên gốc của kết quả với nguyên liệu chính đầu tiên
+            result.Name = result.Ingredients[0].Name;
+            result.EnglishName = result.Ingredients[0].EnglishName;
+            result.Weight = result.Ingredients[0].Weight;
 
             return result;
         }
