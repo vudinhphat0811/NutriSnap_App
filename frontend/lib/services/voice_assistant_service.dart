@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -34,9 +35,32 @@ class VoiceAssistantService {
   int _silentTickCount = 0;
   bool _hasDetectedVoice = false;
   Function(bool isListening)? _currentListeningStateCallback;
+  Function(String finalWords)? _currentDoneCallback;
+
+  String? _vietnameseLocaleId;
 
   bool get isListening => _isListening;
   bool get isSpeechAvailable => _isSpeechInitialized;
+  String get currentRecognizedWords => _currentRecognizedWords;
+
+  void _finishAndSubmitCurrentWords() {
+    _silenceTimer?.cancel();
+    _silenceTimer = null;
+
+    final words = _currentRecognizedWords.trim();
+    final wasListening = _isListening;
+    _isListening = false;
+
+    if (wasListening) {
+      _currentListeningStateCallback?.call(false);
+    }
+
+    if (words.isNotEmpty) {
+      debugPrint('[VoiceAssistant] Chốt câu và nộp kết quả thành công: "$words"');
+      _currentRecognizedWords = '';
+      _currentDoneCallback?.call(words);
+    }
+  }
 
   void _notifyListeningStopped() {
     _silenceTimer?.cancel();
@@ -48,36 +72,74 @@ class VoiceAssistantService {
   }
 
   /// Khởi tạo Micro & Bộ đọc Tiếng Việt
-  Future<void> init() async {
+  Future<bool> init() async {
     try {
+      // 1. Kiểm tra & yêu cầu quyền Microphone
+      final status = await Permission.microphone.request();
+      if (!status.isGranted) {
+        debugPrint('[VoiceAssistant] Microphone permission not granted: $status');
+        _isSpeechInitialized = false;
+        return false;
+      }
+
+      // 2. Khởi tạo Speech-To-Text nhận diện tiếng Việt
       if (!_isSpeechInitialized) {
         _isSpeechInitialized = await _speech.initialize(
           onStatus: (status) {
             debugPrint('[VoiceAssistant] Speech status: $status');
             if (status == 'notListening' || status == 'done') {
-              _notifyListeningStopped();
+              if (_currentRecognizedWords.trim().isNotEmpty) {
+                _finishAndSubmitCurrentWords();
+              } else {
+                _notifyListeningStopped();
+              }
             }
           },
           onError: (error) {
             debugPrint('[VoiceAssistant] Speech error: ${error.errorMsg}');
-            _notifyListeningStopped();
+            if (_currentRecognizedWords.trim().isNotEmpty) {
+              _finishAndSubmitCurrentWords();
+            } else {
+              _notifyListeningStopped();
+            }
           },
-          finalTimeout: const Duration(milliseconds: 2000),
+          debugLogging: kDebugMode,
         );
+
+        if (_isSpeechInitialized) {
+          try {
+            final locales = await _speech.locales();
+            for (final l in locales) {
+              if (l.localeId.toLowerCase().startsWith('vi')) {
+                _vietnameseLocaleId = l.localeId;
+                break;
+              }
+            }
+            _vietnameseLocaleId ??= 'vi_VN';
+            debugPrint('[VoiceAssistant] Selected Speech Locale: $_vietnameseLocaleId');
+          } catch (e) {
+            _vietnameseLocaleId = 'vi_VN';
+          }
+        }
       }
 
       await _tts.setLanguage('vi-VN');
       await _tts.setSpeechRate(0.5);
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
+
+      return _isSpeechInitialized;
     } catch (e) {
       debugPrint('[VoiceAssistant] Init error: $e');
+      _isSpeechInitialized = false;
+      return false;
     }
   }
 
   /// Bắt đầu nghe giọng nói tiếng Việt với bộ đếm 2s im lặng tự động chốt câu
-  Future<void> startListening({
+  Future<bool> startListening({
     required Function(String recognizedWords) onResult,
+    required Function(String finalWords) onDone,
     required Function(bool isListening) onListeningState,
   }) async {
     if (!_isSpeechInitialized) {
@@ -86,13 +148,14 @@ class VoiceAssistantService {
 
     if (!_isSpeechInitialized) {
       onListeningState(false);
-      return;
+      return false;
     }
 
     _currentRecognizedWords = '';
     _silenceTimer?.cancel();
     _silenceTimer = null;
     _currentListeningStateCallback = onListeningState;
+    _currentDoneCallback = onDone;
     _isListening = true;
     onListeningState(true);
 
@@ -107,29 +170,46 @@ class VoiceAssistantService {
             // Đếm lùi đúng 2 giây im lặng: nếu người dùng nói xong và im lặng 2s -> tự động chốt & gửi
             _silenceTimer?.cancel();
             _silenceTimer = Timer(const Duration(milliseconds: 2000), () async {
-              debugPrint('[VoiceAssistant] 2s im lặng -> tự động dừng nghe & chốt câu: "$_currentRecognizedWords"');
-              await stopListening();
-              _notifyListeningStopped();
+              debugPrint('[VoiceAssistant] 2s im lặng -> tự động chốt câu: "$_currentRecognizedWords"');
+              await _speech.stop();
+              _finishAndSubmitCurrentWords();
             });
           }
 
-          if (result.finalResult) {
-            _notifyListeningStopped();
+          if (result.finalResult && words.isNotEmpty) {
+            // Android đã chốt kết quả câu nói, đợi thêm 800ms nếu người dùng dừng hẳn thì chốt
+            _silenceTimer?.cancel();
+            _silenceTimer = Timer(const Duration(milliseconds: 800), () async {
+              await _speech.stop();
+              _finishAndSubmitCurrentWords();
+            });
           }
         },
         listenOptions: SpeechListenOptions(
-          localeId: 'vi_VN',
-          listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 2),
-          listenMode: ListenMode.confirmation,
-          cancelOnError: true,
+          localeId: _vietnameseLocaleId ?? 'vi_VN',
+          listenFor: const Duration(seconds: 40),
+          pauseFor: const Duration(seconds: 4),
+          listenMode: ListenMode.dictation,
+          cancelOnError: false,
           partialResults: true,
         ),
       );
+      return true;
     } catch (e) {
       debugPrint('[VoiceAssistant] Listen error: $e');
       _notifyListeningStopped();
+      return false;
     }
+  }
+
+  /// Dừng nghe và lập tức nộp câu lệnh nếu có
+  Future<void> stopListeningAndSubmit() async {
+    _silenceTimer?.cancel();
+    _silenceTimer = null;
+    try {
+      await _speech.stop();
+    } catch (_) {}
+    _finishAndSubmitCurrentWords();
   }
 
   /// Dừng nghe và hủy bộ hẹn giờ im lặng
@@ -139,13 +219,16 @@ class VoiceAssistantService {
     _amplitudeTimer?.cancel();
     _amplitudeTimer = null;
     if (_isListening) {
-      await _speech.stop();
+      try {
+        await _speech.stop();
+      } catch (_) {}
       try {
         if (await _audioRecorder.isRecording()) {
           await _audioRecorder.stop();
         }
       } catch (_) {}
       _isListening = false;
+      _currentListeningStateCallback?.call(false);
     }
   }
 

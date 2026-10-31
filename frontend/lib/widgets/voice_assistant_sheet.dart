@@ -103,42 +103,38 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
 
   Future<void> _toggleListening() async {
     if (_isListening) {
+      await _voiceService.stopListeningAndSubmit();
       if (mounted) {
-        setState(() {
-          _isListening = false;
-          _isProcessing = true;
-          _liveSpeechText = 'Đang phân tích âm thanh giọng nói...';
-        });
+        setState(() => _isListening = false);
       }
-      final response = await _voiceService.stopAudioRecordingAndProcess();
-      _handleAudioResponse(response);
     } else {
       setState(() {
-        _liveSpeechText = 'Đang lắng nghe...';
+        _liveSpeechText = '';
         _isListening = true;
         _hasSentCurrentPrompt = false;
       });
 
-      final started = await _voiceService.startAudioRecording(
-        onAmplitudeChanged: (db) {
-          if (mounted && _isListening) {
-            if (db > -36 && _liveSpeechText != 'Đang nghe bạn nói... (Dừng 2s tự động gửi)') {
-              setState(() {
-                _liveSpeechText = 'Đang nghe bạn nói... (Dừng 2s tự động gửi)';
-              });
-            }
+      final started = await _voiceService.startListening(
+        onResult: (words) {
+          if (mounted) {
+            setState(() {
+              _liveSpeechText = words;
+            });
           }
         },
-        onSilenceTimeout: () async {
-          if (mounted && _isListening && !_hasSentCurrentPrompt && !_isProcessing) {
+        onDone: (words) {
+          if (mounted && words.trim().isNotEmpty && !_hasSentCurrentPrompt && !_isProcessing) {
             _hasSentCurrentPrompt = true;
             setState(() {
               _isListening = false;
-              _isProcessing = true;
-              _liveSpeechText = 'Đang nhận diện giọng nói & dinh dưỡng...';
+              _liveSpeechText = words;
             });
-            final response = await _voiceService.stopAudioRecordingAndProcess();
-            _handleAudioResponse(response);
+            _handleSendPrompt(words.trim());
+          }
+        },
+        onListeningState: (listening) {
+          if (mounted) {
+            setState(() => _isListening = listening);
           }
         },
       );
@@ -146,46 +142,15 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
       if (!started && mounted) {
         setState(() {
           _isListening = false;
-          _liveSpeechText = '';
+          _isTextMode = true;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Vui lòng cấp quyền Microphone để sử dụng tính năng giọng nói.')),
+          const SnackBar(
+            content: Text('Không thể kích hoạt Micro/Nhận diện giọng nói. Vui lòng cấp quyền Microphone hoặc gõ phím bên dưới.'),
+            duration: Duration(seconds: 3),
+          ),
         );
       }
-    }
-  }
-
-  void _handleAudioResponse(VoiceAssistantResponse response) {
-    if (!mounted) return;
-
-    final userText = (response.userPrompt != null && response.userPrompt!.isNotEmpty)
-        ? response.userPrompt!
-        : 'Lệnh bằng giọng nói';
-
-    setState(() {
-      _isProcessing = false;
-      _liveSpeechText = '';
-      _messages.add(_ChatMessage(isUser: true, text: userText));
-      _messages.add(_ChatMessage(
-        isUser: false,
-        text: response.spokenReply,
-        response: response,
-      ));
-    });
-    _scrollToBottom();
-
-    // Tự động đọc bằng giọng nói tiếng Việt
-    _voiceService.speak(response.spokenReply);
-
-    // Nếu là lệnh chuyển trang
-    if (response.actionType == 'navigate' && response.navigateData != null) {
-      final screen = response.navigateData!.targetScreen;
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        if (mounted) {
-          Navigator.pop(context);
-          widget.onNavigate?.call(screen);
-        }
-      });
     }
   }
 
@@ -201,15 +166,17 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
 
     final response = await _voiceService.processCommand(prompt);
 
-    setState(() {
-      _isProcessing = false;
-      _messages.add(_ChatMessage(
-        isUser: false,
-        text: response.spokenReply,
-        response: response,
-      ));
-    });
-    _scrollToBottom();
+    if (mounted) {
+      setState(() {
+        _isProcessing = false;
+        _messages.add(_ChatMessage(
+          isUser: false,
+          text: response.spokenReply,
+          response: response,
+        ));
+      });
+      _scrollToBottom();
+    }
 
     // Tự động đọc bằng giọng nói tiếng Việt
     _voiceService.speak(response.spokenReply);
