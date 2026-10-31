@@ -36,7 +36,6 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
   bool _isListening = false;
   bool _isProcessing = false;
   bool _isTextMode = false;
-  bool _hasSentCurrentPrompt = false;
   String _liveSpeechText = '';
 
   final List<_ChatMessage> _messages = [];
@@ -111,7 +110,6 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
       setState(() {
         _liveSpeechText = '';
         _isListening = true;
-        _hasSentCurrentPrompt = false;
       });
 
       final started = await _voiceService.startListening(
@@ -122,14 +120,53 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
             });
           }
         },
-        onDone: (words) {
-          if (mounted && words.trim().isNotEmpty && !_hasSentCurrentPrompt && !_isProcessing) {
-            _hasSentCurrentPrompt = true;
+        onDone: (words, audioPath) async {
+          if (!mounted) return;
+
+          if (words.trim().isNotEmpty) {
+            // Case 1: Nhận diện được chữ trực tiếp từ thiết bị
+            _handleSendPrompt(words.trim());
+          } else if (audioPath != null && audioPath.isNotEmpty) {
+            // Case 2: Thiết bị không nhận diện được chữ -> Backend Gemini phiên âm tệp ghi âm
             setState(() {
               _isListening = false;
-              _liveSpeechText = words;
+              _isProcessing = true;
+              _liveSpeechText = 'Đang chuyển đổi giọng nói thành tin nhắn...';
             });
-            _handleSendPrompt(words.trim());
+            _scrollToBottom();
+
+            final response = await _voiceService.processAudioFile(audioPath);
+            if (!mounted) return;
+
+            final userPromptText = (response.userPrompt != null && response.userPrompt!.isNotEmpty)
+                ? response.userPrompt!
+                : 'Lệnh bằng giọng nói';
+
+            setState(() {
+              _isProcessing = false;
+              _liveSpeechText = '';
+              // LẬP TỨC CHUYỂN THÀNH TIN NHẮN NGƯỜI DÙNG VÀO HỘI THOẠI:
+              _messages.add(_ChatMessage(isUser: true, text: userPromptText));
+              // VÀ TIN NHẮN TRẢ LỜI CỦA AI:
+              _messages.add(_ChatMessage(
+                isUser: false,
+                text: response.spokenReply,
+                response: response,
+              ));
+            });
+            _scrollToBottom();
+
+            _voiceService.speak(response.spokenReply);
+
+            if (response.actionType == 'navigate' && response.navigateData != null) {
+              final screen = response.navigateData!.targetScreen;
+              Future.delayed(const Duration(milliseconds: 1500), () {
+                if (mounted) {
+                  Navigator.pop(context);
+                  widget.onNavigate?.call(screen);
+                }
+              });
+            }
           }
         },
         onListeningState: (listening) {

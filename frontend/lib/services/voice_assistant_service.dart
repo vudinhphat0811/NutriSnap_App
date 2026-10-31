@@ -35,7 +35,7 @@ class VoiceAssistantService {
   int _silentTickCount = 0;
   bool _hasDetectedVoice = false;
   Function(bool isListening)? _currentListeningStateCallback;
-  Function(String finalWords)? _currentDoneCallback;
+  Function(String finalWords, String? audioFilePath)? _currentDoneCallback;
 
   String? _vietnameseLocaleId;
 
@@ -43,11 +43,15 @@ class VoiceAssistantService {
   bool get isSpeechAvailable => _isSpeechInitialized;
   String get currentRecognizedWords => _currentRecognizedWords;
 
-  void _finishAndSubmitCurrentWords() {
+  void _finishAndSubmitCurrentWords() async {
     _silenceTimer?.cancel();
     _silenceTimer = null;
+    _amplitudeTimer?.cancel();
+    _amplitudeTimer = null;
 
     final words = _currentRecognizedWords.trim();
+    _currentRecognizedWords = '';
+
     final wasListening = _isListening;
     _isListening = false;
 
@@ -55,19 +59,24 @@ class VoiceAssistantService {
       _currentListeningStateCallback?.call(false);
     }
 
-    if (words.isNotEmpty) {
-      debugPrint('[VoiceAssistant] Chốt câu và nộp kết quả thành công: "$words"');
-      _currentRecognizedWords = '';
-      _currentDoneCallback?.call(words);
-    }
-  }
+    try {
+      await _speech.stop();
+    } catch (_) {}
 
-  void _notifyListeningStopped() {
-    _silenceTimer?.cancel();
-    _silenceTimer = null;
-    if (_isListening) {
-      _isListening = false;
-      _currentListeningStateCallback?.call(false);
+    String? audioPath;
+    try {
+      if (await _audioRecorder.isRecording()) {
+        audioPath = await _audioRecorder.stop();
+      }
+    } catch (_) {}
+    audioPath ??= _currentAudioPath;
+
+    debugPrint('[VoiceAssistant] _finishAndSubmitCurrentWords: text="$words", audioPath=$audioPath');
+
+    if (words.isNotEmpty) {
+      _currentDoneCallback?.call(words, null);
+    } else if (audioPath != null && File(audioPath).existsSync()) {
+      _currentDoneCallback?.call('', audioPath);
     }
   }
 
@@ -90,8 +99,6 @@ class VoiceAssistantService {
             if (status == 'notListening' || status == 'done') {
               if (_currentRecognizedWords.trim().isNotEmpty) {
                 _finishAndSubmitCurrentWords();
-              } else {
-                _notifyListeningStopped();
               }
             }
           },
@@ -99,8 +106,6 @@ class VoiceAssistantService {
             debugPrint('[VoiceAssistant] Speech error: ${error.errorMsg}');
             if (_currentRecognizedWords.trim().isNotEmpty) {
               _finishAndSubmitCurrentWords();
-            } else {
-              _notifyListeningStopped();
             }
           },
           debugLogging: kDebugMode,
@@ -128,7 +133,7 @@ class VoiceAssistantService {
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
 
-      return _isSpeechInitialized;
+      return true;
     } catch (e) {
       debugPrint('[VoiceAssistant] Init error: $e');
       _isSpeechInitialized = false;
@@ -137,16 +142,14 @@ class VoiceAssistantService {
   }
 
   /// Bắt đầu nghe giọng nói tiếng Việt với bộ đếm 2s im lặng tự động chốt câu
+  /// Chạy song song Speech-To-Text và Ghi âm dự phòng 100%
   Future<bool> startListening({
     required Function(String recognizedWords) onResult,
-    required Function(String finalWords) onDone,
+    required Function(String finalWords, String? audioFilePath) onDone,
     required Function(bool isListening) onListeningState,
   }) async {
-    if (!_isSpeechInitialized) {
-      await init();
-    }
-
-    if (!_isSpeechInitialized) {
+    final ready = await init();
+    if (!ready) {
       onListeningState(false);
       return false;
     }
@@ -154,61 +157,105 @@ class VoiceAssistantService {
     _currentRecognizedWords = '';
     _silenceTimer?.cancel();
     _silenceTimer = null;
+    _amplitudeTimer?.cancel();
+    _amplitudeTimer = null;
     _currentListeningStateCallback = onListeningState;
     _currentDoneCallback = onDone;
     _isListening = true;
+    _hasDetectedVoice = false;
+    _silentTickCount = 0;
     onListeningState(true);
 
+    // 1. Khởi động ghi âm AAC phần cứng ngầm (phòng khi device không có Speech Engine)
     try {
-      await _speech.listen(
-        onResult: (result) {
-          final words = result.recognizedWords.trim();
-          if (words.isNotEmpty) {
-            _currentRecognizedWords = words;
-            onResult(words);
+      final tempDir = await getTemporaryDirectory();
+      final filePath = '${tempDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      _currentAudioPath = filePath;
 
-            // Đếm lùi đúng 2 giây im lặng: nếu người dùng nói xong và im lặng 2s -> tự động chốt & gửi
-            _silenceTimer?.cancel();
-            _silenceTimer = Timer(const Duration(milliseconds: 2000), () async {
-              debugPrint('[VoiceAssistant] 2s im lặng -> tự động chốt câu: "$_currentRecognizedWords"');
-              await _speech.stop();
-              _finishAndSubmitCurrentWords();
-            });
-          }
-
-          if (result.finalResult && words.isNotEmpty) {
-            // Android đã chốt kết quả câu nói, đợi thêm 800ms nếu người dùng dừng hẳn thì chốt
-            _silenceTimer?.cancel();
-            _silenceTimer = Timer(const Duration(milliseconds: 800), () async {
-              await _speech.stop();
-              _finishAndSubmitCurrentWords();
-            });
-          }
-        },
-        listenOptions: SpeechListenOptions(
-          localeId: _vietnameseLocaleId ?? 'vi_VN',
-          listenFor: const Duration(seconds: 40),
-          pauseFor: const Duration(seconds: 4),
-          listenMode: ListenMode.dictation,
-          cancelOnError: false,
-          partialResults: true,
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 64000,
+          sampleRate: 16000,
         ),
+        path: filePath,
       );
-      return true;
+
+      // Theo dõi biên độ: người dùng nói xong và im lặng 2s -> tự động chốt
+      _amplitudeTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) async {
+        if (!_isListening) {
+          timer.cancel();
+          return;
+        }
+
+        try {
+          final amp = await _audioRecorder.getAmplitude();
+          final currentDb = amp.current;
+
+          if (currentDb > -36) {
+            _hasDetectedVoice = true;
+            _silentTickCount = 0;
+          } else if (_hasDetectedVoice) {
+            _silentTickCount++;
+            // 13 ticks * 150ms ≈ 2 giây im lặng
+            if (_silentTickCount >= 13) {
+              debugPrint('[VoiceAssistant] 2 giây im lặng (qua Amplitude) -> TỰ ĐỘNG CHỐT CÂU!');
+              timer.cancel();
+              _finishAndSubmitCurrentWords();
+            }
+          }
+        } catch (_) {}
+      });
     } catch (e) {
-      debugPrint('[VoiceAssistant] Listen error: $e');
-      _notifyListeningStopped();
-      return false;
+      debugPrint('[VoiceAssistant] Lỗi bật recorder dự phòng: $e');
     }
+
+    // 2. Chạy Speech-To-Text nhận diện chữ hiển thị ngay trên màn hình
+    try {
+      if (_isSpeechInitialized) {
+        await _speech.listen(
+          onResult: (result) {
+            final words = result.recognizedWords.trim();
+            if (words.isNotEmpty) {
+              _hasDetectedVoice = true;
+              _silentTickCount = 0;
+              _currentRecognizedWords = words;
+              onResult(words);
+
+              // Đếm lùi đúng 2 giây im lặng: nếu người dùng nói xong và im lặng 2s -> tự động chốt & gửi
+              _silenceTimer?.cancel();
+              _silenceTimer = Timer(const Duration(milliseconds: 2000), () {
+                debugPrint('[VoiceAssistant] 2s im lặng (qua STT) -> tự động chốt câu: "$_currentRecognizedWords"');
+                _finishAndSubmitCurrentWords();
+              });
+            }
+
+            if (result.finalResult && words.isNotEmpty) {
+              _silenceTimer?.cancel();
+              _silenceTimer = Timer(const Duration(milliseconds: 600), () {
+                _finishAndSubmitCurrentWords();
+              });
+            }
+          },
+          listenOptions: SpeechListenOptions(
+            localeId: _vietnameseLocaleId ?? 'vi_VN',
+            listenFor: const Duration(seconds: 40),
+            pauseFor: const Duration(seconds: 4),
+            listenMode: ListenMode.dictation,
+            cancelOnError: false,
+            partialResults: true,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[VoiceAssistant] Speech-To-Text listen error: $e');
+    }
+
+    return true;
   }
 
   /// Dừng nghe và lập tức nộp câu lệnh nếu có
   Future<void> stopListeningAndSubmit() async {
-    _silenceTimer?.cancel();
-    _silenceTimer = null;
-    try {
-      await _speech.stop();
-    } catch (_) {}
     _finishAndSubmitCurrentWords();
   }
 
@@ -229,6 +276,39 @@ class VoiceAssistantService {
       } catch (_) {}
       _isListening = false;
       _currentListeningStateCallback?.call(false);
+    }
+  }
+
+  /// Xử lý tệp âm thanh gửi lên Backend AI Gemini chuyển thành chữ và trả lời
+  Future<VoiceAssistantResponse> processAudioFile(String audioFilePath) async {
+    try {
+      final file = File(audioFilePath);
+      if (!file.existsSync()) {
+        return const VoiceAssistantResponse(
+          actionType: 'general_chat',
+          userPrompt: 'Lệnh bằng giọng nói',
+          spokenReply: 'Không tìm thấy tệp âm thanh vừa ghi. Bạn thử lại nhé!',
+        );
+      }
+
+      final fileBytes = await file.readAsBytes();
+      if (fileBytes.isEmpty) {
+        return const VoiceAssistantResponse(
+          actionType: 'general_chat',
+          userPrompt: 'Lệnh bằng giọng nói',
+          spokenReply: 'Âm thanh quá ngắn hoặc chưa có tiếng nói. Bạn thử lại nhé!',
+        );
+      }
+
+      final base64Audio = base64Encode(fileBytes);
+      return await processAudioCommand(base64Audio, 'audio/mp4');
+    } catch (e) {
+      debugPrint('[VoiceAssistant] Lỗi gửi tệp âm thanh: $e');
+      return const VoiceAssistantResponse(
+        actionType: 'general_chat',
+        userPrompt: 'Lệnh bằng giọng nói',
+        spokenReply: 'Đã xảy ra lỗi khi phân tích giọng nói. Bạn thử lại nhé!',
+      );
     }
   }
 
