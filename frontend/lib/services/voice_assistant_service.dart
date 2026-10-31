@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 import '../constants/api_constants.dart';
@@ -20,112 +19,32 @@ class VoiceAssistantService {
   static final VoiceAssistantService instance = VoiceAssistantService._internal();
   VoiceAssistantService._internal();
 
-  final SpeechToText _speech = SpeechToText();
   final FlutterTts _tts = FlutterTts();
   final AudioRecorder _audioRecorder = AudioRecorder();
 
-  bool _isSpeechInitialized = false;
   bool _isListening = false;
   bool isTtsEnabled = true;
 
-  Timer? _silenceTimer;
   Timer? _amplitudeTimer;
-  String _currentRecognizedWords = '';
   String? _currentAudioPath;
   int _silentTickCount = 0;
   bool _hasDetectedVoice = false;
-  Function(bool isListening)? _currentListeningStateCallback;
-  Function(String finalWords, String? audioFilePath)? _currentDoneCallback;
 
-  String? _vietnameseLocaleId;
+  Function(bool isListening)? _currentListeningStateCallback;
+  Function(VoiceAssistantResponse response)? _currentDoneCallback;
+  Function(String statusMessage)? _currentStatusCallback;
+  Function(double volume)? _currentVolumeCallback;
 
   bool get isListening => _isListening;
-  bool get isSpeechAvailable => _isSpeechInitialized;
-  String get currentRecognizedWords => _currentRecognizedWords;
+  bool get isSpeechAvailable => true;
 
-  void _finishAndSubmitCurrentWords() async {
-    _silenceTimer?.cancel();
-    _silenceTimer = null;
-    _amplitudeTimer?.cancel();
-    _amplitudeTimer = null;
-
-    final words = _currentRecognizedWords.trim();
-    _currentRecognizedWords = '';
-
-    final wasListening = _isListening;
-    _isListening = false;
-
-    if (wasListening) {
-      _currentListeningStateCallback?.call(false);
-    }
-
-    try {
-      await _speech.stop();
-    } catch (_) {}
-
-    String? audioPath;
-    try {
-      if (await _audioRecorder.isRecording()) {
-        audioPath = await _audioRecorder.stop();
-      }
-    } catch (_) {}
-    audioPath ??= _currentAudioPath;
-
-    debugPrint('[VoiceAssistant] _finishAndSubmitCurrentWords: text="$words", audioPath=$audioPath');
-
-    if (words.isNotEmpty) {
-      _currentDoneCallback?.call(words, null);
-    } else if (audioPath != null && File(audioPath).existsSync()) {
-      _currentDoneCallback?.call('', audioPath);
-    }
-  }
-
-  /// Khởi tạo Micro & Bộ đọc Tiếng Việt
+  /// Khởi tạo Micro & Bộ đọc Tiếng Việt (TTS)
   Future<bool> init() async {
     try {
-      // 1. Kiểm tra & yêu cầu quyền Microphone
       final status = await Permission.microphone.request();
       if (!status.isGranted) {
         debugPrint('[VoiceAssistant] Microphone permission not granted: $status');
-        _isSpeechInitialized = false;
         return false;
-      }
-
-      // 2. Khởi tạo Speech-To-Text nhận diện tiếng Việt
-      if (!_isSpeechInitialized) {
-        _isSpeechInitialized = await _speech.initialize(
-          onStatus: (status) {
-            debugPrint('[VoiceAssistant] Speech status: $status');
-            if (status == 'notListening' || status == 'done') {
-              if (_currentRecognizedWords.trim().isNotEmpty) {
-                _finishAndSubmitCurrentWords();
-              }
-            }
-          },
-          onError: (error) {
-            debugPrint('[VoiceAssistant] Speech error: ${error.errorMsg}');
-            if (_currentRecognizedWords.trim().isNotEmpty) {
-              _finishAndSubmitCurrentWords();
-            }
-          },
-          debugLogging: kDebugMode,
-        );
-
-        if (_isSpeechInitialized) {
-          try {
-            final locales = await _speech.locales();
-            for (final l in locales) {
-              if (l.localeId.toLowerCase().startsWith('vi')) {
-                _vietnameseLocaleId = l.localeId;
-                break;
-              }
-            }
-            _vietnameseLocaleId ??= 'vi_VN';
-            debugPrint('[VoiceAssistant] Selected Speech Locale: $_vietnameseLocaleId');
-          } catch (e) {
-            _vietnameseLocaleId = 'vi_VN';
-          }
-        }
       }
 
       await _tts.setLanguage('vi-VN');
@@ -136,17 +55,19 @@ class VoiceAssistantService {
       return true;
     } catch (e) {
       debugPrint('[VoiceAssistant] Init error: $e');
-      _isSpeechInitialized = false;
       return false;
     }
   }
 
-  /// Bắt đầu nghe giọng nói tiếng Việt với bộ đếm 2s im lặng tự động chốt câu
-  /// Chạy song song Speech-To-Text và Ghi âm dự phòng 100%
-  Future<bool> startListening({
-    required Function(String recognizedWords) onResult,
-    required Function(String finalWords, String? audioFilePath) onDone,
+  /// Lắng nghe giọng nói thông minh (Kiểu Duolingo / ELSA Speak):
+  /// - Ghi âm trực tiếp phần cứng Microphone chuẩn AAC LC 16kHz
+  /// - Bắn ra biên độ âm thanh liên tục mỗi 70ms để hiển thị sóng âm sống động
+  /// - Tự động phát hiện khi người dùng nói xong và im lặng 1.6s -> Tự động chốt và chuyển thành tin nhắn
+  Future<bool> startSmartListening({
+    required Function(double volume) onVolumeChanged,
+    required Function(VoiceAssistantResponse response) onCompleted,
     required Function(bool isListening) onListeningState,
+    required Function(String status) onStatusUpdate,
   }) async {
     final ready = await init();
     if (!ready) {
@@ -154,19 +75,13 @@ class VoiceAssistantService {
       return false;
     }
 
-    _currentRecognizedWords = '';
-    _silenceTimer?.cancel();
-    _silenceTimer = null;
-    _amplitudeTimer?.cancel();
-    _amplitudeTimer = null;
-    _currentListeningStateCallback = onListeningState;
-    _currentDoneCallback = onDone;
-    _isListening = true;
-    _hasDetectedVoice = false;
-    _silentTickCount = 0;
-    onListeningState(true);
+    await stopListening();
 
-    // 1. Khởi động ghi âm AAC phần cứng ngầm (phòng khi device không có Speech Engine)
+    _currentListeningStateCallback = onListeningState;
+    _currentDoneCallback = onCompleted;
+    _currentStatusCallback = onStatusUpdate;
+    _currentVolumeCallback = onVolumeChanged;
+
     try {
       final tempDir = await getTemporaryDirectory();
       final filePath = '${tempDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
@@ -177,12 +92,19 @@ class VoiceAssistantService {
           encoder: AudioEncoder.aacLc,
           bitRate: 64000,
           sampleRate: 16000,
+          numChannels: 1,
         ),
         path: filePath,
       );
 
-      // Theo dõi biên độ: người dùng nói xong và im lặng 2s -> tự động chốt
-      _amplitudeTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) async {
+      _isListening = true;
+      _hasDetectedVoice = false;
+      _silentTickCount = 0;
+      onListeningState(true);
+      onStatusUpdate('Đang lắng nghe giọng nói...');
+
+      // Lắng nghe biên độ âm thanh mỗi 70ms
+      _amplitudeTimer = Timer.periodic(const Duration(milliseconds: 70), (timer) async {
         if (!_isListening) {
           timer.cancel();
           return;
@@ -192,90 +114,100 @@ class VoiceAssistantService {
           final amp = await _audioRecorder.getAmplitude();
           final currentDb = amp.current;
 
-          if (currentDb > -36) {
+          // Chuẩn hóa volume từ 0.0 đến 1.0 (ngưỡng từ -55dB đến -10dB)
+          final normalized = ((currentDb + 55) / 45).clamp(0.0, 1.0);
+          _currentVolumeCallback?.call(normalized);
+
+          // Phát hiện giọng nói: lớn hơn -42 dB là có người đang nói
+          if (currentDb > -42.0) {
             _hasDetectedVoice = true;
             _silentTickCount = 0;
+            _currentStatusCallback?.call('Đang nghe bạn nói...');
           } else if (_hasDetectedVoice) {
             _silentTickCount++;
-            // 13 ticks * 150ms ≈ 2 giây im lặng
-            if (_silentTickCount >= 13) {
-              debugPrint('[VoiceAssistant] 2 giây im lặng (qua Amplitude) -> TỰ ĐỘNG CHỐT CÂU!');
+            // 22 ticks * 70ms ≈ 1.54 - 1.6 giây im lặng sau khi nói xong
+            if (_silentTickCount >= 22) {
+              debugPrint('[VoiceAssistant] Im lặng 1.6s sau khi nói -> Tự động chốt và chuyển thành tin nhắn!');
               timer.cancel();
-              _finishAndSubmitCurrentWords();
+              _finishAndSubmitAudio();
             }
           }
         } catch (_) {}
       });
+
+      return true;
     } catch (e) {
-      debugPrint('[VoiceAssistant] Lỗi bật recorder dự phòng: $e');
+      debugPrint('[VoiceAssistant] Lỗi startSmartListening: $e');
+      _isListening = false;
+      onListeningState(false);
+      return false;
     }
+  }
 
-    // 2. Chạy Speech-To-Text nhận diện chữ hiển thị ngay trên màn hình
+  /// Dừng lắng nghe thủ công (bấm nút dừng) và gửi phân tích
+  Future<void> stopListeningAndSubmit() async {
+    _finishAndSubmitAudio();
+  }
+
+  void _finishAndSubmitAudio() async {
+    _amplitudeTimer?.cancel();
+    _amplitudeTimer = null;
+
+    final wasListening = _isListening;
+    _isListening = false;
+    if (wasListening) {
+      _currentListeningStateCallback?.call(false);
+    }
+    _currentVolumeCallback?.call(0.0);
+    _currentStatusCallback?.call('Đang chuyển giọng nói thành tin nhắn...');
+
+    String? audioPath;
     try {
-      if (_isSpeechInitialized) {
-        await _speech.listen(
-          onResult: (result) {
-            final words = result.recognizedWords.trim();
-            if (words.isNotEmpty) {
-              _hasDetectedVoice = true;
-              _silentTickCount = 0;
-              _currentRecognizedWords = words;
-              onResult(words);
-
-              // Đếm lùi đúng 2 giây im lặng: nếu người dùng nói xong và im lặng 2s -> tự động chốt & gửi
-              _silenceTimer?.cancel();
-              _silenceTimer = Timer(const Duration(milliseconds: 2000), () {
-                debugPrint('[VoiceAssistant] 2s im lặng (qua STT) -> tự động chốt câu: "$_currentRecognizedWords"');
-                _finishAndSubmitCurrentWords();
-              });
-            }
-
-            if (result.finalResult && words.isNotEmpty) {
-              _silenceTimer?.cancel();
-              _silenceTimer = Timer(const Duration(milliseconds: 600), () {
-                _finishAndSubmitCurrentWords();
-              });
-            }
-          },
-          listenOptions: SpeechListenOptions(
-            localeId: _vietnameseLocaleId ?? 'vi_VN',
-            listenFor: const Duration(seconds: 40),
-            pauseFor: const Duration(seconds: 4),
-            listenMode: ListenMode.dictation,
-            cancelOnError: false,
-            partialResults: true,
-          ),
-        );
+      if (await _audioRecorder.isRecording()) {
+        audioPath = await _audioRecorder.stop();
       }
     } catch (e) {
-      debugPrint('[VoiceAssistant] Speech-To-Text listen error: $e');
+      debugPrint('[VoiceAssistant] Lỗi dừng recorder: $e');
+    }
+    audioPath ??= _currentAudioPath;
+
+    if (audioPath == null || !File(audioPath).existsSync()) {
+      _currentDoneCallback?.call(const VoiceAssistantResponse(
+        actionType: 'general_chat',
+        userPrompt: '',
+        spokenReply: 'Chưa thu được âm thanh. Bạn bấm mic và thử nói lại nhé!',
+      ));
+      return;
     }
 
-    return true;
+    final file = File(audioPath);
+    final length = await file.length();
+    if (length < 800) {
+      _currentDoneCallback?.call(const VoiceAssistantResponse(
+        actionType: 'general_chat',
+        userPrompt: '',
+        spokenReply: 'Âm thanh quá ngắn. Bạn vui lòng bấm mic và nói rõ hơn nhé!',
+      ));
+      return;
+    }
+
+    final response = await processAudioFile(audioPath);
+    _currentDoneCallback?.call(response);
   }
 
-  /// Dừng nghe và lập tức nộp câu lệnh nếu có
-  Future<void> stopListeningAndSubmit() async {
-    _finishAndSubmitCurrentWords();
-  }
-
-  /// Dừng nghe và hủy bộ hẹn giờ im lặng
+  /// Hủy bỏ lắng nghe mà không gửi
   Future<void> stopListening() async {
-    _silenceTimer?.cancel();
-    _silenceTimer = null;
     _amplitudeTimer?.cancel();
     _amplitudeTimer = null;
     if (_isListening) {
-      try {
-        await _speech.stop();
-      } catch (_) {}
+      _isListening = false;
+      _currentListeningStateCallback?.call(false);
+      _currentVolumeCallback?.call(0.0);
       try {
         if (await _audioRecorder.isRecording()) {
           await _audioRecorder.stop();
         }
       } catch (_) {}
-      _isListening = false;
-      _currentListeningStateCallback?.call(false);
     }
   }
 

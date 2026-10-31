@@ -81,7 +81,7 @@ public class VoiceAssistantService
         return new VoiceAssistantResponseDto
         {
             ActionType = "general_chat",
-            UserPrompt = "Không thể nhận diện âm thanh",
+            UserPrompt = "Lệnh bằng giọng nói",
             SpokenReply = "Tôi chưa nghe rõ câu nói của bạn. Bạn hãy thử nói lại hoặc gõ bằng bàn phím nhé!"
         };
     }
@@ -167,7 +167,7 @@ public class VoiceAssistantService
             }
         };
 
-        string[] models = { "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest" };
+        string[] models = { "gemini-3.5-transcribe", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest" };
         foreach (var model in models)
         {
             try
@@ -195,6 +195,10 @@ public class VoiceAssistantService
 
                 if (parsed != null && !string.IsNullOrWhiteSpace(parsed.ActionType))
                 {
+                    if (string.IsNullOrWhiteSpace(parsed.UserPrompt))
+                    {
+                        parsed.UserPrompt = "Lệnh bằng giọng nói";
+                    }
                     return parsed;
                 }
             }
@@ -277,7 +281,7 @@ public class VoiceAssistantService
             }
         };
 
-        string[] models = { "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest" };
+        string[] models = { "gemini-3.5-transcribe", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest" };
         foreach (var model in models)
         {
             try
@@ -305,6 +309,10 @@ public class VoiceAssistantService
 
                 if (parsed != null && !string.IsNullOrWhiteSpace(parsed.ActionType))
                 {
+                    if (string.IsNullOrWhiteSpace(parsed.UserPrompt))
+                    {
+                        parsed.UserPrompt = "Lệnh bằng giọng nói";
+                    }
                     return parsed;
                 }
             }

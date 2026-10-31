@@ -36,7 +36,8 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
   bool _isListening = false;
   bool _isProcessing = false;
   bool _isTextMode = false;
-  String _liveSpeechText = '';
+  double _volumeLevel = 0.0;
+  String _statusMessage = '';
 
   final List<_ChatMessage> _messages = [];
 
@@ -104,74 +105,79 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
     if (_isListening) {
       await _voiceService.stopListeningAndSubmit();
       if (mounted) {
-        setState(() => _isListening = false);
+        setState(() {
+          _isListening = false;
+          _isProcessing = true;
+          _statusMessage = 'AI đang chuyển giọng nói thành tin nhắn & phân tích...';
+        });
       }
     } else {
       setState(() {
-        _liveSpeechText = '';
         _isListening = true;
+        _isProcessing = false;
+        _volumeLevel = 0.0;
+        _statusMessage = 'Đang lắng nghe giọng nói...';
       });
 
-      final started = await _voiceService.startListening(
-        onResult: (words) {
+      final started = await _voiceService.startSmartListening(
+        onVolumeChanged: (vol) {
           if (mounted) {
-            setState(() {
-              _liveSpeechText = words;
-            });
+            setState(() => _volumeLevel = vol);
           }
         },
-        onDone: (words, audioPath) async {
-          if (!mounted) return;
-
-          if (words.trim().isNotEmpty) {
-            // Case 1: Nhận diện được chữ trực tiếp từ thiết bị
-            _handleSendPrompt(words.trim());
-          } else if (audioPath != null && audioPath.isNotEmpty) {
-            // Case 2: Thiết bị không nhận diện được chữ -> Backend Gemini phiên âm tệp ghi âm
-            setState(() {
-              _isListening = false;
-              _isProcessing = true;
-              _liveSpeechText = 'Đang chuyển đổi giọng nói thành tin nhắn...';
-            });
-            _scrollToBottom();
-
-            final response = await _voiceService.processAudioFile(audioPath);
-            if (!mounted) return;
-
-            final userPromptText = (response.userPrompt != null && response.userPrompt!.isNotEmpty)
-                ? response.userPrompt!
-                : 'Lệnh bằng giọng nói';
-
-            setState(() {
-              _isProcessing = false;
-              _liveSpeechText = '';
-              // LẬP TỨC CHUYỂN THÀNH TIN NHẮN NGƯỜI DÙNG VÀO HỘI THOẠI:
-              _messages.add(_ChatMessage(isUser: true, text: userPromptText));
-              // VÀ TIN NHẮN TRẢ LỜI CỦA AI:
-              _messages.add(_ChatMessage(
-                isUser: false,
-                text: response.spokenReply,
-                response: response,
-              ));
-            });
-            _scrollToBottom();
-
-            _voiceService.speak(response.spokenReply);
-
-            if (response.actionType == 'navigate' && response.navigateData != null) {
-              final screen = response.navigateData!.targetScreen;
-              Future.delayed(const Duration(milliseconds: 1500), () {
-                if (mounted) {
-                  Navigator.pop(context);
-                  widget.onNavigate?.call(screen);
-                }
-              });
-            }
+        onStatusUpdate: (status) {
+          if (mounted) {
+            setState(() => _statusMessage = status);
           }
         },
         onListeningState: (listening) {
           if (mounted) {
-            setState(() => _isListening = listening);
+            setState(() {
+              _isListening = listening;
+              if (!listening && !_isProcessing) {
+                _isProcessing = true;
+                _statusMessage = 'AI đang chuyển giọng nói thành tin nhắn & phân tích...';
+              }
+            });
+          }
+        },
+        onCompleted: (response) {
+          if (!mounted) return;
+
+          final userPromptText = (response.userPrompt != null && response.userPrompt!.isNotEmpty)
+              ? response.userPrompt!
+              : 'Lệnh bằng giọng nói';
+
+          setState(() {
+            _isListening = false;
+            _isProcessing = false;
+            _volumeLevel = 0.0;
+            _statusMessage = '';
+
+            // 1. CHUYỂN THÀNH TIN NHẮN NGƯỜI DÙNG VÀO HỘI THOẠI
+            _messages.add(_ChatMessage(isUser: true, text: userPromptText));
+
+            // 2. VÀ TIN NHẮN TRẢ LỜI CỦA AI CÙNG THẺ HÀNH ĐỘNG
+            _messages.add(_ChatMessage(
+              isUser: false,
+              text: response.spokenReply,
+              response: response,
+            ));
+          });
+          _scrollToBottom();
+
+          // 3. ĐỌC LỜI THOẠI TRẢ LỜI BẰNG GIỌNG NÓI TIẾNG VIỆT
+          _voiceService.speak(response.spokenReply);
+
+          // 4. CHUYỂN MÀN HÌNH NẾU ĐƯỢC YÊU CẦU
+          if (response.actionType == 'navigate' && response.navigateData != null) {
+            final screen = response.navigateData!.targetScreen;
+            Future.delayed(const Duration(milliseconds: 1500), () {
+              if (mounted) {
+                Navigator.pop(context);
+                widget.onNavigate?.call(screen);
+              }
+            });
           }
         },
       );
@@ -183,7 +189,7 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Không thể kích hoạt Micro/Nhận diện giọng nói. Vui lòng cấp quyền Microphone hoặc gõ phím bên dưới.'),
+            content: Text('Không thể kích hoạt Micro. Vui lòng cấp quyền Microphone trong Cài đặt hoặc gõ phím bên dưới.'),
             duration: Duration(seconds: 3),
           ),
         );
@@ -197,7 +203,7 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
     setState(() {
       _messages.add(_ChatMessage(isUser: true, text: prompt));
       _isProcessing = true;
-      _liveSpeechText = '';
+      _statusMessage = '';
     });
     _scrollToBottom();
 
@@ -736,25 +742,29 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
   Widget _buildLiveTranscriptBanner() {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        color: _isListening ? const Color(0xFFF0FDF4) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _isListening ? const Color(0xFF86EFAC) : const Color(0xFFCBD5E1),
+          width: 1.2,
+        ),
+        boxShadow: const [
+          BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2)),
+        ],
       ),
       child: Row(
         children: [
-          if (_isListening)
-            ScaleTransition(
-              scale: _pulseAnimation,
-              child: const Icon(Icons.mic_rounded, color: Colors.redAccent, size: 18),
-            )
-          else
+          if (_isListening) ...[
+            _buildWaveformBars(),
+            const SizedBox(width: 10),
+          ] else
             const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2.2, color: AppColors.primary),
             ),
           const SizedBox(width: 8),
           Expanded(
@@ -764,23 +774,22 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
               children: [
                 Text(
                   _isListening
-                      ? (_liveSpeechText.isEmpty ? 'Đang lắng nghe bạn nói...' : _liveSpeechText)
-                      : 'AI đang phân tích câu lệnh...',
+                      ? (_statusMessage.isNotEmpty ? _statusMessage : 'Đang lắng nghe bạn nói...')
+                      : 'AI đang chuyển giọng nói thành tin nhắn & phân tích...',
                   style: TextStyle(
                     fontSize: 12.5,
-                    fontWeight: _liveSpeechText.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
-                    fontStyle: _liveSpeechText.isEmpty ? FontStyle.italic : FontStyle.normal,
-                    color: _isListening ? const Color(0xFF1E293B) : const Color(0xFF64748B),
+                    fontWeight: FontWeight.w600,
+                    color: _isListening ? const Color(0xFF047857) : const Color(0xFF334155),
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (_isListening && _liveSpeechText.isNotEmpty)
+                if (_isListening)
                   const Padding(
                     padding: EdgeInsets.only(top: 2),
                     child: Text(
-                      'Dừng nói 2s để tự động chốt câu...',
-                      style: TextStyle(fontSize: 10, color: Color(0xFF10B981), fontWeight: FontWeight.w600),
+                      'Nói xong dừng 1.5s để tự động chốt câu...',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF10B981), fontWeight: FontWeight.w500),
                     ),
                   ),
               ],
@@ -788,6 +797,30 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildWaveformBars() {
+    final heights = [
+      6.0 + _volumeLevel * 14,
+      8.0 + _volumeLevel * 22,
+      10.0 + _volumeLevel * 28,
+      12.0 + _volumeLevel * 24,
+      8.0 + _volumeLevel * 16,
+    ];
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: heights.map((h) {
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 1.5),
+          width: 3.5,
+          height: h.clamp(6.0, 32.0),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10B981),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -872,8 +905,11 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
                   child: AnimatedBuilder(
                     animation: _pulseAnimation,
                     builder: (ctx, child) {
+                      final dynamicScale = _isListening
+                          ? (_pulseAnimation.value + _volumeLevel * 0.18).clamp(1.0, 1.45)
+                          : 1.0;
                       return Transform.scale(
-                        scale: _isListening ? _pulseAnimation.value : 1.0,
+                        scale: dynamicScale,
                         child: Container(
                           width: 58,
                           height: 58,
