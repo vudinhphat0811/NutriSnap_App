@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../constants/app_colors.dart';
 import '../models/barcode_product_model.dart';
+import '../models/fridge_item_model.dart';
 import '../models/ingredient_cut_model.dart';
 import '../services/app_state_service.dart';
+import '../services/fridge_service.dart';
 import '../services/ingredient_cut_service.dart';
 import '../widgets/barcode_scanner_sheet.dart';
 
@@ -123,7 +125,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
     setState(() {
       final current = _selectedWeights[cut.id] ?? 0.0;
       if (current == 0) {
-        _itemAddedAsCooked[cut.id] = _isCookedMode;
+        _itemAddedAsCooked[cut.id] = cut.requiresCooking ? _isCookedMode : false;
         _selectedWeights[cut.id] = cut.defaultPortionWeightG > 0 ? cut.defaultPortionWeightG : 100.0;
       } else {
         _selectedWeights[cut.id] = current + step;
@@ -182,7 +184,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
     final currentWeight = (_selectedWeights[cut.id] ?? cut.defaultPortionWeightG).round();
 
     // activeMode: 0 = Cân lúc Thô (Sống), 1 = Cân lúc Đã Chín
-    int activeMode = isAlreadyCooked ? 1 : 0;
+    int activeMode = (cut.requiresCooking && isAlreadyCooked) ? 1 : 0;
     final controller = TextEditingController(text: currentWeight.toString());
 
     showDialog(
@@ -192,8 +194,8 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
           final currentInputVal = double.tryParse(controller.text.trim()) ?? 0.0;
 
           // Tính toán quy đổi theo chế độ hiện tại
-          double rawG = activeMode == 0 ? currentInputVal : cut.calculateRawWeightFromCooked(currentInputVal);
-          double cookedG = activeMode == 0 ? cut.calculateCookedWeight(currentInputVal) : currentInputVal;
+          double rawG = (!cut.requiresCooking || activeMode == 0) ? currentInputVal : cut.calculateRawWeightFromCooked(currentInputVal);
+          double cookedG = (!cut.requiresCooking) ? currentInputVal : (activeMode == 0 ? cut.calculateCookedWeight(currentInputVal) : currentInputVal);
           if (rawG < 0) rawG = 0;
           if (cookedG < 0) cookedG = 0;
 
@@ -238,92 +240,95 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. Chuyển đổi chế độ: Cân Thô vs Cân Chín
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.all(3),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: () {
-                              if (activeMode != 0) {
-                                setDialogState(() {
-                                  activeMode = 0;
-                                  controller.text = rawG.round().toString();
-                                });
-                              }
-                            },
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 6),
-                              decoration: BoxDecoration(
-                                color: activeMode == 0 ? Colors.white : Colors.transparent,
-                                borderRadius: BorderRadius.circular(8),
-                                boxShadow: activeMode == 0
-                                    ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)]
-                                    : null,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  'Cân lúc Thô (Sống)',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: activeMode == 0 ? FontWeight.bold : FontWeight.w500,
-                                    color: activeMode == 0 ? AppColors.primary : AppColors.textGray,
+                  // 1. Chuyển đổi chế độ: Cân Thô vs Cân Chín (Chỉ dành cho thực phẩm tươi sống cần nấu nướng)
+                  if (cut.requiresCooking) ...[
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.all(3),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                if (activeMode != 0) {
+                                  setDialogState(() {
+                                    activeMode = 0;
+                                    controller.text = rawG.round().toString();
+                                  });
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: activeMode == 0 ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: activeMode == 0
+                                      ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)]
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'Cân lúc Thô (Sống)',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: activeMode == 0 ? FontWeight.bold : FontWeight.w500,
+                                      color: activeMode == 0 ? AppColors.primary : AppColors.textGray,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () {
-                              if (activeMode != 1) {
-                                setDialogState(() {
-                                  activeMode = 1;
-                                  controller.text = cookedG.round().toString();
-                                });
-                              }
-                            },
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 6),
-                              decoration: BoxDecoration(
-                                color: activeMode == 1 ? Colors.white : Colors.transparent,
-                                borderRadius: BorderRadius.circular(8),
-                                boxShadow: activeMode == 1
-                                    ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)]
-                                    : null,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  'Cân lúc Đã Chín',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: activeMode == 1 ? FontWeight.bold : FontWeight.w500,
-                                    color: activeMode == 1 ? AppColors.primary : AppColors.textGray,
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                if (activeMode != 1) {
+                                  setDialogState(() {
+                                    activeMode = 1;
+                                    controller.text = cookedG.round().toString();
+                                  });
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: activeMode == 1 ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: activeMode == 1
+                                      ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)]
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'Cân lúc Đã Chín',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: activeMode == 1 ? FontWeight.bold : FontWeight.w500,
+                                      color: activeMode == 1 ? AppColors.primary : AppColors.textGray,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
+                  ],
 
                   // 2. Ô nhập số gram
                   Text(
-                    activeMode == 0
-                        ? 'Khối lượng nguyên liệu thô (sống):'
-                        : 'Khối lượng thức ăn chín trên đĩa:',
+                    cut.requiresCooking
+                        ? (activeMode == 0
+                            ? 'Khối lượng nguyên liệu thô (sống):'
+                            : 'Khối lượng thức ăn chín trên đĩa:')
+                        : 'Khối lượng thực phẩm (gram):',
                     style: const TextStyle(fontSize: 12, color: AppColors.textGray, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 6),
@@ -335,7 +340,9 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                     decoration: InputDecoration(
                       suffixText: 'g',
                       prefixIcon: Icon(
-                        activeMode == 0 ? Icons.scale_rounded : Icons.restaurant_rounded,
+                        !cut.requiresCooking
+                            ? Icons.inventory_2_outlined
+                            : (activeMode == 0 ? Icons.scale_rounded : Icons.restaurant_rounded),
                         size: 18,
                         color: AppColors.primary,
                       ),
@@ -358,34 +365,58 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                              activeMode == 0 ? Icons.trending_up_rounded : Icons.cached_rounded,
-                              size: 14,
-                              color: const Color(0xFF16A34A),
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                activeMode == 0
-                                    ? (cut.cookingYieldRatio > 1.05
-                                        ? 'Nở thành: ~${cookedG.round()}g ${cut.cookedName} (x${cut.cookingYieldRatio})'
-                                        : (cut.cookingYieldRatio < 0.95
-                                            ? 'Sau nấu ngót còn: ~${cookedG.round()}g ${cut.cookedName} (teo ${((1 - cut.cookingYieldRatio) * 100).round()}%)'
-                                            : 'Thành phẩm sau nấu: ~${cookedG.round()}g'))
-                                    : 'Tương đương: ~${rawG.round()}g nguyên liệu thô (sống)',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF15803D),
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                        if (cut.requiresCooking)
+                          Row(
+                            children: [
+                              Icon(
+                                activeMode == 0 ? Icons.trending_up_rounded : Icons.cached_rounded,
+                                size: 14,
+                                color: const Color(0xFF16A34A),
                               ),
-                            ),
-                          ],
-                        ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  activeMode == 0
+                                      ? (cut.cookingYieldRatio > 1.05
+                                          ? 'Nở thành: ~${cookedG.round()}g ${cut.cookedName} (x${cut.cookingYieldRatio})'
+                                          : (cut.cookingYieldRatio < 0.95
+                                              ? 'Sau nấu ngót còn: ~${cookedG.round()}g ${cut.cookedName} (teo ${((1 - cut.cookingYieldRatio) * 100).round()}%)'
+                                              : 'Thành phẩm sau nấu: ~${cookedG.round()}g'))
+                                      : 'Tương đương: ~${rawG.round()}g nguyên liệu thô (sống)',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF15803D),
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.check_circle_outline_rounded,
+                                size: 14,
+                                color: Color(0xFF16A34A),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Khối lượng: ${currentInputVal.round()}g (Thực phẩm dùng trực tiếp)',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF15803D),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         const SizedBox(height: 4),
                         Text(
                           '🔥 $cal kcal  •  P: ${pro}g  •  C: ${carb}g  •  F: ${fat}g',
@@ -398,40 +429,41 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                   const SizedBox(height: 12),
 
                   // 4. Ước lượng dân dã quen thuộc (Household Portions)
-                  const Text('Ước lượng dân dã quen thuộc:', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: cut.householdPortions.map((hp) {
-                      return InkWell(
-                        onTap: () {
-                          setDialogState(() {
-                            if (activeMode == 0) {
-                              controller.text = hp.weightG.round().toString();
-                            } else {
-                              controller.text = cut.calculateCookedWeight(hp.weightG).round().toString();
-                            }
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                  if (cut.householdPortions.isNotEmpty) ...[
+                    const Text('Ước lượng dân dã quen thuộc:', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: cut.householdPortions.map((hp) {
+                        return InkWell(
+                          onTap: () {
+                            setDialogState(() {
+                              if (!cut.requiresCooking || activeMode == 0) {
+                                controller.text = hp.weightG.round().toString();
+                              } else {
+                                controller.text = cut.calculateCookedWeight(hp.weightG).round().toString();
+                              }
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                            ),
+                            child: Text(
+                              hp.label,
+                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                            ),
                           ),
-                          child: Text(
-                            hp.label,
-                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-
-                  const SizedBox(height: 10),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
 
                   // 5. Khối lượng gram chọn nhanh
                   const Text('Chọn nhanh gram:', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
@@ -487,7 +519,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                   if (inputVal > 0) {
                     setState(() {
                       _selectedWeights[cut.id] = inputVal;
-                      _itemAddedAsCooked[cut.id] = (activeMode == 1);
+                      _itemAddedAsCooked[cut.id] = (cut.requiresCooking && activeMode == 1);
                     });
                   }
                   Navigator.pop(ctx);
@@ -512,6 +544,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
       _allCuts.removeWhere((c) => c.id == scannedCut.id);
       _allCuts.insert(0, scannedCut);
       _cutsMap[scannedCut.id] = scannedCut;
+      _itemAddedAsCooked[scannedCut.id] = false;
       _selectedWeights[scannedCut.id] = product.netWeightG > 0 ? product.netWeightG : 100.0;
       _applyFilters();
     });
@@ -536,6 +569,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
     double totalWeight,
     double totalCookedWeight,
     int itemCount,
+    bool hasCookingItems,
   }) _computeTotals() {
     double totalCal = 0;
     double totalPro = 0;
@@ -544,20 +578,27 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
     double totalWeight = 0;
     double totalCookedWeight = 0;
     int count = 0;
+    bool hasCookingItems = false;
 
     for (final entry in _selectedWeights.entries) {
       final cut = _cutsMap[entry.key];
       final weight = entry.value;
       if (cut != null && weight > 0) {
-        final isCooked = _itemAddedAsCooked[entry.key] == true;
+        final isCooked = _itemAddedAsCooked[entry.key] == true && cut.requiresCooking;
         double rawG;
         double cookedG;
-        if (isCooked) {
-          cookedG = weight;
-          rawG = cut.calculateRawWeightFromCooked(weight);
+        if (cut.requiresCooking) {
+          hasCookingItems = true;
+          if (isCooked) {
+            cookedG = weight;
+            rawG = cut.calculateRawWeightFromCooked(weight);
+          } else {
+            rawG = weight;
+            cookedG = cut.calculateCookedWeight(weight);
+          }
         } else {
           rawG = weight;
-          cookedG = cut.calculateCookedWeight(weight);
+          cookedG = weight;
         }
 
         final ratio = rawG / 100.0;
@@ -579,6 +620,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
       totalWeight: totalWeight,
       totalCookedWeight: totalCookedWeight,
       itemCount: count,
+      hasCookingItems: hasCookingItems,
     );
   }
 
@@ -665,111 +707,115 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                 const SizedBox(height: 14),
 
                 // 1. Thẻ Quy đổi Thô <-> Chín Trực quan
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Row(
-                            children: [
-                              Icon(Icons.sync_alt_rounded, size: 16, color: AppColors.primary),
-                              SizedBox(width: 6),
-                              Text(
-                                'QUY ĐỔI THÔ ⇄ CHÍN',
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
-                              ),
-                            ],
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: cut.cookingYieldRatio > 1.05
-                                  ? const Color(0xFFFEF3C7)
-                                  : (cut.cookingYieldRatio < 0.95 ? const Color(0xFFFEE2E2) : const Color(0xFFE0F2FE)),
-                              borderRadius: BorderRadius.circular(6),
+                if (cut.requiresCooking) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.sync_alt_rounded, size: 16, color: AppColors.primary),
+                                SizedBox(width: 6),
+                                Text(
+                                  'QUY ĐỔI THÔ ⇄ CHÍN',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                                ),
+                              ],
                             ),
-                            child: Text(
-                              cut.cookingYieldSummary,
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold,
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
                                 color: cut.cookingYieldRatio > 1.05
-                                    ? const Color(0xFFB45309)
-                                    : (cut.cookingYieldRatio < 0.95 ? const Color(0xFFB91C1C) : const Color(0xFF0369A1)),
+                                    ? const Color(0xFFFEF3C7)
+                                    : (cut.cookingYieldRatio < 0.95 ? const Color(0xFFFEE2E2) : const Color(0xFFE0F2FE)),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                cut.cookingYieldSummary,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: cut.cookingYieldRatio > 1.05
+                                      ? const Color(0xFFB45309)
+                                      : (cut.cookingYieldRatio < 0.95 ? const Color(0xFFB91C1C) : const Color(0xFF0369A1)),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: Column(
-                                children: [
-                                  const Text('100g Thô (Sống)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 2),
-                                  Text('${cut.caloriesPer100g.round()} kcal', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF15803D))),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8),
-                            child: Icon(Icons.arrow_forward_rounded, size: 18, color: AppColors.textGray),
-                          ),
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: Column(
-                                children: [
-                                  Text('~${cooked100g}g ${cut.cookedName}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                  const SizedBox(height: 2),
-                                  const Text('Calo cốt lõi giữ nguyên', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
-                                ],
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: Column(
+                                  children: [
+                                    const Text('100g Thô (Sống)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 2),
+                                    Text('${cut.caloriesPer100g.round()} kcal', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF15803D))),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        cut.cookingYieldRatio > 1.05
-                            ? '💡 Khi nấu chín, ${cut.name.toLowerCase()} hút nước nở gấp ${cut.cookingYieldRatio} lần. Lượng calo không tăng lên mà phân bổ vào thể tích nước.'
-                            : (cut.cookingYieldRatio < 0.95
-                                ? '💡 Khi nấu chín, ${cut.name.toLowerCase()} bốc hơi nước và mỡ thừa khiến thịt ngót đi ~${((1 - cut.cookingYieldRatio) * 100).round()}%. Đạm và dinh dưỡng nạc hầu như giữ trọn vẹn.'
-                                : '💡 Khối lượng trước và sau chế biến hầu như tương đương nhau.'),
-                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF475569), height: 1.35),
-                      ),
-                    ],
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Icon(Icons.arrow_forward_rounded, size: 18, color: AppColors.textGray),
+                            ),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text('~${cooked100g}g ${cut.cookedName}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    const SizedBox(height: 2),
+                                    const Text('Calo cốt lõi giữ nguyên', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          cut.cookingYieldRatio > 1.05
+                              ? '💡 Khi nấu chín, ${cut.name.toLowerCase()} hút nước nở gấp ${cut.cookingYieldRatio} lần. Lượng calo không tăng lên mà phân bổ vào thể tích nước.'
+                              : (cut.cookingYieldRatio < 0.95
+                                  ? '💡 Khi nấu chín, ${cut.name.toLowerCase()} bốc hơi nước và mỡ thừa khiến thịt ngót đi ~${((1 - cut.cookingYieldRatio) * 100).round()}%. Đạm và dinh dưỡng nạc hầu như giữ trọn vẹn.'
+                                  : '💡 Khối lượng trước và sau chế biến hầu như tương đương nhau.'),
+                          style: const TextStyle(fontSize: 10.5, color: Color(0xFF475569), height: 1.35),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-
-                const SizedBox(height: 14),
+                  const SizedBox(height: 14),
+                ],
 
                 // 2. Dinh Dưỡng 100g Chuẩn
-                const Text('HÀM LƯỢNG DINH DƯỠNG (100G THÔ CHUẨN):', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                Text(
+                  cut.requiresCooking ? 'HÀM LƯỢNG DINH DƯỠNG (100G THÔ CHUẨN):' : 'HÀM LƯỢNG DINH DƯỠNG (100G CHUẨN):',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -907,6 +953,72 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
     );
   }
 
+  /// Lưu các nguyên liệu đã chọn vào Tủ Lạnh Thông Minh
+  void _saveToFridge() {
+    final now = DateTime.now();
+    final fridgeService = FridgeService.instance;
+    final itemsToAdd = <FridgeItemModel>[];
+
+    for (final entry in _selectedWeights.entries) {
+      final cut = _cutsMap[entry.key];
+      final weight = entry.value;
+      if (cut != null && weight > 0) {
+        final shelfDays = fridgeService.getSuggestedShelfLifeDays(cut.name, category: cut.category);
+
+        String loc = 'fridge';
+        final lowerCat = cut.category.toLowerCase();
+        if (lowerCat.contains('snack') ||
+            lowerCat.contains('bánh') ||
+            lowerCat.contains('kẹo') ||
+            lowerCat.contains('gạo') ||
+            lowerCat.contains('gia vị') ||
+            lowerCat.contains('đậu')) {
+          loc = 'pantry';
+        } else if (lowerCat.contains('thịt') || lowerCat.contains('thủy') || lowerCat.contains('hải sản')) {
+          loc = 'freezer';
+        }
+
+        itemsToAdd.add(
+          FridgeItemModel(
+            id: 'calc_${DateTime.now().millisecondsSinceEpoch}_${cut.id}_${itemsToAdd.length}',
+            name: cut.name,
+            category: cut.category.isNotEmpty ? cut.category : 'Thực phẩm',
+            categoryIcon: cut.categoryIcon.isNotEmpty ? cut.categoryIcon : '🍱',
+            quantity: '${weight.round()}g',
+            storageLocation: loc,
+            manufacturingDate: now,
+            expirationDate: now.add(Duration(days: shelfDays)),
+            addedAt: now,
+            caloriesPer100g: cut.caloriesPer100g,
+            proteinPer100g: cut.proteinPer100g,
+            carbsPer100g: cut.carbsPer100g,
+            fatPer100g: cut.fatPer100g,
+            notes: 'Được lưu từ Bộ Tính Calo (${cut.requiresCooking ? 'Nguyên liệu tươi thô' : 'Thực phẩm dùng trực tiếp'})',
+          ),
+        );
+      }
+    }
+
+    if (itemsToAdd.isEmpty) return;
+
+    fridgeService.addItems(itemsToAdd);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.kitchen_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Đã lưu ${itemsToAdd.length} món vào Tủ Lạnh Thông Minh!')),
+          ],
+        ),
+        backgroundColor: const Color(0xFF0D9488),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   /// Lưu vào nhật ký hôm nay
   void _saveToMealJournal() {
     final totals = _computeTotals();
@@ -955,7 +1067,9 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Tổng: ${totals.calories} kcal (${totals.totalWeight.round()}g thô • ~${totals.totalCookedWeight.round()}g chín)',
+                            totals.hasCookingItems
+                                ? 'Tổng: ${totals.calories} kcal (${totals.totalWeight.round()}g thô • ~${totals.totalCookedWeight.round()}g chín)'
+                                : 'Tổng: ${totals.calories} kcal (${totals.totalWeight.round()}g)',
                             style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppColors.textBlack),
                           ),
                           Text(
@@ -1030,9 +1144,9 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
     final selectedItemsDesc = _selectedWeights.entries.map((e) {
       final cut = _cutsMap[e.key];
       if (cut == null) return '';
-      final isCooked = _itemAddedAsCooked[e.key] == true;
+      final isCooked = _itemAddedAsCooked[e.key] == true && cut.requiresCooking;
       final name = isCooked ? cut.cookedDisplayName : cut.name;
-      final unit = isCooked ? 'g chín' : 'g thô';
+      final unit = cut.requiresCooking ? (isCooked ? 'g chín' : 'g thô') : 'g';
       return '$name (${e.value.round()}$unit)';
     }).where((s) => s.isNotEmpty).join(', ');
 
@@ -1508,12 +1622,12 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
 
   /// Từng hàng trong Danh mục nguyên liệu (Phần trên - hiển thị theo Chế độ Thô hoặc Đã Chín)
   Widget _buildRawCatalogItem(IngredientCutModel cut, bool isSelected, double currentWeight) {
-    final displayName = _isCookedMode ? cut.cookedDisplayName : cut.name;
-    final displayCalo = _isCookedMode ? cut.caloriesPer100gCooked.round() : cut.caloriesPer100g.round();
-    final displayPro = _isCookedMode ? cut.proteinPer100gCooked : cut.proteinPer100g;
-    final displayCarb = _isCookedMode ? cut.carbsPer100gCooked : cut.carbsPer100g;
-    final displayFat = _isCookedMode ? cut.fatPer100gCooked : cut.fatPer100g;
-    final isItemCookedInCart = _itemAddedAsCooked[cut.id] == true;
+    final displayName = (_isCookedMode && cut.requiresCooking) ? cut.cookedDisplayName : cut.name;
+    final displayCalo = (_isCookedMode && cut.requiresCooking) ? cut.caloriesPer100gCooked.round() : cut.caloriesPer100g.round();
+    final displayPro = (_isCookedMode && cut.requiresCooking) ? cut.proteinPer100gCooked : cut.proteinPer100g;
+    final displayCarb = (_isCookedMode && cut.requiresCooking) ? cut.carbsPer100gCooked : cut.carbsPer100g;
+    final displayFat = (_isCookedMode && cut.requiresCooking) ? cut.fatPer100gCooked : cut.fatPer100g;
+    final isItemCookedInCart = _itemAddedAsCooked[cut.id] == true && cut.requiresCooking;
 
     return InkWell(
       onTap: () => _showCutDetailSheet(cut),
@@ -1563,7 +1677,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (_isCookedMode)
+                      if (_isCookedMode && cut.requiresCooking)
                         Container(
                           margin: const EdgeInsets.only(left: 6),
                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -1576,7 +1690,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                             style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFC2410C)),
                           ),
                         )
-                      else if (cut.cookingYieldRatio > 1.05)
+                      else if (cut.requiresCooking && cut.cookingYieldRatio > 1.05)
                         Container(
                           margin: const EdgeInsets.only(left: 6),
                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -1589,7 +1703,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                             style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
                           ),
                         )
-                      else if (cut.cookingYieldRatio < 0.95)
+                      else if (cut.requiresCooking && cut.cookingYieldRatio < 0.95)
                         Container(
                           margin: const EdgeInsets.only(left: 6),
                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -1606,7 +1720,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${_isCookedMode ? '100g chín' : '100g thô'} | P: ${displayPro}g • C: ${displayCarb}g • F: ${displayFat}g',
+                    '${cut.requiresCooking ? (_isCookedMode ? '100g chín' : '100g thô') : '100g'} | P: ${displayPro}g • C: ${displayCarb}g • F: ${displayFat}g',
                     style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1624,7 +1738,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.bold,
-                    color: _isCookedMode ? const Color(0xFFEA580C) : const Color(0xFF15803D),
+                    color: (_isCookedMode && cut.requiresCooking) ? const Color(0xFFEA580C) : const Color(0xFF15803D),
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -1635,7 +1749,7 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                       decoration: BoxDecoration(
-                        color: _isCookedMode ? const Color(0xFFEA580C) : AppColors.primary,
+                        color: (_isCookedMode && cut.requiresCooking) ? const Color(0xFFEA580C) : AppColors.primary,
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Row(
@@ -1644,7 +1758,9 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                           const Icon(Icons.add_rounded, size: 14, color: Colors.white),
                           const SizedBox(width: 2),
                           Text(
-                            _isCookedMode ? 'Chọn (chín)' : 'Chọn (thô)',
+                            cut.requiresCooking
+                                ? (_isCookedMode ? 'Chọn (chín)' : 'Chọn (thô)')
+                                : 'Chọn',
                             style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
                           ),
                         ],
@@ -1666,7 +1782,9 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            '${currentWeight.round()}g ${isItemCookedInCart ? 'chín' : 'thô'}',
+                            cut.requiresCooking
+                                ? '${currentWeight.round()}g ${isItemCookedInCart ? 'chín' : 'thô'}'
+                                : '${currentWeight.round()}g',
                             style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
                           ),
                           const SizedBox(width: 2),
@@ -1685,17 +1803,22 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
 
   /// Từng hàng trong Danh sách nguyên liệu đã chọn (Phần dưới)
   Widget _buildSelectedItemRow(IngredientCutModel cut, double weight, int calo) {
-    final isCooked = _itemAddedAsCooked[cut.id] == true;
+    final isCooked = _itemAddedAsCooked[cut.id] == true && cut.requiresCooking;
     final displayName = isCooked ? cut.cookedDisplayName : cut.name;
 
     double rawG;
     double cookedG;
-    if (isCooked) {
-      cookedG = weight;
-      rawG = cut.calculateRawWeightFromCooked(weight);
+    if (cut.requiresCooking) {
+      if (isCooked) {
+        cookedG = weight;
+        rawG = cut.calculateRawWeightFromCooked(weight);
+      } else {
+        rawG = weight;
+        cookedG = cut.calculateCookedWeight(weight);
+      }
     } else {
       rawG = weight;
-      cookedG = cut.calculateCookedWeight(weight);
+      cookedG = weight;
     }
 
     final ratio = rawG / 100.0;
@@ -1704,7 +1827,9 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
     final fat = (cut.fatPer100g * ratio).toStringAsFixed(1);
 
     String yieldText = '';
-    if (isCooked) {
+    if (!cut.requiresCooking) {
+      yieldText = 'Khối lượng: ${weight.round()}g (Dùng trực tiếp)';
+    } else if (isCooked) {
       yieldText = '🍳 Đã chín: ${cookedG.round()}g (quy đổi ~${rawG.round()}g thô)';
     } else {
       if (cut.cookingYieldRatio > 1.05) {
@@ -1836,16 +1961,24 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
             margin: const EdgeInsets.only(top: 4, left: 26),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: isCooked ? const Color(0xFFFFF7ED) : const Color(0xFFF0FDF4),
+              color: !cut.requiresCooking
+                  ? const Color(0xFFF1F5F9)
+                  : (isCooked ? const Color(0xFFFFF7ED) : const Color(0xFFF0FDF4)),
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: isCooked ? const Color(0xFFFED7AA) : const Color(0xFFBBF7D0)),
+              border: Border.all(
+                color: !cut.requiresCooking
+                    ? const Color(0xFFCBD5E1)
+                    : (isCooked ? const Color(0xFFFED7AA) : const Color(0xFFBBF7D0)),
+              ),
             ),
             child: Text(
               yieldText,
               style: TextStyle(
                 fontSize: 9.5,
                 fontWeight: FontWeight.w600,
-                color: isCooked ? const Color(0xFFC2410C) : const Color(0xFF15803D),
+                color: !cut.requiresCooking
+                    ? const Color(0xFF475569)
+                    : (isCooked ? const Color(0xFFC2410C) : const Color(0xFF15803D)),
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -1932,12 +2065,14 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${totals.totalWeight.round()}g thô (${totals.itemCount} món)',
+                      totals.hasCookingItems
+                          ? '${totals.totalWeight.round()}g thô (${totals.itemCount} món)'
+                          : '${totals.totalWeight.round()}g (${totals.itemCount} món)',
                       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (totals.totalCookedWeight > 0)
+                    if (totals.hasCookingItems && totals.totalCookedWeight > 0)
                       Text(
                         'Thành phẩm: ~${totals.totalCookedWeight.round()}g chín',
                         style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF0D9488)),
@@ -1998,25 +2133,59 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
 
           const SizedBox(height: 8),
 
-          // Dòng 3: Nút Lưu Nhật Ký
-          SizedBox(
-            width: double.infinity,
-            height: 38,
-            child: ElevatedButton.icon(
-              onPressed: hasItems ? _saveToMealJournal : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: const Color(0xFFCBD5E1),
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          // Dòng 3: Hai Nút Hành Động (Lưu vào Tủ Lạnh & Lưu vào Nhật Ký)
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 38,
+                  child: OutlinedButton.icon(
+                    onPressed: hasItems ? _saveToFridge : null,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF0F766E),
+                      side: BorderSide(
+                        color: hasItems ? const Color(0xFF0D9488) : const Color(0xFFCBD5E1),
+                        width: 1.2,
+                      ),
+                      backgroundColor: hasItems ? const Color(0xFFF0FDFA) : Colors.transparent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    icon: const Icon(Icons.kitchen_rounded, size: 16, color: Color(0xFF0D9488)),
+                    label: const Text(
+                      'Lưu vào tủ lạnh',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F766E)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
               ),
-              icon: const Icon(Icons.bookmark_add_outlined, size: 16),
-              label: const Text(
-                'Lưu vào nhật ký ăn uống',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SizedBox(
+                  height: 38,
+                  child: ElevatedButton.icon(
+                    onPressed: hasItems ? _saveToMealJournal : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: const Color(0xFFCBD5E1),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 16),
+                    label: const Text(
+                      'Lưu vào nhật ký',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),

@@ -5,6 +5,7 @@ import '../models/fridge_item_model.dart';
 import '../services/fridge_service.dart';
 import '../services/ai_vision_service.dart';
 import '../widgets/barcode_scanner_sheet.dart';
+import '../widgets/voice_assistant_sheet.dart';
 
 /// Màn hình Quản Lý Tủ Lạnh & Hạn Dùng Thực Phẩm (Smart Fridge & Pantry)
 class SmartFridgeScreen extends StatefulWidget {
@@ -94,6 +95,114 @@ class _SmartFridgeScreenState extends State<SmartFridgeScreen> {
 
           // 1. THANH TỔNG HỢP TRẠNG THÁI HẠN DÙNG
           _buildSummaryStatusHeader(allItems),
+
+          // 1.1 BANNER BẾP TRƯỞNG VÉT TỦ CÂN MACRO
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {
+                  VoiceAssistantSheet.show(
+                    context,
+                    initialPrompt: 'Bếp Trưởng Vét Tủ: Xem tủ lạnh có gì và gợi ý món nấu bù chuẩn Calo & Macro còn thiếu hôm nay',
+                    onNavigate: (screen) {
+                      if (screen == 'home') widget.onNavigate(0);
+                      if (screen == 'fridge') widget.onNavigate(1);
+                      if (screen == 'camera') widget.onNavigate(2);
+                      if (screen == 'history') widget.onNavigate(3);
+                      if (screen == 'profile') widget.onNavigate(4);
+                    },
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.primary.withOpacity(0.4)),
+                        ),
+                        child: const Text('🍳', style: TextStyle(fontSize: 18)),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Flexible(
+                                  child: Text(
+                                    'Bếp Trưởng Vét Tủ Cân Macro',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'AI',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Gợi ý món từ đồ có sẵn bù vừa khít Calo thiếu',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.75),
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.primary, size: 14),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
 
           // 2. Ô TÌM KIẾM
           Padding(

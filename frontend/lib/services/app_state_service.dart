@@ -4,6 +4,9 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/api_constants.dart';
 import 'meal_db_service.dart';
+import 'fridge_service.dart';
+import 'step_tracker_service.dart';
+import 'google_fit_service.dart';
 
 class UserProfile {
   String fullName;
@@ -594,6 +597,9 @@ class AppStateService extends ChangeNotifier {
     // Tự động kéo nhật ký món ăn & nước uống từ Cloud Backend
     syncMealLogsFromServer();
     fetchDashboardToday();
+    FridgeService.instance.reloadForCurrentUser();
+    StepTrackerService.instance.reloadForCurrentUser();
+    GoogleFitService.instance.reloadForCurrentUser();
   }
 
   /// Đồng bộ kết quả đăng nhập / liên kết mạng xã hội từ Backend C#
@@ -1763,6 +1769,9 @@ class AppStateService extends ChangeNotifier {
       lastActiveDate = null;
       lastWaterDate = null;
       testGuestDaysOverride = null;
+      FridgeService.instance.reloadForCurrentUser();
+      StepTrackerService.instance.reloadForCurrentUser();
+      GoogleFitService.instance.reloadForCurrentUser();
       notifyListeners();
     } catch (e) {
       debugPrint('Lỗi xóa local storage: $e');

@@ -1,20 +1,20 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiConstants {
-  // Địa chỉ máy chủ Cloud Production (Render + Supabase PostgreSQL)
-  static const String cloudBaseUrl = 'https://entity-graded-lunar.ngrok-free.dev';
+  // Địa chỉ máy chủ Cloud Production (Render)
+  static const String cloudBaseUrl = 'https://nutrisnap-app.onrender.com';
 
   // Đặt true để sử dụng máy chủ đám mây Render 24/7 (Khuyên dùng khi build APK)
   // Đặt false nếu muốn chạy thử nghiệm với backend cục bộ trên máy tính
   static const bool useCloudApi = true;
 
-  // Địa chỉ IP của máy tính trong mạng Wi-Fi (cho trường hợp test local)
-  static const String localHostIp = '192.168.1.14';
- //dotnet run --urls "http://localhost:5065"
-  // Đặt true nếu cắm cáp USB và đã chạy lệnh `adb reverse tcp:5065 tcp:5065`
+  // Địa chỉ IP của máy tính trong mạng Wi-Fi hiện tại (để test khi không cắm cáp)
+  static const String localHostIp = '192.168.1.10';
+
+  // Đặt true khi cắm cáp USB (đã chạy: adb reverse tcp:5065 tcp:5065)
+  // Cho phép điện thoại thật gọi localhost:5065 thông qua cổng USB cực kỳ ổn định
   static const bool useAdbReverse = true;
 
   // URL API Backend chính thức của ứng dụng
@@ -22,10 +22,13 @@ class ApiConstants {
     if (useCloudApi) {
       return cloudBaseUrl;
     }
-    // Khi chạy trên Android (Emulator), 10.0.2.2 là Gateway đặc biệt trỏ về máy tính Host (Windows).
-    // Nếu để 'localhost', Android sẽ tự kết nối vào chính nó và báo lỗi 'Connection refused'.
+    // Khi cắm cáp USB (đã adb reverse) -> điện thoại gọi thẳng localhost:5065
+    if (useAdbReverse) {
+      return 'http://localhost:5065';
+    }
+    // Khi chạy trên Android qua mạng Wi-Fi chung
     if (!kIsWeb && Platform.isAndroid) {
-      return 'http://10.0.2.2:5065';
+      return 'http://$localHostIp:5065';
     }
     // Khi chạy trên Web, Windows Desktop hoặc iOS Simulator
     return 'http://localhost:5065';
@@ -42,9 +45,10 @@ class ApiConstants {
   static String get aiNutritionReview => '$baseUrl/api/meallogs/ai-review';
   static String get dashboardToday => '$baseUrl/api/dashboard/today';
   static String addWater(int amountMl) => '$baseUrl/api/dashboard/water/add?amountMl=$amountMl';
+  static String get voiceAssistantProcess => '$baseUrl/api/voice-assistant/process';
+  static String get voiceAssistantProcessAudio => '$baseUrl/api/voice-assistant/process-audio';
 
   // Cấu hình OAuth 2.0 Bên thứ ba (Google)
-  // Web Client ID từ Google Cloud Console (Dùng để lấy Google idToken cho Backend xác thực)
   static String googleServerClientId = '785572924738-311shm8m26rqfl4g18lhe06ickum60ld.apps.googleusercontent.com';
 
   /// Nạp các cấu hình OAuth được lưu trong SharedPreferences (nếu có)

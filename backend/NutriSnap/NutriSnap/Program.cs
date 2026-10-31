@@ -15,6 +15,13 @@ LoadDotEnv();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Hỗ trợ tự động nhận diện cổng PORT do Render / Cloud cung cấp
+var envPort = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(envPort))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{envPort}");
+}
+
 // 1. Cấu hình Database (Tự động nhận diện PostgreSQL hoặc SQL Server)
 var rawConn = builder.Configuration["DATABASE_URL"]
     ?? builder.Configuration["POSTGRES_CONNECTION"]
@@ -90,6 +97,7 @@ builder.Services.AddHttpClient<RecipeCrawlerService>();
 builder.Services.AddHttpClient<TranslationService>();
 builder.Services.AddHttpClient<AiVisionService>();
 builder.Services.AddHttpClient<AiNutritionAdvisorService>();
+builder.Services.AddHttpClient<VoiceAssistantService>();
 builder.Services.AddHttpClient<BarcodeNutritionService>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {

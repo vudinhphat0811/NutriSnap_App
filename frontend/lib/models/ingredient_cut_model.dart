@@ -113,9 +113,61 @@ class IngredientCutModel {
     );
   }
 
+  /// Kiểm tra xem nguyên liệu có phải là thực phẩm tươi sống cần nấu nướng (chế biến nhiệt) hay không.
+  /// Các sản phẩm đóng gói, snack, bánh kẹo, đồ hộp, sữa, trái cây ăn liền, v.v. KHÔNG cần nấu chín.
+  bool get requiresCooking {
+    final lowerId = id.toLowerCase();
+    final lowerCat = category.toLowerCase();
+    final lowerName = name.toLowerCase();
+
+    // 1. Quét từ mã vạch sản phẩm đóng gói siêu thị
+    if (lowerId.startsWith('barcode_')) {
+      // Chỉ khi là tem cân thịt tươi / hải sản sống từ quầy siêu thị thì mới tính là cần nấu
+      final isRawMeatOrFish = (lowerCat.contains('thịt') || lowerCat.contains('hải sản') || lowerCat.contains('thủy')) &&
+          (lowerName.contains('sống') || lowerName.contains('tươi') || lowerName.contains('khay'));
+      return isRawMeatOrFish;
+    }
+
+    // 2. Các danh mục ăn trực tiếp / không qua nấu nướng
+    if (lowerCat.contains('trái cây') ||
+        lowerCat.contains('sữa') ||
+        lowerCat.contains('snack') ||
+        lowerCat.contains('bánh') ||
+        lowerCat.contains('kẹo') ||
+        lowerCat.contains('gia vị') ||
+        lowerCat.contains('đồ uống') ||
+        lowerCat.contains('nước')) {
+      return false;
+    }
+
+    // 3. Các loại hạt ăn liền / hạt sấy
+    if (lowerId.contains('almond') || lowerId.contains('walnut') || lowerId.contains('cashew') || lowerId.contains('chia') ||
+        lowerName.contains('hạnh nhân') || lowerName.contains('óc chó') || lowerName.contains('hạt điều') || lowerName.contains('hạt chia')) {
+      return false;
+    }
+
+    // 4. Nguyên liệu tươi sống thực sự cần nấu
+    if (lowerCat.contains('thịt') ||
+        lowerCat.contains('thủy') ||
+        lowerCat.contains('hải sản') ||
+        lowerCat.contains('gạo') ||
+        lowerCat.contains('tinh bột') ||
+        lowerCat.contains('rau') ||
+        lowerId.contains('raw_') ||
+        lowerName.contains('gạo') ||
+        lowerName.contains('đậu') ||
+        lowerName.contains('yến mạch')) {
+      return true;
+    }
+
+    return false;
+  }
+
   /// Hệ số nở / ngót sau khi nấu chín
   /// Ví dụ: Gạo trắng = 2.6 (nở 260%), Thịt = 0.75 (ngót 25%), Yến mạch = 3.5
   double get cookingYieldRatio {
+    if (!requiresCooking) return 1.0;
+
     final lowerId = id.toLowerCase();
     final lowerCat = category.toLowerCase();
     final lowerName = name.toLowerCase();
@@ -158,6 +210,8 @@ class IngredientCutModel {
 
   /// Tên gọi khi đã nấu chín
   String get cookedName {
+    if (!requiresCooking) return name;
+
     final lowerId = id.toLowerCase();
     final lowerCat = category.toLowerCase();
     final lowerName = name.toLowerCase();
@@ -180,6 +234,8 @@ class IngredientCutModel {
 
   /// Tên gọi chuẩn, viết hoa tự nhiên khi hiển thị trong Danh mục Đã Chín
   String get cookedDisplayName {
+    if (!requiresCooking) return name;
+
     final lowerId = id.toLowerCase();
     final lowerCat = category.toLowerCase();
     final lowerName = name.toLowerCase();
@@ -231,6 +287,7 @@ class IngredientCutModel {
 
   /// Mô tả ngắn về độ nở / ngót khi chế biến
   String get cookingYieldSummary {
+    if (!requiresCooking) return 'Dùng trực tiếp';
     final ratio = cookingYieldRatio;
     if (ratio > 1.05) {
       final percent = ((ratio - 1.0) * 100).round();

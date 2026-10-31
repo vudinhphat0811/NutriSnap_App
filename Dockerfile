@@ -24,5 +24,6 @@ COPY --from=build /app/publish .
 # Render defaults to port 8080 or uses the PORT environment variable
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
+EXPOSE 10000
 
 ENTRYPOINT ["dotnet", "NutriSnap.dll"]

@@ -10,11 +10,28 @@ class FridgeService extends ChangeNotifier {
 
   FridgeService._internal();
 
-  static const String _storageKey = 'nutrisnap_fridge_items_v1';
+  /// Key lưu trữ SharedPreferences được cá nhân hoá theo từng tài khoản
+  String get _storageKey {
+    final email = AppStateService.instance.userProfile.email.trim().toLowerCase();
+    if (email.isNotEmpty) {
+      final safeKey = email.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+      return 'nutrisnap_fridge_items_$safeKey';
+    }
+    return 'nutrisnap_fridge_items_guest';
+  }
+
+  static const String _legacyStorageKey = 'nutrisnap_fridge_items_v1';
   final List<FridgeItemModel> _items = [];
   bool _initialized = false;
 
   List<FridgeItemModel> get items => List.unmodifiable(_items);
+
+  /// Khi chuyển đổi tài khoản hoặc đăng xuất, tải lại tủ lạnh của tài khoản mới
+  Future<void> reloadForCurrentUser() async {
+    _initialized = false;
+    _items.clear();
+    await init();
+  }
 
   /// Số lượng thực phẩm cần chú ý (quá hạn hoặc sắp hết hạn trong <= 2 ngày)
   int get expiringCount {
@@ -28,12 +45,18 @@ class FridgeService extends ChangeNotifier {
     return list;
   }
 
-  /// Khởi tạo dữ liệu từ SharedPreferences
+  /// Khởi tạo dữ liệu từ SharedPreferences theo tài khoản hiện tại
   Future<void> init() async {
     if (_initialized) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final rawJson = prefs.getString(_storageKey);
+      String? rawJson = prefs.getString(_storageKey);
+
+      // Nếu tài khoản mới chưa có key riêng, thử migrate từ legacy key nếu có
+      if (rawJson == null && prefs.containsKey(_legacyStorageKey)) {
+        rawJson = prefs.getString(_legacyStorageKey);
+      }
+
       if (rawJson != null && rawJson.isNotEmpty) {
         final List decoded = jsonDecode(rawJson);
         _items.clear();

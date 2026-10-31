@@ -1,11 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 1. CẤP QUYỀN INTERNET & CAMERA (Nằm bên ngoài <application>) -->
+    <!-- Cấp quyền Internet, Camera, Microphone & Âm thanh -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.BLUETOOTH"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
 
-    <!-- 2. ĐẶT usesCleartextTraffic Ở ĐÂY (Trong thẻ <application>) -->
     <application
         android:label="NutriSnap"
         android:name="${applicationName}"
@@ -38,6 +42,9 @@
     </application>
 
     <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
