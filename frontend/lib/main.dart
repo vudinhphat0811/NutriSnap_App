@@ -280,7 +280,10 @@ class _MainShellScreenState extends State<MainShellScreen>
       RecipeSuggestionsScreen(onNavigate: _navigateTo),   // Index 2: Thực đơn gợi ý
       ProfileScreen(onNavigate: _navigateTo),             // Index 3: Hồ sơ
       IngredientScanScreen(onNavigate: _navigateTo),      // Index 4: Nhận diện AI
-      ShakeRecipeScreen(onNavigate: _navigateTo),         // Index 5: Lắc chọn món
+      ShakeRecipeScreen(
+        onNavigate: _navigateTo,
+        isActive: _activeScreenIndex == 5,
+      ),         // Index 5: Lắc chọn món
       RecipeDetailScreen(onNavigate: _navigateTo),        // Index 6: Chi tiết công thức
       SmartFridgeScreen(onNavigate: _navigateTo),         // Index 7: Tủ lạnh thông minh
     ];

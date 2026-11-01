@@ -14,10 +14,12 @@ import '../widgets/recipe_image_widget.dart';
 
 class ShakeRecipeScreen extends StatefulWidget {
   final Function(int) onNavigate;
+  final bool isActive;
 
   const ShakeRecipeScreen({
     super.key,
     required this.onNavigate,
+    this.isActive = true,
   });
 
   @override
@@ -85,26 +87,59 @@ class _ShakeRecipeScreenState extends State<ShakeRecipeScreen> with TickerProvid
     _bouncingPlatesController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
-    )..repeat();
+    );
+    if (widget.isActive) {
+      _bouncingPlatesController.repeat();
+    }
 
-    _initAccelerometer();
+    if (widget.isActive) {
+      _initAccelerometer();
+    }
     _loadInitialData();
+  }
+
+  @override
+  void didUpdateWidget(covariant ShakeRecipeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive != oldWidget.isActive) {
+      if (widget.isActive) {
+        _initAccelerometer();
+        if (!_bouncingPlatesController.isAnimating) {
+          _bouncingPlatesController.repeat();
+        }
+      } else {
+        _disposeAccelerometer();
+        _bouncingPlatesController.stop();
+        _wobbleController.stop();
+      }
+    }
+  }
+
+  void _disposeAccelerometer() {
+    _userSensorSub?.cancel();
+    _userSensorSub = null;
+    _sensorSubscription?.cancel();
+    _sensorSubscription = null;
   }
 
   /// Lắng nghe chuyển động lắc trên cả máy thật và máy ảo Android Virtual Sensors
   void _initAccelerometer() {
+    if (!widget.isActive) return;
     if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) {
       debugPrint('[Shake Sensors] Chế độ Desktop/Web: Sử dụng nút bấm, không kích hoạt cảm biến phần cứng.');
       return;
     }
 
-    // 1. Kênh UserAccelerometer (Đã lọc bỏ trọng lực g = 9.8) - Cực nhạy cho máy ảo và máy thật
+    _disposeAccelerometer();
+
+    // 1. Kênh UserAccelerometer (Đã lọc bỏ trọng lực g = 9.8)
     try {
       _userSensorSub = userAccelerometerEventStream(samplingPeriod: SensorInterval.uiInterval).listen(
         (UserAccelerometerEvent event) {
+          if (!widget.isActive) return;
           final double force = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
-          // Trên máy ảo khi kéo Virtual Sensors hoặc lắc máy thật: force vượt ngưỡng 4.2 m/s²
-          if (force > 4.2) {
+          // Ngưỡng lắc có chủ đích: lực lắc tay thực tế vượt 16.0 m/s² (tránh việc đi bộ hoặc cầm nhẹ tay cũng bị kích hoạt rung)
+          if (force > 16.0) {
             _triggerShake();
           }
         },
@@ -120,6 +155,7 @@ class _ShakeRecipeScreenState extends State<ShakeRecipeScreen> with TickerProvid
     try {
       _sensorSubscription = accelerometerEventStream(samplingPeriod: SensorInterval.uiInterval).listen(
         (AccelerometerEvent event) {
+          if (!widget.isActive) return;
           final double gX = event.x;
           final double gY = event.y;
           final double gZ = event.z;
@@ -130,10 +166,8 @@ class _ShakeRecipeScreenState extends State<ShakeRecipeScreen> with TickerProvid
           _lastY = gY;
           _lastZ = gZ;
 
-          // Nhận diện khi:
-          // - Lực lắc mạnh gForce > 14.0 m/s² (hạ từ 19.5 để máy ảo / lắc nhẹ tay nhận ngay)
-          // - Hoặc biến thiên gia tốc delta > 7.0 m/s² (khi di chuyển thanh trượt trong Emulator Virtual Sensors)
-          if (gForce > 14.0 || delta > 7.0) {
+          // Lực lắc có chủ đích: gForce > 24.0 m/s² hoặc delta biến thiên mạnh > 18.0 m/s²
+          if (gForce > 24.0 || delta > 18.0) {
             _triggerShake();
           }
         },
@@ -178,14 +212,16 @@ class _ShakeRecipeScreenState extends State<ShakeRecipeScreen> with TickerProvid
 
   /// Thực hiện hành động Lắc & Rớt Món
   Future<void> _performShake() async {
-    if (_isShaking) return;
+    if (!widget.isActive || _isShaking) return;
 
     setState(() {
       _isShaking = true;
       _showDropSuccess = false;
     });
 
-    HapticFeedback.mediumImpact();
+    if (widget.isActive) {
+      HapticFeedback.mediumImpact();
+    }
     _wobbleController.repeat(reverse: true);
 
     try {
@@ -196,7 +232,7 @@ class _ShakeRecipeScreenState extends State<ShakeRecipeScreen> with TickerProvid
       // Tạo độ trễ hồi hộp ~900ms để hiệu ứng lắc nồi diễn ra sinh động
       await Future.delayed(const Duration(milliseconds: 900));
 
-      if (mounted) {
+      if (mounted && widget.isActive) {
         _wobbleController.stop();
         _wobbleController.reset();
 

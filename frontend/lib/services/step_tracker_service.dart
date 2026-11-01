@@ -333,8 +333,10 @@ class StepTrackerService extends ChangeNotifier {
   }
 
   void _onPedestrianStatusChanged(PedestrianStatus event) {
-    _pedestrianStatus = event.status;
-    notifyListeners();
+    if (_pedestrianStatus != event.status) {
+      _pedestrianStatus = event.status;
+      notifyListeners();
+    }
   }
 
   /// Cập nhật mục tiêu bước chân hàng ngày
