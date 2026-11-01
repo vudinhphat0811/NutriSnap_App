@@ -44,6 +44,7 @@ class ApiConstants {
   static String mealLogDelete(int id) => '$baseUrl/api/meallogs/$id';
   static String get aiNutritionReview => '$baseUrl/api/meallogs/ai-review';
   static String get dashboardToday => '$baseUrl/api/dashboard/today';
+  static String get stepsSync => '$baseUrl/api/dashboard/steps/sync';
   static String addWater(int amountMl) => '$baseUrl/api/dashboard/water/add?amountMl=$amountMl';
   static String get voiceAssistantProcess => '$baseUrl/api/voice-assistant/process';
   static String get voiceAssistantProcessAudio => '$baseUrl/api/voice-assistant/process-audio';

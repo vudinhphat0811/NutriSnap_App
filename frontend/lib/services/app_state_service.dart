@@ -477,17 +477,21 @@ class AppStateService extends ChangeNotifier {
   static final AppStateService instance = AppStateService._internal();
   AppStateService._internal();
 
+  static DateTime getVietnamNow() {
+    return DateTime.now().toUtc().add(const Duration(hours: 7));
+  }
+
   static String getTodayDateString() {
-    final now = DateTime.now();
-    final y = now.year.toString().padLeft(4, '0');
-    final m = now.month.toString().padLeft(2, '0');
-    final d = now.day.toString().padLeft(2, '0');
+    final vn = getVietnamNow();
+    final y = vn.year.toString().padLeft(4, '0');
+    final m = vn.month.toString().padLeft(2, '0');
+    final d = vn.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
   }
 
   static String getYesterdayDateString() {
-    final now = DateTime.now();
-    final yest = DateTime(now.year, now.month, now.day - 1);
+    final vn = getVietnamNow();
+    final yest = vn.subtract(const Duration(days: 1));
     final y = yest.year.toString().padLeft(4, '0');
     final m = yest.month.toString().padLeft(2, '0');
     final d = yest.day.toString().padLeft(2, '0');
@@ -594,11 +598,12 @@ class AppStateService extends ChangeNotifier {
     saveToLocalStorage();
     notifyListeners();
 
-    // Tự động kéo nhật ký món ăn & nước uống từ Cloud Backend
+    // Tự động kéo nhật ký món ăn, nước uống & bước chân từ Cloud Backend
     syncMealLogsFromServer();
-    fetchDashboardToday();
     FridgeService.instance.reloadForCurrentUser();
-    StepTrackerService.instance.reloadForCurrentUser();
+    StepTrackerService.instance.reloadForCurrentUser().then((_) {
+      fetchDashboardToday();
+    });
     GoogleFitService.instance.reloadForCurrentUser();
   }
 
@@ -967,6 +972,7 @@ class AppStateService extends ChangeNotifier {
   /// - Đồng bộ lại Dashboard từ Backend nếu online
   Future<void> checkAndResetForNewDay() async {
     final today = getTodayDateString();
+    StepTrackerService.instance.checkDayRollover();
     if (lastActiveDate == null) {
       lastActiveDate = today;
       lastWaterDate = today;
@@ -975,11 +981,11 @@ class AppStateService extends ChangeNotifier {
     }
 
     if (lastActiveDate != today) {
-      debugPrint('[AppStateService] ☀️ Phát hiện chuyển sang ngày mới: $today (Ngày trước: $lastActiveDate)');
+      debugPrint('[AppStateService] ☀️ Phát hiện chuyển sang ngày mới theo giờ VN (0h): $today (Ngày trước: $lastActiveDate)');
 
       // 1. Cập nhật Streak
       final last = DateTime.tryParse(lastActiveDate!);
-      final now = DateTime.now();
+      final now = getVietnamNow();
       if (last != null) {
         final lastDayMidnight = DateTime(last.year, last.month, last.day);
         final todayMidnight = DateTime(now.year, now.month, now.day);
@@ -1436,6 +1442,18 @@ class AppStateService extends ChangeNotifier {
         if (consumedWater != null) {
           waterIntakeMl = consumedWater;
         }
+
+        final cloudSteps = (data['todaySteps'] as num?)?.toInt();
+        final cloudCalories = (data['burnedCalories'] as num?)?.toDouble();
+        final cloudDistance = (data['distanceKm'] as num?)?.toDouble();
+        if (cloudSteps != null) {
+          StepTrackerService.instance.applyCloudSteps(
+            steps: cloudSteps,
+            calories: cloudCalories,
+            distanceKm: cloudDistance,
+          );
+        }
+
         lastWaterDate = getTodayDateString();
         await saveToLocalStorage();
         notifyListeners();

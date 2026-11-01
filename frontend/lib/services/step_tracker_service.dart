@@ -1,12 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../constants/api_constants.dart';
 import 'app_state_service.dart';
 
 /// Dịch vụ Đếm Bước Chân & Theo Dõi Vận Động (Step Tracker & Calorie Burn Service)
-/// Thuật toán đếm bước chuẩn xác, chống trôi số, chống mất bước khi khởi động lại máy hoặc cộng thủ công.
+/// Thuật toán đếm bước chuẩn xác, chống trôi số, chống mất bước khi đổi thiết bị,
+/// tự động đồng bộ đám mây và reset chính xác lúc 00:00:00 theo giờ Việt Nam (UTC+7).
 class StepTrackerService extends ChangeNotifier {
   static final StepTrackerService instance = StepTrackerService._internal();
 
@@ -14,6 +18,8 @@ class StepTrackerService extends ChangeNotifier {
 
   StreamSubscription<StepCount>? _stepCountSubscription;
   StreamSubscription<PedestrianStatus>? _pedestrianStatusSubscription;
+  Timer? _cloudSyncDebounce;
+  Timer? _rolloverTimer;
   SharedPreferences? _prefs;
 
   int _todaySteps = 0;
@@ -35,7 +41,11 @@ class StepTrackerService extends ChangeNotifier {
   double? _googleFitCalories;
   double? _googleFitDistanceKm;
 
-  int get todaySteps => _isUsingGoogleFit ? _googleFitSteps : _todaySteps;
+  int get todaySteps {
+    checkDayRollover();
+    return _isUsingGoogleFit ? _googleFitSteps : _todaySteps;
+  }
+
   int get sensorSteps => _sensorSteps;
   int get manualSteps => _manualSteps;
   int get stepGoal => _stepGoal;
@@ -102,9 +112,9 @@ class StepTrackerService extends ChangeNotifier {
     return 'guest';
   }
 
+  /// Lấy ngày hôm nay theo chuẩn múi giờ Việt Nam (UTC+7)
   String _getTodayDateString() {
-    final now = DateTime.now();
-    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    return AppStateService.getTodayDateString();
   }
 
   /// Khởi tạo dịch vụ
@@ -125,7 +135,7 @@ class StepTrackerService extends ChangeNotifier {
         _isBaseSet = _prefs!.getBool('nutrisnap_steps_base_set_$_accountKey') ?? false;
         _lastRawSensorSteps = _prefs!.getInt('nutrisnap_steps_last_raw_$_accountKey') ?? 0;
       } else {
-        // Ngày mới -> reset về 0 hoàn toàn
+        // Ngày mới -> reset về 0 hoàn toàn theo giờ Việt Nam
         _sensorSteps = 0;
         _manualSteps = 0;
         _todaySteps = 0;
@@ -138,6 +148,12 @@ class StepTrackerService extends ChangeNotifier {
 
       _isInitialized = true;
       notifyListeners();
+
+      // Bắt đầu hẹn giờ kiểm tra chuyển ngày 0h VN định kỳ (mỗi 30s)
+      _rolloverTimer?.cancel();
+      _rolloverTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        checkDayRollover();
+      });
 
       // Kiểm tra và khởi động lắng nghe cảm biến
       await _checkPermissionAndStartListening();
@@ -161,22 +177,84 @@ class StepTrackerService extends ChangeNotifier {
     await prefs.setInt('nutrisnap_steps_last_raw_$_accountKey', _lastRawSensorSteps);
   }
 
-  /// Kiểm tra chuyển ngày tự động
-  void _checkDayRollover() {
+  /// Kiểm tra chuyển ngày tự động theo giờ Việt Nam (00:00:00 UTC+7)
+  void checkDayRollover() {
     final prefs = _prefs;
     if (prefs == null) return;
     final todayStr = _getTodayDateString();
     final savedDate = prefs.getString('nutrisnap_steps_date_$_accountKey');
     if (savedDate != null && savedDate != todayStr) {
+      debugPrint('[StepTrackerService] ☀️ 0h VN: Reset bước chân sang ngày mới: $todayStr (Cũ: $savedDate)');
       _sensorSteps = 0;
       _manualSteps = 0;
       _todaySteps = 0;
-      _todayBaseSensorSteps = 0;
       _bootAccumulatedSensorSteps = 0;
-      _isBaseSet = false;
-      _lastRawSensorSteps = 0;
+      if (_lastRawSensorSteps > 0) {
+        _todayBaseSensorSteps = _lastRawSensorSteps;
+        _isBaseSet = true;
+      } else {
+        _todayBaseSensorSteps = 0;
+        _isBaseSet = false;
+      }
       _saveState(forceDate: todayStr);
       notifyListeners();
+      // Đồng bộ ngày mới lên server nếu đã đăng nhập
+      syncStepsToCloud(immediate: true);
+    }
+  }
+
+  /// Nhận số bước chân đã lưu trên Đám Mây Cloud Backend (tránh mất số khi đổi thiết bị)
+  void applyCloudSteps({required int steps, double? calories, double? distanceKm}) {
+    if (_isUsingGoogleFit) return;
+    checkDayRollover();
+    if (steps > _todaySteps) {
+      _todaySteps = steps;
+      if (steps > _sensorSteps) {
+        _manualSteps = steps - _sensorSteps;
+      }
+      _saveState();
+      notifyListeners();
+    } else if (_todaySteps > steps && steps > 0) {
+      // Máy hiện tại có nhiều bước hơn trên Cloud -> Đẩy cập nhật lên Cloud
+      _scheduleCloudSync();
+    }
+  }
+
+  /// Lên lịch đồng bộ bước chân lên Cloud (debounce 4 giây để tiết kiệm băng thông)
+  void _scheduleCloudSync() {
+    _cloudSyncDebounce?.cancel();
+    _cloudSyncDebounce = Timer(const Duration(seconds: 4), () {
+      syncStepsToCloud();
+    });
+  }
+
+  /// Gửi số liệu bước chân hôm nay lên Cloud Backend C#
+  Future<void> syncStepsToCloud({bool immediate = false}) async {
+    final appState = AppStateService.instance;
+    final token = appState.authToken;
+    if (token == null || token.isEmpty || appState.isGuestMode || token.startsWith('guest_') || token.startsWith('mock_')) {
+      return;
+    }
+
+    try {
+      final uri = Uri.parse(ApiConstants.stepsSync);
+      final body = jsonEncode({
+        'steps': todaySteps,
+        'caloriesBurned': burnedCalories,
+        'distanceKm': distanceKm,
+        'date': _getTodayDateString(),
+      });
+
+      await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: body,
+      ).timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('[StepTrackerService] Cloud sync error: $e');
     }
   }
 
@@ -285,7 +363,7 @@ class StepTrackerService extends ChangeNotifier {
     // Đã xác nhận phần cứng có hỗ trợ cảm biến, an toàn để theo dõi trạng thái di chuyển
     _startPedestrianStatusListening();
 
-    _checkDayRollover();
+    checkDayRollover();
 
     // 1. Nếu ngày hôm nay chưa khóa mốc gốc (Base):
     if (!_isBaseSet) {
@@ -297,6 +375,7 @@ class StepTrackerService extends ChangeNotifier {
       _todaySteps = _sensorSteps + _manualSteps;
       _saveState();
       notifyListeners();
+      _scheduleCloudSync();
       return;
     }
 
@@ -329,6 +408,7 @@ class StepTrackerService extends ChangeNotifier {
       _todaySteps = newTotal;
       _saveState();
       notifyListeners();
+      _scheduleCloudSync();
     }
   }
 
@@ -355,12 +435,13 @@ class StepTrackerService extends ChangeNotifier {
   /// Thêm bước chân thủ công (hoàn toàn độc lập, không bao giờ bị cảm biến đè mất)
   Future<void> addManualSteps(int steps) async {
     if (steps <= 0) return;
-    _checkDayRollover();
+    checkDayRollover();
     _manualSteps += steps;
     _todaySteps = _sensorSteps + _manualSteps;
     notifyListeners();
     try {
       await _saveState();
+      _scheduleCloudSync();
     } catch (e) {
       debugPrint('[StepTrackerService] Add manual steps error: $e');
     }
@@ -376,6 +457,7 @@ class StepTrackerService extends ChangeNotifier {
     _isBaseSet = true;
     notifyListeners();
     await _saveState();
+    await syncStepsToCloud(immediate: true);
   }
 
   /// Chuyển đổi tài khoản: Nạp lại bước chân cho tài khoản hiện tại
@@ -394,6 +476,8 @@ class StepTrackerService extends ChangeNotifier {
   void dispose() {
     _stepCountSubscription?.cancel();
     _pedestrianStatusSubscription?.cancel();
+    _cloudSyncDebounce?.cancel();
+    _rolloverTimer?.cancel();
     super.dispose();
   }
 }

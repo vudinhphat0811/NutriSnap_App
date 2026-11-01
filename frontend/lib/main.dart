@@ -14,6 +14,7 @@ import 'screens/smart_fridge_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/onboarding_profile_screen.dart';
 import 'services/app_state_service.dart';
+import 'services/step_tracker_service.dart';
 import 'constants/api_constants.dart';
 import 'widgets/guest_trial_barrier.dart';
 import 'widgets/social_auth_helper.dart';
@@ -197,6 +198,9 @@ class _MainShellScreenState extends State<MainShellScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       AppStateService.instance.checkAndResetForNewDay();
+      StepTrackerService.instance.checkDayRollover();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      StepTrackerService.instance.syncStepsToCloud(immediate: true);
     }
   }
 

@@ -186,6 +186,21 @@ using (var scope = app.Services.CreateScope())
                     UPDATE AspNetUsers SET DietType = 'HighProtein' WHERE DietType IS NULL;
                     UPDATE AspNetUsers SET FullName = '' WHERE FullName IS NULL;
                     UPDATE AspNetUsers SET Gender = '' WHERE Gender IS NULL;
+
+                    IF NOT EXISTS (SELECT 1 FROM sysobjects WHERE name='DailyStepLogs' AND xtype='U')
+                    BEGIN
+                        CREATE TABLE DailyStepLogs (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            UserId INT NOT NULL,
+                            LogDate DATE NOT NULL,
+                            Steps INT NOT NULL DEFAULT 0,
+                            CaloriesBurned FLOAT NOT NULL DEFAULT 0,
+                            DistanceKm FLOAT NOT NULL DEFAULT 0,
+                            UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                            CONSTRAINT FK_DailyStepLogs_AspNetUsers_UserId FOREIGN KEY (UserId) REFERENCES AspNetUsers(Id) ON DELETE CASCADE
+                        );
+                        CREATE UNIQUE INDEX IX_DailyStepLogs_UserId_LogDate ON DailyStepLogs (UserId, LogDate);
+                    END
                 ");
             }
             else if (providerName.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) || providerName.Contains("PostgreSQL", StringComparison.OrdinalIgnoreCase))
@@ -214,6 +229,17 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE ""DailyAiReviews"" ADD COLUMN IF NOT EXISTS ""Lang"" VARCHAR(10) NOT NULL DEFAULT 'vi';
                     DROP INDEX IF EXISTS ""IX_DailyAiReviews_User_Date_Period"";
                     CREATE UNIQUE INDEX IF NOT EXISTS ""IX_DailyAiReviews_User_Date_Period_Lang"" ON ""DailyAiReviews"" (""UserId"", ""ReviewDate"", ""Period"", ""Lang"");
+
+                    CREATE TABLE IF NOT EXISTS ""DailyStepLogs"" (
+                        ""Id"" SERIAL PRIMARY KEY,
+                        ""UserId"" INT NOT NULL,
+                        ""LogDate"" DATE NOT NULL,
+                        ""Steps"" INT NOT NULL DEFAULT 0,
+                        ""CaloriesBurned"" DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        ""DistanceKm"" DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        ""UpdatedAt"" TIMESTAMP NOT NULL DEFAULT NOW()
+                    );
+                    CREATE UNIQUE INDEX IF NOT EXISTS ""IX_DailyStepLogs_UserId_LogDate"" ON ""DailyStepLogs"" (""UserId"", ""LogDate"");
                 ");
             }
             else if (providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
@@ -222,6 +248,18 @@ using (var scope = app.Services.CreateScope())
                 try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN DietType TEXT;"); } catch {}
                 try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN ActivityLevel TEXT;"); } catch {}
                 try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN TargetWeightKg REAL NOT NULL DEFAULT 0;"); } catch {}
+                try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"
+                    CREATE TABLE IF NOT EXISTS DailyStepLogs (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        UserId INTEGER NOT NULL,
+                        LogDate TEXT NOT NULL,
+                        Steps INTEGER NOT NULL DEFAULT 0,
+                        CaloriesBurned REAL NOT NULL DEFAULT 0,
+                        DistanceKm REAL NOT NULL DEFAULT 0,
+                        UpdatedAt TEXT NOT NULL
+                    );
+                    CREATE UNIQUE INDEX IF NOT EXISTS IX_DailyStepLogs_UserId_LogDate ON DailyStepLogs (UserId, LogDate);
+                "); } catch {}
             }
 
         }

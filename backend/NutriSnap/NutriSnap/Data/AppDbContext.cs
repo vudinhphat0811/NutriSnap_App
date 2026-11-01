@@ -12,6 +12,7 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<int>, int>
     public DbSet<SavedRecipe> SavedRecipes => Set<SavedRecipe>();
     public DbSet<MealLog> MealLogs => Set<MealLog>();
     public DbSet<DailyWaterLog> DailyWaterLogs => Set<DailyWaterLog>();
+    public DbSet<DailyStepLog> DailyStepLogs => Set<DailyStepLog>();
     public DbSet<DailyAiReview> DailyAiReviews => Set<DailyAiReview>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -21,6 +22,11 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<int>, int>
         // Tạo Index Unique cho User và Ngày uống nước
         builder.Entity<DailyWaterLog>()
             .HasIndex(w => new { w.UserId, w.LogDate })
+            .IsUnique();
+
+        // Tạo Index Unique cho User và Ngày đếm bước chân
+        builder.Entity<DailyStepLog>()
+            .HasIndex(s => new { s.UserId, s.LogDate })
             .IsUnique();
 
         // Index cho MealLog phục vụ truy vấn 30 ngày và xóa tự động
