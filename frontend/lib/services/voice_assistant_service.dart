@@ -47,10 +47,14 @@ class VoiceAssistantService {
         return false;
       }
 
-      await _tts.setLanguage('vi-VN');
-      await _tts.setSpeechRate(0.5);
-      await _tts.setPitch(1.0);
-      await _tts.setVolume(1.0);
+      try {
+        await _tts.setLanguage('vi-VN');
+        await _tts.setSpeechRate(0.5);
+        await _tts.setPitch(1.0);
+        await _tts.setVolume(1.0);
+      } catch (ttsErr) {
+        debugPrint('[VoiceAssistant] TTS init warning (vẫn dùng được micro): $ttsErr');
+      }
 
       return true;
     } catch (e) {
@@ -385,19 +389,27 @@ class VoiceAssistantService {
       }).toList(),
     };
 
-    try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.voiceAssistantProcessAudio),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(requestBody),
-      ).timeout(const Duration(seconds: 15));
+    final urlsToTry = [
+      ApiConstants.voiceAssistantProcessAudio,
+      'http://10.0.2.2:5065/api/voice-assistant/process-audio',
+      'http://127.0.0.1:5065/api/voice-assistant/process-audio',
+    ];
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        return VoiceAssistantResponse.fromJson(decoded);
+    for (final urlStr in urlsToTry) {
+      try {
+        final response = await http.post(
+          Uri.parse(urlStr),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(requestBody),
+        ).timeout(const Duration(seconds: 12));
+
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+          return VoiceAssistantResponse.fromJson(decoded);
+        }
+      } catch (e) {
+        debugPrint('[VoiceAssistantService] Call $urlStr failed: $e');
       }
-    } catch (e) {
-      debugPrint('[VoiceAssistantService] Call Backend process-audio failed: $e');
     }
 
     return const VoiceAssistantResponse(
@@ -475,23 +487,30 @@ class VoiceAssistantService {
       'burnedCalories': StepTrackerService.instance.burnedCalories,
     };
 
-    // 1. Thử gọi Backend API
-    try {
-      final url = Uri.parse(ApiConstants.voiceAssistantProcess);
-      final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 10));
+    // 1. Thử gọi Backend API với cơ chế tự động chuyển IP (Wi-Fi / Máy ảo 10.0.2.2 / ADB Reverse 127.0.0.1)
+    final urlsToTry = [
+      ApiConstants.voiceAssistantProcess,
+      'http://10.0.2.2:5065/api/voice-assistant/process',
+      'http://127.0.0.1:5065/api/voice-assistant/process',
+    ];
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes));
-        return VoiceAssistantResponse.fromJson(data);
+    for (final urlStr in urlsToTry) {
+      try {
+        final response = await http
+            .post(
+              Uri.parse(urlStr),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(payload),
+            )
+            .timeout(const Duration(seconds: 8));
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(utf8.decode(response.bodyBytes));
+          return VoiceAssistantResponse.fromJson(data);
+        }
+      } catch (e) {
+        debugPrint('[VoiceAssistantService] Call $urlStr failed: $e');
       }
-    } catch (e) {
-      debugPrint('[VoiceAssistantService] Backend call failed ($e). Using Offline Rule Engine.');
     }
 
     // 2. Chế độ dự phòng Offline thông minh (0ms, không cần mạng)
