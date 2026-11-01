@@ -40,6 +40,7 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
   String _statusMessage = '';
 
   final List<_ChatMessage> _messages = [];
+  final Set<String> _executedActionKeys = {};
 
   final List<String> _quickSuggestions = [
     'Hôm nay ăn gì từ tủ lạnh?',
@@ -518,35 +519,47 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
 
           const SizedBox(height: 12),
           // Nút hành động 1-chạm: Nấu & Trừ tủ lạnh & Lưu nhật ký
-          SizedBox(
-            width: double.infinity,
-            height: 38,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                _voiceService.executeFridgeRecipe(recipe);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('✅ Đã trừ nguyên liệu trong tủ lạnh và lưu ${recipe.calories} kcal vào nhật ký!'),
-                    backgroundColor: const Color(0xFF16A34A),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF16A34A),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                elevation: 0,
+          Builder(builder: (context) {
+            final actionKey = 'recipe_${recipe.recipeTitle}_${recipe.calories}';
+            final isDone = _executedActionKeys.contains(actionKey);
+
+            return SizedBox(
+              width: double.infinity,
+              height: 38,
+              child: ElevatedButton.icon(
+                onPressed: isDone
+                    ? null
+                    : () {
+                        setState(() {
+                          _executedActionKeys.add(actionKey);
+                        });
+                        _voiceService.executeFridgeRecipe(recipe);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('✅ Đã trừ nguyên liệu trong tủ lạnh và lưu ${recipe.calories} kcal vào nhật ký!'),
+                            backgroundColor: const Color(0xFF16A34A),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isDone ? const Color(0xFFDCFCE7) : const Color(0xFF16A34A),
+                  foregroundColor: isDone ? const Color(0xFF15803D) : Colors.white,
+                  disabledBackgroundColor: const Color(0xFFDCFCE7),
+                  disabledForegroundColor: const Color(0xFF15803D),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
+                icon: Icon(isDone ? Icons.check_circle_rounded : Icons.done_all_rounded, size: 16),
+                label: Text(
+                  isDone ? 'Đã nấu & Lưu nhật ký thành công ✅' : 'Nấu Món Này (Trừ Tủ Lạnh & Lưu Nhật Ký)',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              icon: const Icon(Icons.done_all_rounded, size: 16),
-              label: const Text(
-                'Nấu Món Này (Trừ Tủ Lạnh & Lưu Nhật Ký)',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
+            );
+          }),
         ],
       ),
     );
@@ -554,25 +567,36 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
 
   /// 🍱 THẺ GHI NHẬN BỮA ĂN (MEAL LOG)
   Widget _buildMealLogCard(VoiceMealData meal) {
+    final actionKey = 'meal_${meal.title}_${meal.mealType}_${meal.calories}';
+    final isDone = _executedActionKeys.contains(actionKey);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: isDone ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        border: Border.all(color: isDone ? const Color(0xFF86EFAC) : const Color(0xFFCBD5E1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.bookmark_add_outlined, color: AppColors.primary, size: 18),
+              Icon(
+                isDone ? Icons.check_circle_rounded : Icons.bookmark_add_outlined,
+                color: isDone ? const Color(0xFF16A34A) : AppColors.primary,
+                size: 18,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'GỢI Ý GHI BỮA ${meal.mealType.toUpperCase()}',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.primary),
+                  isDone ? 'ĐÃ GHI VÀO NHẬT KÝ BỮA ${meal.mealType.toUpperCase()}' : 'GỢI Ý GHI BỮA ${meal.mealType.toUpperCase()}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: isDone ? const Color(0xFF16A34A) : AppColors.primary,
+                  ),
                 ),
               ),
               Text(
@@ -596,26 +620,36 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
-            height: 36,
+            height: 38,
             child: ElevatedButton.icon(
-              onPressed: () {
-                _voiceService.executeMealLog(meal);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('✅ Đã lưu ${meal.title} (${meal.calories} kcal) vào Bữa ${meal.mealType}!'),
-                    backgroundColor: const Color(0xFF16A34A),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
+              onPressed: isDone
+                  ? null
+                  : () {
+                      setState(() {
+                        _executedActionKeys.add(actionKey);
+                      });
+                      _voiceService.executeMealLog(meal);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('✅ Đã lưu ${meal.title} (${meal.calories} kcal) vào Bữa ${meal.mealType}!'),
+                          backgroundColor: const Color(0xFF16A34A),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+                backgroundColor: isDone ? const Color(0xFFDCFCE7) : AppColors.primary,
+                foregroundColor: isDone ? const Color(0xFF15803D) : Colors.white,
+                disabledBackgroundColor: const Color(0xFFDCFCE7),
+                disabledForegroundColor: const Color(0xFF15803D),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 elevation: 0,
               ),
-              icon: const Icon(Icons.check_rounded, size: 16),
-              label: Text('Xác nhận lưu vào Bữa ${meal.mealType}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+              icon: Icon(isDone ? Icons.check_circle_rounded : Icons.check_rounded, size: 16),
+              label: Text(
+                isDone ? 'Đã lưu vào Bữa ${meal.mealType} ✅' : 'Xác nhận lưu vào Bữa ${meal.mealType}',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
             ),
           ),
         ],
@@ -677,20 +711,30 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
 
   /// 🧊 THẺ THÊM ĐỒ VÀO TỦ LẠNH
   Widget _buildFridgeAddCard(VoiceFridgeAddData item) {
+    final actionKey = 'fridge_${item.name}_${item.quantity}';
+    final isDone = _executedActionKeys.contains(actionKey);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0FDFA),
+        color: isDone ? const Color(0xFFF0FDF4) : const Color(0xFFF0FDFA),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF99F6E4)),
+        border: Border.all(color: isDone ? const Color(0xFF86EFAC) : const Color(0xFF99F6E4)),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: const BoxDecoration(color: Color(0xFFCCFBF1), shape: BoxShape.circle),
-            child: const Icon(Icons.kitchen_rounded, color: Color(0xFF0D9488), size: 20),
+            decoration: BoxDecoration(
+              color: isDone ? const Color(0xFFDCFCE7) : const Color(0xFFCCFBF1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isDone ? Icons.check_circle_rounded : Icons.kitchen_rounded,
+              color: isDone ? const Color(0xFF16A34A) : const Color(0xFF0D9488),
+              size: 20,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -703,24 +747,34 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
             ),
           ),
           ElevatedButton(
-            onPressed: () {
-              _voiceService.executeFridgeAdd(item);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('🧊 Đã thêm ${item.name} vào Tủ Lạnh Thông Minh!'),
-                  backgroundColor: const Color(0xFF0D9488),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
+            onPressed: isDone
+                ? null
+                : () {
+                    setState(() {
+                      _executedActionKeys.add(actionKey);
+                    });
+                    _voiceService.executeFridgeAdd(item);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('🧊 Đã thêm ${item.name} vào Tủ Lạnh Thông Minh!'),
+                        backgroundColor: const Color(0xFF0D9488),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0D9488),
-              foregroundColor: Colors.white,
+              backgroundColor: isDone ? const Color(0xFFDCFCE7) : const Color(0xFF0D9488),
+              foregroundColor: isDone ? const Color(0xFF15803D) : Colors.white,
+              disabledBackgroundColor: const Color(0xFFDCFCE7),
+              disabledForegroundColor: const Color(0xFF15803D),
               padding: const EdgeInsets.symmetric(horizontal: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               elevation: 0,
             ),
-            child: const Text('Cất vào tủ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            child: Text(
+              isDone ? 'Đã cất ✅' : 'Cất vào tủ',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
