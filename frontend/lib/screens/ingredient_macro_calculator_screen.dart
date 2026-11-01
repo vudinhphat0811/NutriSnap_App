@@ -882,40 +882,34 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                   const SizedBox(height: 14),
                 ],
 
-                // 4. Nút Chọn / Chỉnh Cân Nặng
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _openWeightEditDialog(cut);
-                        },
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          side: const BorderSide(color: AppColors.primary),
-                        ),
-                        child: const Text('Tùy chỉnh gram', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.primary)),
-                      ),
+                // 4. Nút Thêm vào danh sách (Không chỉnh cân nặng ở phần trên)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      if (!isSelected) {
+                        _addItem(cut);
+                      }
+                      Navigator.pop(ctx);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isSelected ? const Color(0xFF16A34A) : AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          _addItem(cut);
-                          Navigator.pop(ctx);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(isSelected ? Icons.check_circle_rounded : Icons.add_circle_outline_rounded, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          isSelected ? 'Đã có trong danh sách' : 'Thêm vào danh sách',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                         ),
-                        child: Text(isSelected ? 'Thêm +50g' : 'Chọn vào giỏ', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -1627,25 +1621,24 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
     final displayPro = (_isCookedMode && cut.requiresCooking) ? cut.proteinPer100gCooked : cut.proteinPer100g;
     final displayCarb = (_isCookedMode && cut.requiresCooking) ? cut.carbsPer100gCooked : cut.carbsPer100g;
     final displayFat = (_isCookedMode && cut.requiresCooking) ? cut.fatPer100gCooked : cut.fatPer100g;
-    final isItemCookedInCart = _itemAddedAsCooked[cut.id] == true && cut.requiresCooking;
 
-    return InkWell(
-      onTap: () => _showCutDetailSheet(cut),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFF0FDF4) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
-            width: isSelected ? 1.4 : 1.0,
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFFF0FDF4) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isSelected ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+          width: isSelected ? 1.4 : 1.0,
         ),
-        child: Row(
-          children: [
-            // Icon phân loại nguyên liệu
-            Container(
+      ),
+      child: Row(
+        children: [
+          // Icon phân loại nguyên liệu (bấm để xem mẹo & thông tin dinh dưỡng 100g)
+          InkWell(
+            onTap: () => _showCutDetailSheet(cut),
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
               width: 36,
               height: 36,
               decoration: BoxDecoration(
@@ -1656,10 +1649,20 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                 child: Text(cut.categoryIcon, style: const TextStyle(fontSize: 18)),
               ),
             ),
-            const SizedBox(width: 10),
+          ),
+          const SizedBox(width: 10),
 
-            // Tên nguyên liệu + macros + badge
-            Expanded(
+          // Tên nguyên liệu + macros + badge (bấm để Thêm hoặc Bỏ thêm)
+          Expanded(
+            child: InkWell(
+              onTap: () {
+                if (!isSelected) {
+                  _addItem(cut);
+                } else {
+                  _removeItem(cut.id);
+                }
+              },
+              borderRadius: BorderRadius.circular(8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1728,75 +1731,73 @@ class _IngredientMacroCalculatorScreenState extends State<IngredientMacroCalcula
                 ],
               ),
             ),
+          ),
 
-            // Cột bên phải: Calo / 100g + Nút Thêm
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '$displayCalo kcal',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: (_isCookedMode && cut.requiresCooking) ? const Color(0xFFEA580C) : const Color(0xFF15803D),
+          // Cột bên phải: Calo / 100g + Nút Thêm (CHỈ ẤN NÚT THÊM, KHÔNG CHỈNH CÂN NẶNG Ở PHẦN TRÊN)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '$displayCalo kcal',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold,
+                  color: (_isCookedMode && cut.requiresCooking) ? const Color(0xFFEA580C) : const Color(0xFF15803D),
+                ),
+              ),
+              const SizedBox(height: 3),
+              if (!isSelected)
+                InkWell(
+                  onTap: () => _addItem(cut),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
+                    decoration: BoxDecoration(
+                      color: (_isCookedMode && cut.requiresCooking) ? const Color(0xFFEA580C) : AppColors.primary,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.add_rounded, size: 14, color: Colors.white),
+                        const SizedBox(width: 2),
+                        Text(
+                          cut.requiresCooking
+                              ? (_isCookedMode ? 'Thêm (chín)' : 'Thêm (thô)')
+                              : 'Thêm',
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                InkWell(
+                  onTap: () => _removeItem(cut.id),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFF16A34A)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_rounded, size: 13, color: Color(0xFF15803D)),
+                        SizedBox(width: 3),
+                        Text(
+                          'Đã thêm',
+                          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 3),
-                if (!isSelected)
-                  InkWell(
-                    onTap: () => _addItem(cut),
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: (_isCookedMode && cut.requiresCooking) ? const Color(0xFFEA580C) : AppColors.primary,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.add_rounded, size: 14, color: Colors.white),
-                          const SizedBox(width: 2),
-                          Text(
-                            cut.requiresCooking
-                                ? (_isCookedMode ? 'Chọn (chín)' : 'Chọn (thô)')
-                                : 'Chọn',
-                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  InkWell(
-                    onTap: () => _addItem(cut, step: 50.0),
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDCFCE7),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFF16A34A)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            cut.requiresCooking
-                                ? '${currentWeight.round()}g ${isItemCookedInCart ? 'chín' : 'thô'}'
-                                : '${currentWeight.round()}g',
-                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
-                          ),
-                          const SizedBox(width: 2),
-                          const Icon(Icons.add_rounded, size: 13, color: Color(0xFF15803D)),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
     );
   }
