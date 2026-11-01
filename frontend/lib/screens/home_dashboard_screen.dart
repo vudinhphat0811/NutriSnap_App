@@ -88,9 +88,14 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               const SizedBox(height: 16),
               _buildCalorieCard(),
               const SizedBox(height: 16),
-              _buildStepTrackerCard(),
-              const SizedBox(height: 16),
-              _buildAiNutritionBanner(),
+              // Hàng gồm 2 thẻ vuông gọn gàng: [✨ Đánh giá AI] bên trái & [👟 Bước chân] bên phải (Đúng vị trí khung đen người dùng yêu cầu)
+              Row(
+                children: [
+                  Expanded(child: _buildAiNutritionCard()),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildStepTrackerCard()),
+                ],
+              ),
               const SizedBox(height: 16),
               _buildIngredientCutGymSection(),
               const SizedBox(height: 16),
@@ -350,94 +355,96 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     );
   }
 
-  Widget _buildAiNutritionBanner() {
+  Widget _buildAiNutritionCard() {
     final isVi = appState.currentLanguage == 'vi';
-    return InkWell(
-      onTap: () => AiNutritionReportSheet.show(context, initialPeriod: 'yesterday'),
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.06),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: const BoxDecoration(
-                color: AppColors.accentMint,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.auto_awesome_rounded,
-                color: AppColors.primary,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        isVi ? 'Đánh giá AI hôm qua' : 'AI Yesterday Review',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textBlack,
-                        ),
+
+    return Container(
+      height: 140,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: () => AiNutritionReportSheet.show(context, initialPeriod: 'yesterday'),
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Hàng 1: Icon AI + Badge
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: const BoxDecoration(
+                        color: AppColors.accentMint,
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentMint,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          isVi ? 'Xem lời khuyên' : 'See tips',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primaryDark,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    isVi
-                        ? 'Chạm để xem điểm số & lời khuyên từ Bác sĩ Dinh dưỡng AI'
-                        : 'Tap to view your score & AI dietitian recommendations',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textGray,
+                      child: const Icon(Icons.auto_awesome_rounded, color: AppColors.primary, size: 16),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentMint,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        isVi ? 'Bác Sĩ AI' : 'AI Coach',
+                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Hàng 2: Tiêu đề + Mô tả ngắn
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isVi ? 'Đánh Giá AI' : 'AI Review',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isVi ? 'Phân tích dinh dưỡng & calo hôm qua' : 'Nutrition analysis & score',
+                      style: const TextStyle(fontSize: 10, color: AppColors.textGray, height: 1.25),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+
+                // Hàng 3: Nút xem lời khuyên
+                Row(
+                  children: [
+                    Text(
+                      isVi ? 'Xem lời khuyên' : 'View report',
+                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppColors.primary),
+                    ),
+                    const SizedBox(width: 3),
+                    const Icon(Icons.arrow_forward_rounded, size: 12, color: AppColors.primary),
+                  ],
+                ),
+              ],
             ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: AppColors.textLightGray,
-              size: 20,
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -753,247 +760,162 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     final progress = stepService.stepProgress;
     final cal = stepService.burnedCalories;
     final dist = stepService.distanceKm;
-    final mins = stepService.activeMinutes;
-
-    String statusText = 'Sẵn sàng đếm';
-    Color statusColor = Colors.orange;
-    if (stepService.pedestrianStatus == 'walking') {
-      statusText = 'Đang di chuyển';
-      statusColor = Colors.green;
-    } else if (stepService.pedestrianStatus == 'stopped') {
-      statusText = 'Đang dừng lại';
-      statusColor = Colors.blueGrey;
-    }
 
     return Container(
+      height: 140,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.2)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: Colors.orange.withValues(alpha: 0.05),
             blurRadius: 10,
-            offset: const Offset(0, 4),
+            offset: const Offset(0, 3),
           ),
         ],
-        border: Border.all(color: Colors.orange.shade50),
       ),
       child: Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
           onTap: () => StepTrackerDetailSheet.show(context),
+          borderRadius: BorderRadius.circular(20),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Tầng 1: Tiêu đề + Trạng thái + Calo Đốt
+                // Hàng 1: Icon Bước chân + Badge Calo
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Container(
-                      width: 38,
-                      height: 38,
+                      width: 32,
+                      height: 32,
                       decoration: BoxDecoration(
                         color: Colors.orange.shade50,
                         shape: BoxShape.circle,
                       ),
                       child: const Center(
-                        child: Text('👟', style: TextStyle(fontSize: 18)),
+                        child: Text('👟', style: TextStyle(fontSize: 15)),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Vận Động & Bước Chân',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textBlack,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              if (stepService.isUsingGoogleFit) ...[
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: const Text(
-                                    '⚡ Google Fit',
-                                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
-                                  ),
-                                ),
-                                const SizedBox(width: 5),
-                              ],
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: statusColor,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 5),
-                              Flexible(
-                                child: Text(
-                                  statusText,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: Colors.orange.shade200),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '🔥 ${cal.toStringAsFixed(0)} kcal',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange.shade900,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(Icons.arrow_forward_ios_rounded, size: 10, color: Colors.orange.shade800),
-                        ],
+                      child: Text(
+                        '🔥 ${cal.toStringAsFixed(0)} kcal',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange.shade900,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
 
-                // Tầng 2: Tiến độ bước chân
+                // Hàng 2: Tiến độ bước chân
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: RichText(
+                            overflow: TextOverflow.ellipsis,
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: '$steps',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppColors.textBlack,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: ' / $goal',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: AppColors.textGray,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '${(progress * 100).toStringAsFixed(0)}%',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange.shade800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 5,
+                        backgroundColor: Colors.grey.shade100,
+                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Hàng 3: Khoảng cách km & Chi tiết
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    RichText(
-                      text: TextSpan(
+                    Text(
+                      '📍 ${dist.toStringAsFixed(1)} km',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                    if (stepService.isUsingGoogleFit)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: const Text(
+                          '⚡ Fit',
+                          style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                        ),
+                      )
+                    else
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          TextSpan(
-                            text: '$steps',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              color: AppColors.textBlack,
+                          Text(
+                            'Chi tiết',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange.shade800,
                             ),
                           ),
-                          TextSpan(
-                            text: ' / $goal bước',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textGray,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                          const SizedBox(width: 2),
+                          Icon(Icons.arrow_forward_ios_rounded, size: 8, color: Colors.orange.shade800),
                         ],
                       ),
-                    ),
-                    Text(
-                      '${(progress * 100).toStringAsFixed(0)}%',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.orange.shade800,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(5),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 7,
-                    backgroundColor: Colors.grey.shade100,
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // Tầng 3: Các chỉ số phụ + Nút cộng nhanh
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '📍 ${dist.toStringAsFixed(2)} km',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.teal.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '⏱️ $mins ph',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.teal.shade800),
-                      ),
-                    ),
-                    const Spacer(),
-                    InkWell(
-                      onTap: () {
-                        stepService.addManualSteps(1000);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Đã cộng thêm 1.000 bước vận động!'),
-                            duration: Duration(seconds: 1),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentMint,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.add, size: 14, color: AppColors.primaryDark),
-                            Text(
-                              '1000 bước',
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.primaryDark),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ],
