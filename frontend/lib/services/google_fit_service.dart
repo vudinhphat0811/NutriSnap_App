@@ -30,11 +30,9 @@ class GoogleFitService extends ChangeNotifier {
   static const List<String> _fitnessScopes = [
     'email',
     'https://www.googleapis.com/auth/fitness.activity.read',
-    'https://www.googleapis.com/auth/fitness.location.read',
     'https://www.googleapis.com/auth/fitness.body.read',
     'https://www.googleapis.com/auth/fitness.body.write',
     'https://www.googleapis.com/auth/fitness.nutrition.write',
-    'https://www.googleapis.com/auth/fitness.hydration.write',
   ];
 
   bool _isLinked = false;
@@ -139,6 +137,7 @@ class GoogleFitService extends ChangeNotifier {
 
       final GoogleSignInAccount? account = await googleSignIn.signIn();
       if (account == null) {
+        _lastError = 'Bạn đã đóng hoặc hủy hộp thoại chọn tài khoản Google.';
         _isSyncing = false;
         notifyListeners();
         return false;
@@ -175,14 +174,9 @@ class GoogleFitService extends ChangeNotifier {
       _isSyncing = false;
       notifyListeners();
       return true;
-    } catch (e) {
-      debugPrint('[GoogleFitService] Link error: $e');
-      final errStr = e.toString();
-      if (errStr.contains('12500')) {
-        _lastError = 'Lỗi 12500 từ Google: Vui lòng kiểm tra email đã được thêm vào danh sách "Test users" trên Google Cloud Console chưa, hoặc kiểm tra quyền Fitness API.';
-      } else {
-        _lastError = 'Lỗi kết nối Google Fit: $e';
-      }
+    } catch (e, stack) {
+      debugPrint('[GoogleFitService] Link error: $e\n$stack');
+      _lastError = 'Lỗi kết nối Google: $e';
       _isSyncing = false;
       notifyListeners();
       return false;
