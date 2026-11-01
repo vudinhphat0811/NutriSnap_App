@@ -161,38 +161,77 @@ class StepTrackerService extends ChangeNotifier {
   /// Bắt đầu lắng nghe cảm biến phần cứng Pedometer
   void _startListening() {
     _stepCountSubscription?.cancel();
+    _stepCountSubscription = null;
     _pedestrianStatusSubscription?.cancel();
+    _pedestrianStatusSubscription = null;
 
-    try {
-      _stepCountSubscription = Pedometer.stepCountStream.listen(
-        _onStepCount,
-        onError: (error) {
-          debugPrint('[StepTrackerService] Pedometer error: $error');
-          _isSensorAvailable = false;
-          notifyListeners();
-        },
-        cancelOnError: false,
-      );
+    runZonedGuarded(() {
+      try {
+        _stepCountSubscription = Pedometer.stepCountStream.listen(
+          _onStepCount,
+          onError: (error) {
+            debugPrint('[StepTrackerService] Pedometer error: $error');
+            _stepCountSubscription?.cancel();
+            _stepCountSubscription = null;
+            _pedestrianStatusSubscription?.cancel();
+            _pedestrianStatusSubscription = null;
+            if (_isSensorAvailable) {
+              _isSensorAvailable = false;
+              notifyListeners();
+            }
+          },
+          cancelOnError: true,
+        );
 
-      _pedestrianStatusSubscription = Pedometer.pedestrianStatusStream.listen(
-        _onPedestrianStatusChanged,
-        onError: (error) {
-          debugPrint('[StepTrackerService] Pedestrian status error: $error');
-        },
-        cancelOnError: false,
-      );
+        _isSensorAvailable = true;
+      } catch (e) {
+        debugPrint('[StepTrackerService] Start listening error: $e');
+        _isSensorAvailable = false;
+      }
+    }, (error, stack) {
+      debugPrint('[StepTrackerService] Caught sensor stream error: $error');
+      _stepCountSubscription?.cancel();
+      _stepCountSubscription = null;
+      _pedestrianStatusSubscription?.cancel();
+      _pedestrianStatusSubscription = null;
+      if (_isSensorAvailable) {
+        _isSensorAvailable = false;
+        notifyListeners();
+      }
+    });
+  }
 
-      _isSensorAvailable = true;
-    } catch (e) {
-      debugPrint('[StepTrackerService] Start listening error: $e');
-      _isSensorAvailable = false;
-    }
+  void _startPedestrianStatusListening() {
+    if (_pedestrianStatusSubscription != null) return;
+    runZonedGuarded(() {
+      try {
+        _pedestrianStatusSubscription = Pedometer.pedestrianStatusStream.listen(
+          _onPedestrianStatusChanged,
+          onError: (error) {
+            debugPrint('[StepTrackerService] Pedestrian status error: $error');
+            _pedestrianStatusSubscription?.cancel();
+            _pedestrianStatusSubscription = null;
+          },
+          cancelOnError: true,
+        );
+      } catch (e) {
+        debugPrint('[StepTrackerService] Start pedestrian status error: $e');
+      }
+    }, (error, stack) {
+      debugPrint('[StepTrackerService] Caught pedestrian status error: $error');
+      _pedestrianStatusSubscription?.cancel();
+      _pedestrianStatusSubscription = null;
+    });
   }
 
   void _onStepCount(StepCount event) {
     if (_isUsingGoogleFit) return;
     final rawSteps = event.steps;
     _lastRawSensorSteps = rawSteps;
+
+    // Đã xác nhận phần cứng có hỗ trợ cảm biến, an toàn để theo dõi trạng thái di chuyển
+    _startPedestrianStatusListening();
+
     final todayStr = _getTodayDateString();
 
     SharedPreferences.getInstance().then((prefs) {

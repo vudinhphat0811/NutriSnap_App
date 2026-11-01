@@ -36,10 +36,14 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     fridgeService.addListener(_onStateChanged);
     stepService.addListener(_onStateChanged);
     GoogleFitService.instance.addListener(_onStateChanged);
-    fridgeService.init();
-    stepService.init();
-    GoogleFitService.instance.init();
-    appState.checkAndResetForNewDay();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      fridgeService.init();
+      stepService.init();
+      GoogleFitService.instance.init();
+      appState.checkAndResetForNewDay();
+    });
   }
 
   @override
