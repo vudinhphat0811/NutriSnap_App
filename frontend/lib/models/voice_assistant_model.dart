@@ -63,6 +63,14 @@ class VoiceMealData {
   });
 
   factory VoiceMealData.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'] ?? json['Items'];
+    final List<String> parsedItems = [];
+    if (rawItems is List) {
+      for (final it in rawItems) {
+        if (it != null) parsedItems.add(it.toString());
+      }
+    }
+
     return VoiceMealData(
       mealType: json['mealType'] ?? json['MealType'] ?? 'Trưa',
       title: json['title'] ?? json['Title'] ?? 'Bữa ăn',
@@ -70,7 +78,7 @@ class VoiceMealData {
       protein: (json['protein'] ?? json['Protein'] ?? 0.0).toDouble(),
       carbs: (json['carbs'] ?? json['Carbs'] ?? 0.0).toDouble(),
       fat: (json['fat'] ?? json['Fat'] ?? 0.0).toDouble(),
-      items: (json['items'] ?? json['Items'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      items: parsedItems,
     );
   }
 }
@@ -99,6 +107,24 @@ class VoiceFridgeRecipeData {
   });
 
   factory VoiceFridgeRecipeData.fromJson(Map<String, dynamic> json) {
+    final rawIngs = json['ingredientsUsed'] ?? json['IngredientsUsed'];
+    final List<VoiceRecipeIngredient> parsedIngs = [];
+    if (rawIngs is List) {
+      for (final e in rawIngs) {
+        if (e is Map) {
+          parsedIngs.add(VoiceRecipeIngredient.fromJson(Map<String, dynamic>.from(e)));
+        }
+      }
+    }
+
+    final rawSteps = json['cookingSteps'] ?? json['CookingSteps'];
+    final List<String> parsedSteps = [];
+    if (rawSteps is List) {
+      for (final s in rawSteps) {
+        if (s != null) parsedSteps.add(s.toString());
+      }
+    }
+
     return VoiceFridgeRecipeData(
       recipeTitle: json['recipeTitle'] ?? json['RecipeTitle'] ?? 'Món ngon từ tủ lạnh',
       matchExplanation: json['matchExplanation'] ?? json['MatchExplanation'] ?? '',
@@ -107,11 +133,8 @@ class VoiceFridgeRecipeData {
       protein: (json['protein'] ?? json['Protein'] ?? 0.0).toDouble(),
       carbs: (json['carbs'] ?? json['Carbs'] ?? 0.0).toDouble(),
       fat: (json['fat'] ?? json['Fat'] ?? 0.0).toDouble(),
-      ingredientsUsed: (json['ingredientsUsed'] ?? json['IngredientsUsed'] as List?)
-              ?.map((e) => VoiceRecipeIngredient.fromJson(Map<String, dynamic>.from(e)))
-              .toList() ??
-          [],
-      cookingSteps: (json['cookingSteps'] ?? json['CookingSteps'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      ingredientsUsed: parsedIngs,
+      cookingSteps: parsedSteps,
     );
   }
 }

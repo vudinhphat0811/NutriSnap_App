@@ -292,7 +292,7 @@ public class VoiceAssistantService
             }
         };
 
-        string[] models = { "gemini-3.5-transcribe", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest" };
+        string[] models = { "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-flash-latest" };
         foreach (var model in models)
         {
             try
