@@ -144,9 +144,9 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
         onCompleted: (response) {
           if (!mounted) return;
 
-          final userPromptText = (response.userPrompt != null && response.userPrompt!.isNotEmpty)
-              ? response.userPrompt!
-              : 'Lệnh bằng giọng nói';
+          final userPromptText = (response.userPrompt != null && response.userPrompt!.trim().isNotEmpty)
+              ? response.userPrompt!.trim()
+              : '';
 
           setState(() {
             _isListening = false;
@@ -154,10 +154,12 @@ class _VoiceAssistantSheetState extends State<VoiceAssistantSheet> with SingleTi
             _volumeLevel = 0.0;
             _statusMessage = '';
 
-            // 1. CHUYỂN THÀNH TIN NHẮN NGƯỜI DÙNG VÀO HỘI THOẠI
-            _messages.add(_ChatMessage(isUser: true, text: userPromptText));
+            // 1. CHỈ TẠO BONG BÓNG TIN NHẮN NGƯỜI DÙNG KHI CÓ CÂU NÓI THỰC TẾ
+            if (userPromptText.isNotEmpty) {
+              _messages.add(_ChatMessage(isUser: true, text: userPromptText));
+            }
 
-            // 2. VÀ TIN NHẮN TRẢ LỜI CỦA AI CÙNG THẺ HÀNH ĐỘNG
+            // 2. TIN NHẮN TRẢ LỜI CỦA AI CÙNG THẺ HÀNH ĐỘNG
             _messages.add(_ChatMessage(
               isUser: false,
               text: response.spokenReply,

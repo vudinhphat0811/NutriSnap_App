@@ -31,26 +31,26 @@ public class VoiceAssistantService
             return new VoiceAssistantResponseDto
             {
                 ActionType = "general_chat",
+                UserPrompt = "",
                 SpokenReply = "Tôi đang lắng nghe bạn đây! Bạn có thể nói những câu như 'Trưa nay ăn 1 tô phở bò', 'Tủ lạnh còn gì nấu đủ đạm?', hoặc 'Uống 300ml nước' nhé!"
             };
         }
 
-        // 1. Thử gọi Cloud AI (Google Gemini) để xử lý ngôn ngữ tự nhiên tiếng Việt
+        VoiceAssistantResponseDto response;
         try
         {
             var aiResult = await TryCallGeminiAiAsync(request);
-            if (aiResult != null)
-            {
-                return aiResult;
-            }
+            response = aiResult ?? ProcessWithLocalRuleEngine(request);
         }
         catch (Exception ex)
         {
             _logger.LogWarning("Gemini AI Voice Assistant gặp lỗi: {Msg}. Chuyển sang Rule Engine nội bộ...", ex.Message);
+            response = ProcessWithLocalRuleEngine(request);
         }
 
-        // 2. Dự phòng: Rule Engine thông minh xử lý ngoại tuyến (0ms, 100% tin cậy)
-        return ProcessWithLocalRuleEngine(request);
+        // BẢO ĐẢM UserPrompt LUÔN LÀ CÂU THỰC TẾ NGƯỜI DÙNG ĐÃ NÓI / GÕ
+        response.UserPrompt = request.UserPrompt;
+        return response;
     }
 
     public async Task<VoiceAssistantResponseDto> ProcessVoiceAudioCommandAsync(VoiceAudioAssistantRequestDto request)
@@ -65,28 +65,28 @@ public class VoiceAssistantService
             };
         }
 
-        try
+        // BƯỚC 1: Phiên âm chính xác 100% từ âm thanh sang chữ tiếng Việt qua Gemini Speech-To-Text
+        var transcribedText = await TranscribeAudioAsync(request.AudioBase64, request.AudioMimeType);
+
+        if (string.IsNullOrWhiteSpace(transcribedText))
         {
-            var aiResult = await TryCallGeminiAudioAiAsync(request);
-            if (aiResult != null)
+            _logger.LogInformation("Không phát hiện tiếng nói rõ ràng trong âm thanh.");
+            return new VoiceAssistantResponseDto
             {
-                return aiResult;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning("Gemini Audio AI Voice Assistant gặp lỗi: {Msg}", ex.Message);
+                ActionType = "general_chat",
+                UserPrompt = "",
+                SpokenReply = "Tôi chưa nghe rõ câu nói của bạn. Bạn hãy bấm mic và thử nói lại rõ hơn nhé!"
+            };
         }
 
-        return new VoiceAssistantResponseDto
-        {
-            ActionType = "general_chat",
-            UserPrompt = "Lệnh bằng giọng nói",
-            SpokenReply = "Tôi chưa nghe rõ câu nói của bạn. Bạn hãy thử nói lại hoặc gõ bằng bàn phím nhé!"
-        };
+        // BƯỚC 2: Đưa câu nói THỰC TẾ của người dùng vào bộ xử lý (TUYỆT ĐỐI KHÔNG BỊA CHỮ)
+        request.UserPrompt = transcribedText;
+        var response = await ProcessVoiceCommandAsync(request);
+        response.UserPrompt = transcribedText;
+        return response;
     }
 
-    private async Task<VoiceAssistantResponseDto?> TryCallGeminiAudioAiAsync(VoiceAudioAssistantRequestDto request)
+    private async Task<string?> TranscribeAudioAsync(string audioBase64, string mimeType)
     {
         string apiKey = _config["GEMINI_API_KEY"]
             ?? _config["AiKeys:GeminiApiKey"]
@@ -95,117 +95,128 @@ public class VoiceAssistantService
 
         if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
-        var fridgeDesc = request.FridgeItems.Count > 0
-            ? string.Join(", ", request.FridgeItems.Select(f => $"{f.Name} ({f.Quantity}, còn {f.DaysUntilExpiry} ngày)"))
-            : "Tủ lạnh hiện chưa có đồ";
-
-        string systemInstruction =
-            "Bạn là Trợ Lý Dinh Dưỡng Giọng Nói Thông Minh kiêm Bếp Trưởng Cá Nhân trong ứng dụng NutriSnap.\n" +
-            $"HỒ SƠ CÁ NHÂN TÀI KHOẢN ĐANG ĐĂNG NHẬP:\n" +
-            $"- Tên: {request.UserName}\n" +
-            $"- Giới tính: {request.Gender}, Cân nặng: {request.WeightKg:F1}kg, Mục tiêu: {request.UserGoal} (đích: {request.TargetWeightKg:F1}kg)\n" +
-            $"- Chế độ ăn kiêng ưu tiên: {request.DietType}\n" +
-            $"- Chỉ số dinh dưỡng hôm nay của tài khoản: Đã nạp {request.ConsumedCalories}/{request.TargetCalories} kcal ({request.ConsumedProtein:F1}/{request.TargetProtein:F1}g đạm). " +
-            $"Còn thiếu: {request.RemainingCalories} kcal, {request.RemainingProtein:F1}g đạm, {request.RemainingCarbs:F1}g carb, {request.RemainingFat:F1}g béo. " +
-            $"Đã uống {request.WaterConsumedMl}/{request.DailyWaterGoalMl} ml nước.\n" +
-            $"- Vận động hôm nay: Đã đi {request.TodaySteps}/{request.StepGoal} bước (tiêu hao khoảng {request.BurnedCalories:F0} kcal).\n" +
-            $"Thực phẩm trong tủ lạnh riêng của tài khoản này: [{fridgeDesc}].\n\n" +
-            "QUY TẮC CÁ NHÂN HOÁ CAO CẤP:\n" +
-            $"- Luôn xưng hô thân mật phù hợp với người dùng theo tên ({request.UserName}).\n" +
-            $"- Nếu tài khoản có chế độ ăn kiêng ({request.DietType}, ví dụ Ăn chay/Vegetarian), TUYỆT ĐỐI KHÔNG gợi ý thịt/hải sản.\n" +
-            $"- Nếu mục tiêu là Tăng cơ (HighProtein/GainWeight), ưu tiên đẩy mạnh lượng đạm. Nếu Giảm cân (LoseWeight), ưu tiên cân đối thâm hụt calo an toàn.\n\n" +
-            "NHIỆM VỤ:\n" +
-            "1. Lắng nghe tệp âm thanh tiếng Việt đính kèm của người dùng, chép lại chính xác từng từ vào trường 'userPrompt'.\n" +
-            "2. Phân tích câu nói của người dùng và chọn 1 trong các actionType sau:\n" +
-            "   - 'fridge_recipe': Người dùng hỏi ăn gì từ tủ lạnh, vét tủ, nấu gì cho đủ calo/đạm. Đề xuất món ăn tận dụng nguyên liệu đang có trong tủ (ưu tiên món sắp hết hạn), tính toán calo và protein bù đắp khít nhất lượng còn thiếu.\n" +
-            "   - 'log_meal': Người dùng nói vừa ăn gì, bữa trưa/sáng/tối ăn gì. Bóc tách danh sách món ăn, tính tổng calories, protein, carbs, fat.\n" +
-            "   - 'log_water': Người dùng nói vừa uống nước. Trích xuất amountMl (số ml).\n" +
-            "   - 'add_fridge': Người dùng bảo cất đồ/mua đồ bỏ vào tủ lạnh. Trích xuất name, quantity, category.\n" +
-            "   - 'check_progress': Người dùng hỏi hôm nay ăn được bao nhiêu rồi, còn bao nhiêu calo/đạm, hoặc đã đi bao nhiêu bước chân.\n" +
-            "   - 'navigate': Người dùng bảo mở màn hình nào (fridge, barcode, calculator, journal, dashboard).\n" +
-            "   - 'general_chat': Trả lời kiến thức dinh dưỡng, tập luyện tự nhiên, ngắn gọn.\n\n" +
-            "QUY TẮC PHẢN HỒI:\n" +
-            "- userPrompt: Đoạn văn bản tiếng Việt chính xác người dùng vừa nói trong âm thanh.\n" +
-            "- spokenReply: Câu thoại phản hồi tiếng Việt tự nhiên, thân thiện, ngắn gọn (1-2 câu để đọc bằng giọng nói Text-to-Speech).\n" +
-            "- BẮT BUỘC TRẢ VỀ DUY NHẤT 1 CHUỖI JSON HỢP LỆ THEO SCHEMA SAU, TUYỆT ĐỐI KHÔNG CHÈN MARKDOWN ```json:\n" +
-            "{\n" +
-            "  \"userPrompt\": \"Trưa nay tôi ăn 1 bát phở bò\",\n" +
-            "  \"actionType\": \"fridge_recipe | log_meal | log_water | add_fridge | check_progress | navigate | general_chat\",\n" +
-            "  \"spokenReply\": \"Lời thoại trả lời súc tích...\",\n" +
-            "  \"mealData\": { \"mealType\": \"Sáng|Trưa|Tối|Phụ\", \"title\": \"...\", \"calories\": 450, \"protein\": 25.0, \"carbs\": 50.0, \"fat\": 15.0, \"items\": [\"...\"] },\n" +
-            "  \"recipeData\": { \"recipeTitle\": \"...\", \"matchExplanation\": \"...\", \"prepTimeMinutes\": 15, \"calories\": 320, \"protein\": 30.0, \"carbs\": 15.0, \"fat\": 8.0, \"ingredientsUsed\": [{\"name\": \"...\", \"amount\": \"...\", \"inFridge\": true}], \"cookingSteps\": [\"Bước 1...\", \"Bước 2...\"] },\n" +
-            "  \"waterData\": { \"amountMl\": 250, \"newTotalMl\": 1500 },\n" +
-            "  \"fridgeAddData\": { \"name\": \"...\", \"category\": \"Thịt & Trứng|Thủy hải sản|Rau củ|Trái cây|...\", \"quantity\": \"...\", \"shelfLifeDays\": 3, \"storageLocation\": \"fridge|freezer|pantry\" },\n" +
-            "  \"navigateData\": { \"targetScreen\": \"fridge|barcode|calculator|journal|dashboard\" }\n" +
-            "}";
-
-        var payload = new
+        if (mimeType.Contains("m4a") || mimeType.Contains("aac"))
         {
-            contents = new[]
+            mimeType = "audio/mp4";
+        }
+
+        // 1. Thử gemini-3.5-transcribe (Model Google chuyên xử lý chuyển giọng nói thành văn bản)
+        try
+        {
+            string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-transcribe:generateContent?key={apiKey}";
+            var payload = new
             {
-                new
+                contents = new[]
                 {
-                    parts = new object[]
+                    new
                     {
-                        new { text = systemInstruction },
-                        new
+                        parts = new object[]
                         {
-                            inline_data = new
+                            new
                             {
-                                mime_type = request.AudioMimeType,
-                                data = request.AudioBase64
+                                inline_data = new
+                                {
+                                    mime_type = mimeType,
+                                    data = audioBase64
+                                }
                             }
-                        },
-                        new { text = "Hãy nghe đoạn âm thanh tiếng Việt đính kèm và trả về đúng JSON theo yêu cầu." }
+                        }
                     }
                 }
-            },
-            generationConfig = new
-            {
-                temperature = 0.2,
-                maxOutputTokens = 1000
-            }
-        };
+            };
 
-        string[] models = { "gemini-3.5-transcribe", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest" };
-        foreach (var model in models)
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var resp = await _httpClient.SendAsync(req, cts.Token);
+            if (resp.IsSuccessStatusCode)
+            {
+                var raw = await resp.Content.ReadAsStringAsync(cts.Token);
+                var doc = JsonNode.Parse(raw);
+                var transcribed = doc?["candidates"]?[0]?["content"]?["parts"]?[0]?["audioTranscription"]?["text"]?.ToString()
+                    ?? doc?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
+
+                if (!string.IsNullOrWhiteSpace(transcribed))
+                {
+                    var clean = transcribed.Trim();
+                    _logger.LogInformation("gemini-3.5-transcribe nhận diện thành công: '{Text}'", clean);
+                    return clean;
+                }
+
+                // gemini-3.5-transcribe đã phân tích và xác nhận không có giọng nói con người (im lặng/nhiễu)
+                _logger.LogInformation("gemini-3.5-transcribe xác nhận không có tiếng người nói trong tệp âm thanh.");
+                return null;
+            }
+        }
+        catch (Exception ex)
         {
-            try
+            _logger.LogWarning("gemini-3.5-transcribe thất bại: {Msg}", ex.Message);
+        }
+
+        // 2. Dự phòng: gemini-3.5-flash-lite với prompt phiên âm nghiêm ngặt (tuyệt đối không bịa chữ)
+        try
+        {
+            string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={apiKey}";
+            var payload = new
             {
-                string url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
-                using var req = new HttpRequestMessage(HttpMethod.Post, url)
+                contents = new[]
                 {
-                    Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
-                };
-
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                var resp = await _httpClient.SendAsync(req, cts.Token);
-                if (!resp.IsSuccessStatusCode) continue;
-
-                var rawBody = await resp.Content.ReadAsStringAsync(cts.Token);
-                var doc = JsonNode.Parse(rawBody);
-                var text = doc?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
-                if (string.IsNullOrWhiteSpace(text)) continue;
-
-                var cleaned = CleanJsonMarkdown(text);
-                var parsed = JsonSerializer.Deserialize<VoiceAssistantResponseDto>(cleaned, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-
-                if (parsed != null && !string.IsNullOrWhiteSpace(parsed.ActionType))
-                {
-                    if (string.IsNullOrWhiteSpace(parsed.UserPrompt))
+                    new
                     {
-                        parsed.UserPrompt = "Lệnh bằng giọng nói";
+                        parts = new object[]
+                        {
+                            new
+                            {
+                                inline_data = new
+                                {
+                                    mime_type = mimeType,
+                                    data = audioBase64
+                                }
+                            },
+                            new
+                            {
+                                text = "Hãy chép lại chính xác từng từ trong đoạn âm thanh tiếng Việt đính kèm. TUYỆT ĐỐI chỉ trả về đúng câu đã nói, không thêm bớt, không bình luận. Nếu âm thanh im lặng hoặc không có tiếng người nói thì hãy trả về duy nhất từ: EMPTY"
+                            }
+                        }
                     }
-                    return parsed;
+                },
+                generationConfig = new
+                {
+                    temperature = 0.0,
+                    maxOutputTokens = 200
+                }
+            };
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var resp = await _httpClient.SendAsync(req, cts.Token);
+            if (resp.IsSuccessStatusCode)
+            {
+                var raw = await resp.Content.ReadAsStringAsync(cts.Token);
+                var doc = JsonNode.Parse(raw);
+                var transcribed = doc?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(transcribed))
+                {
+                    var clean = transcribed.Trim().Trim('`', '"', '\'');
+                    if (!clean.Equals("EMPTY", StringComparison.OrdinalIgnoreCase) &&
+                        !clean.Equals("TUYỆT ĐỐI", StringComparison.OrdinalIgnoreCase) &&
+                        !clean.Equals("không", StringComparison.OrdinalIgnoreCase) &&
+                        clean.Length > 2)
+                    {
+                        _logger.LogInformation("gemini-3.5-flash-lite nhận diện thành công: '{Text}'", clean);
+                        return clean;
+                    }
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning("Gọi Gemini Audio model {Model} thất bại: {Msg}", model, ex.Message);
-            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("gemini-3.5-flash-lite transcribe thất bại: {Msg}", ex.Message);
         }
 
         return null;
@@ -311,7 +322,7 @@ public class VoiceAssistantService
                 {
                     if (string.IsNullOrWhiteSpace(parsed.UserPrompt))
                     {
-                        parsed.UserPrompt = "Lệnh bằng giọng nói";
+                        parsed.UserPrompt = request.UserPrompt;
                     }
                     return parsed;
                 }

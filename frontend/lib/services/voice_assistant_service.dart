@@ -118,8 +118,8 @@ class VoiceAssistantService {
           final normalized = ((currentDb + 55) / 45).clamp(0.0, 1.0);
           _currentVolumeCallback?.call(normalized);
 
-          // Phát hiện giọng nói: lớn hơn -42 dB là có người đang nói
-          if (currentDb > -42.0) {
+          // Phát hiện giọng nói: lớn hơn -46 dB là có người đang nói
+          if (currentDb > -46.0) {
             _hasDetectedVoice = true;
             _silentTickCount = 0;
             _currentStatusCallback?.call('Đang nghe bạn nói...');
@@ -218,7 +218,7 @@ class VoiceAssistantService {
       if (!file.existsSync()) {
         return const VoiceAssistantResponse(
           actionType: 'general_chat',
-          userPrompt: 'Lệnh bằng giọng nói',
+          userPrompt: '',
           spokenReply: 'Không tìm thấy tệp âm thanh vừa ghi. Bạn thử lại nhé!',
         );
       }
@@ -227,7 +227,7 @@ class VoiceAssistantService {
       if (fileBytes.isEmpty) {
         return const VoiceAssistantResponse(
           actionType: 'general_chat',
-          userPrompt: 'Lệnh bằng giọng nói',
+          userPrompt: '',
           spokenReply: 'Âm thanh quá ngắn hoặc chưa có tiếng nói. Bạn thử lại nhé!',
         );
       }
@@ -238,7 +238,7 @@ class VoiceAssistantService {
       debugPrint('[VoiceAssistant] Lỗi gửi tệp âm thanh: $e');
       return const VoiceAssistantResponse(
         actionType: 'general_chat',
-        userPrompt: 'Lệnh bằng giọng nói',
+        userPrompt: '',
         spokenReply: 'Đã xảy ra lỗi khi phân tích giọng nói. Bạn thử lại nhé!',
       );
     }
