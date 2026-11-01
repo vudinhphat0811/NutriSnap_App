@@ -100,128 +100,91 @@ public class VoiceAssistantService
             mimeType = "audio/mp4";
         }
 
-        // 1. Thử gemini-3.5-transcribe (Model Google chuyên xử lý chuyển giọng nói thành văn bản)
-        try
+        string speechPrompt =
+            "Báº¡n lÃ  trá»£ lÃ½ nháº­n diá»‡n giá»ng nÃ³i tiáº¿ng Viá»‡t cho á»©ng dá»¥ng dinh dÆ°á»¡ng NutriSnap.\n" +
+            "Nhiá»‡m vá»¥: Nghe Ä‘oáº¡n Ã¢m thanh tiáº¿ng Viá»‡t Ä‘Ã­nh kÃ¨m vÃ  chÃ©p láº¡i chÃ­nh xÃ¡c tá»«ng tá»« ngÆ°á»i dÃ¹ng Ä‘Ã£ nÃ³i.\n" +
+            "Ngá»¯ cáº£nh tá»« vá»±ng thÆ°á»ng gáº·p trong app:\n" +
+            "- MÃ³n Äƒn & dinh dÆ°á»¡ng: phá»Ÿ bÃ², bÃºn riÃªu, bÃºn cháº£, cÆ¡m táº¥m, cÃ  phÃª, nÆ°á»›c ngá»t, á»©c gÃ , trá»©ng luá»™c, uá»‘ng nÆ°á»›c, calo, Ä‘áº¡m, protein, carbs, cháº¥t bÃ©o...\n" +
+            "- TÃ­nh nÄƒng á»©ng dá»¥ng: quÃ©t mÃ£ váº¡ch, má»Ÿ tá»§ láº¡nh, thÃªm vÃ o tá»§ láº¡nh, vÃ©t tá»§ láº¡nh, mÃ¡y tÃ­nh calo, ghi nháº­n mÃ³n Äƒn, xem lá»‹ch sá»­...\n" +
+            "QUY Táº®C:\n" +
+            "1. TUYá»†T Äá»I chá»‰ tráº£ vá» duy nháº¥t chuá»—i cÃ¢u nÃ³i cá»§a ngÆ°á»i dÃ¹ng, khÃ´ng giáº£i thÃ­ch hay chÃ o há»i.\n" +
+            "2. Náº¿u Ã¢m thanh im láº·ng, chá»‰ lÃ  tiáº¿ng thá»Ÿ, tiáº¿ng gÃµ hoáº·c tiáº¿ng á»“n thÃ¬ hÃ£y tráº£ vá» duy nháº¥t tá»«: EMPTY";
+
+        // Thá»­ model multimodal nhanh vÃ  chÃ­nh xÃ¡c nháº¥t: gemini-3.5-flash-lite -> gemini-3.5-flash
+        string[] audioModels = { "gemini-3.5-flash-lite", "gemini-3.5-flash" };
+        foreach (var model in audioModels)
         {
-            string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-transcribe:generateContent?key={apiKey}";
-            var payload = new
+            try
             {
-                contents = new[]
+                string url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+                var payload = new
                 {
-                    new
+                    contents = new[]
                     {
-                        parts = new object[]
+                        new
                         {
-                            new
+                            parts = new object[]
                             {
-                                inline_data = new
+                                new
                                 {
-                                    mime_type = mimeType,
-                                    data = audioBase64
+                                    inline_data = new
+                                    {
+                                        mime_type = mimeType,
+                                        data = audioBase64
+                                    }
+                                },
+                                new
+                                {
+                                    text = speechPrompt
                                 }
                             }
                         }
-                    }
-                }
-            };
-
-            using var req = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
-            };
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var resp = await _httpClient.SendAsync(req, cts.Token);
-            if (resp.IsSuccessStatusCode)
-            {
-                var raw = await resp.Content.ReadAsStringAsync(cts.Token);
-                var doc = JsonNode.Parse(raw);
-                var transcribed = doc?["candidates"]?[0]?["content"]?["parts"]?[0]?["audioTranscription"]?["text"]?.ToString()
-                    ?? doc?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
-
-                if (!string.IsNullOrWhiteSpace(transcribed))
-                {
-                    var clean = transcribed.Trim();
-                    _logger.LogInformation("gemini-3.5-transcribe nhận diện thành công: '{Text}'", clean);
-                    return clean;
-                }
-
-                // gemini-3.5-transcribe đã phân tích và xác nhận không có giọng nói con người (im lặng/nhiễu)
-                _logger.LogInformation("gemini-3.5-transcribe xác nhận không có tiếng người nói trong tệp âm thanh.");
-                return null;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning("gemini-3.5-transcribe thất bại: {Msg}", ex.Message);
-        }
-
-        // 2. Dự phòng: gemini-3.5-flash-lite với prompt phiên âm nghiêm ngặt (tuyệt đối không bịa chữ)
-        try
-        {
-            string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={apiKey}";
-            var payload = new
-            {
-                contents = new[]
-                {
-                    new
+                    },
+                    generationConfig = new
                     {
-                        parts = new object[]
+                        temperature = 0.0,
+                        maxOutputTokens = 200
+                    }
+                };
+
+                using var req = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+                };
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var resp = await _httpClient.SendAsync(req, cts.Token);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var raw = await resp.Content.ReadAsStringAsync(cts.Token);
+                    var doc = JsonNode.Parse(raw);
+                    var transcribed = doc?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(transcribed))
+                    {
+                        var clean = transcribed.Trim().Trim('`', '"', '\'');
+                        if (!clean.Equals("EMPTY", StringComparison.OrdinalIgnoreCase) &&
+                            !clean.Equals("TUYá»†T Äá»I", StringComparison.OrdinalIgnoreCase) &&
+                            !clean.Equals("khÃ´ng", StringComparison.OrdinalIgnoreCase) &&
+                            clean.Length > 2)
                         {
-                            new
-                            {
-                                inline_data = new
-                                {
-                                    mime_type = mimeType,
-                                    data = audioBase64
-                                }
-                            },
-                            new
-                            {
-                                text = "Hãy chép lại chính xác từng từ trong đoạn âm thanh tiếng Việt đính kèm. TUYỆT ĐỐI chỉ trả về đúng câu đã nói, không thêm bớt, không bình luận. Nếu âm thanh im lặng hoặc không có tiếng người nói thì hãy trả về duy nhất từ: EMPTY"
-                            }
+                            _logger.LogInformation("{Model} nháº­n diá»‡n giá»ng nÃ³i thÃ nh cÃ´ng: '{Text}'", model, clean);
+                            return clean;
+                        }
+                        else if (clean.Equals("EMPTY", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogInformation("{Model} xÃ¡c nháº­n khÃ´ng cÃ³ tiáº¿ng ngÆ°á»i nÃ³i (EMPTY).", model);
+                            return null;
                         }
                     }
-                },
-                generationConfig = new
-                {
-                    temperature = 0.0,
-                    maxOutputTokens = 200
-                }
-            };
-
-            using var req = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
-            };
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var resp = await _httpClient.SendAsync(req, cts.Token);
-            if (resp.IsSuccessStatusCode)
-            {
-                var raw = await resp.Content.ReadAsStringAsync(cts.Token);
-                var doc = JsonNode.Parse(raw);
-                var transcribed = doc?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
-                if (!string.IsNullOrWhiteSpace(transcribed))
-                {
-                    var clean = transcribed.Trim().Trim('`', '"', '\'');
-                    if (!clean.Equals("EMPTY", StringComparison.OrdinalIgnoreCase) &&
-                        !clean.Equals("TUYỆT ĐỐI", StringComparison.OrdinalIgnoreCase) &&
-                        !clean.Equals("không", StringComparison.OrdinalIgnoreCase) &&
-                        clean.Length > 2)
-                    {
-                        _logger.LogInformation("gemini-3.5-flash-lite nhận diện thành công: '{Text}'", clean);
-                        return clean;
-                    }
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning("gemini-3.5-flash-lite transcribe thất bại: {Msg}", ex.Message);
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Model {Model} transcribe tháº¥t báº¡i: {Msg}", model, ex.Message);
+            }
         }
 
         return null;
     }
-
     private async Task<VoiceAssistantResponseDto?> TryCallGeminiAiAsync(VoiceAssistantRequestDto request)
     {
         string apiKey = _config["GEMINI_API_KEY"]
