@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../constants/app_colors.dart';
 import '../services/step_tracker_service.dart';
 import '../services/google_fit_service.dart';
@@ -677,16 +678,8 @@ class _StepTrackerDetailSheetState extends State<StepTrackerDetailSheet> {
             ),
             onPressed: isSyncing
                 ? null
-                : () async {
-                    final success = await _fitService.linkGoogleFit(context);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(success ? 'Kết nối Google Fit thành công!' : (_fitService.lastError ?? 'Đã hủy kết nối.')),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    }
+                : () {
+                    _showGoogleFitGuideDialog(context);
                   },
             child: isSyncing
                 ? const SizedBox(
@@ -700,6 +693,149 @@ class _StepTrackerDetailSheetState extends State<StepTrackerDetailSheet> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 📲 HỘP THOẠI HƯỚNG DẪN KẾT NỐI GOOGLE FIT & CẢNH BÁO CÀI ĐẶT APP
+  void _showGoogleFitGuideDialog(BuildContext currentContext) {
+    showModalBottomSheet(
+      context: currentContext,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Text('⚡', style: TextStyle(fontSize: 22)),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Đồng Bộ Dữ Liệu Google Fit',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                      ),
+                      Text(
+                        'Lọc rung lắc xe máy & đồng bộ từ Smartwatch',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline_rounded, color: Color(0xFFD97706), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Lưu ý quan trọng: Để Google Fit ghi nhận được bước chân từ đồng hồ/điện thoại sang NutriSnap, bạn cần cài đặt ứng dụng Google Fit trước.\n\nNếu bạn không muốn cài thêm app, NutriSnap vẫn tự đếm bước chân bằng cảm biến máy cực kỳ chuẩn xác!',
+                      style: TextStyle(fontSize: 11.5, color: Colors.amber.shade900, height: 1.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            // Nút 1: Tải Google Fit (nếu chưa cài)
+            OutlinedButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final url = Uri.parse('https://play.google.com/store/apps/details?id=com.google.android.apps.fitness');
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                }
+              },
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF2563EB), width: 1.2),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                minimumSize: const Size(double.infinity, 44),
+              ),
+              icon: const Icon(Icons.download_rounded, color: Color(0xFF2563EB), size: 18),
+              label: const Text(
+                'Tải ứng dụng Google Fit từ CH Play',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Nút 2: Đã có Google Fit -> Tiến hành liên kết tài khoản
+            ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final messenger = ScaffoldMessenger.of(context);
+                final success = await _fitService.linkGoogleFit(context);
+                if (mounted) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(success ? 'Kết nối Google Fit thành công!' : (_fitService.lastError ?? 'Đã hủy kết nối.')),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                minimumSize: const Size(double.infinity, 44),
+                elevation: 0,
+              ),
+              icon: const Icon(Icons.link_rounded, color: Colors.white, size: 18),
+              label: const Text(
+                'Tôi đã cài Google Fit, Tiếp tục liên kết',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Nút 3: Dùng cảm biến máy (không cần cài thêm)
+            Center(
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text(
+                  'Dùng Cảm Biến Máy (Mặc Định - Không Cần Cài App)',
+                  style: TextStyle(fontSize: 11.5, color: Colors.grey, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
