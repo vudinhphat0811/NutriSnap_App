@@ -932,7 +932,33 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         color: Color(0xFF475569),
                       ),
                     ),
-                    if (stepService.isUsingGoogleFit)
+                    if (stepService.isVehicleMode)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.deepOrange.shade50,
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(color: Colors.deepOrange.shade200),
+                        ),
+                        child: const Text(
+                          '🛵 Xe máy',
+                          style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.deepOrange),
+                        ),
+                      )
+                    else if (stepService.isCyclingMode)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: const Text(
+                          '🚴 Đạp xe',
+                          style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.blue),
+                        ),
+                      )
+                    else if (stepService.isUsingGoogleFit)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                         decoration: BoxDecoration(

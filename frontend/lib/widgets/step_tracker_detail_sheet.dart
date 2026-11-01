@@ -198,7 +198,15 @@ class _StepTrackerDetailSheetState extends State<StepTrackerDetailSheet> {
     Color statusColor = AppColors.primary;
     IconData statusIcon = Icons.directions_walk_rounded;
 
-    if (_stepService.pedestrianStatus == 'walking') {
+    if (_stepService.isVehicleMode) {
+      statusText = 'Đi xe máy (${_stepService.currentSpeedKmH.round()} km/h - Tự lọc rung)';
+      statusColor = Colors.deepOrange;
+      statusIcon = Icons.two_wheeler_rounded;
+    } else if (_stepService.isCyclingMode) {
+      statusText = 'Đang đạp xe (${_stepService.currentSpeedKmH.round()} km/h)';
+      statusColor = Colors.blue;
+      statusIcon = Icons.directions_bike_rounded;
+    } else if (_stepService.pedestrianStatus == 'walking') {
       statusText = 'Đang di chuyển';
       statusColor = Colors.green;
       statusIcon = Icons.directions_run_rounded;
@@ -410,6 +418,29 @@ class _StepTrackerDetailSheetState extends State<StepTrackerDetailSheet> {
                 ),
               ],
             ),
+            if (_stepService.discardedVehicleSteps > 0) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.shield_rounded, size: 16, color: Colors.green),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Đã triệt tiêu ${_stepService.discardedVehicleSteps} bước rung ảo khi đi xe máy / đạp xe.',
+                        style: TextStyle(fontSize: 11, color: Colors.green.shade900, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
 
             // Google Fit Integration Banner

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -10,6 +11,7 @@ import 'app_state_service.dart';
 
 /// Dịch vụ Đếm Bước Chân & Theo Dõi Vận Động (Step Tracker & Calorie Burn Service)
 /// Thuật toán đếm bước chuẩn xác, chống trôi số, chống mất bước khi đổi thiết bị,
+/// tự động lọc bước ảo khi đi xe máy / đạp xe bằng bộ lọc tốc độ di chuyển GPS,
 /// tự động đồng bộ đám mây và reset chính xác lúc 00:00:00 theo giờ Việt Nam (UTC+7).
 class StepTrackerService extends ChangeNotifier {
   static final StepTrackerService instance = StepTrackerService._internal();
@@ -18,6 +20,7 @@ class StepTrackerService extends ChangeNotifier {
 
   StreamSubscription<StepCount>? _stepCountSubscription;
   StreamSubscription<PedestrianStatus>? _pedestrianStatusSubscription;
+  StreamSubscription<Position>? _positionSubscription;
   Timer? _cloudSyncDebounce;
   Timer? _rolloverTimer;
   SharedPreferences? _prefs;
@@ -35,6 +38,13 @@ class StepTrackerService extends ChangeNotifier {
   bool _isSensorAvailable = true;
   bool _hasPermission = false;
   bool _isInitialized = false;
+
+  // Bộ lọc thông minh chống bước ảo khi đi xe máy & đạp xe
+  bool _isVehicleMode = false;
+  bool _isCyclingMode = false;
+  double _currentSpeedKmH = 0.0;
+  DateTime? _lastHighSpeedTime;
+  int _discardedVehicleSteps = 0; // Số bước ảo từ rung lắc xe máy đã được triệt tiêu
 
   bool _isUsingGoogleFit = false;
   int _googleFitSteps = 0;
@@ -56,6 +66,12 @@ class StepTrackerService extends ChangeNotifier {
   bool get hasPermission => _hasPermission;
   bool get isInitialized => _isInitialized;
   bool get isUsingGoogleFit => _isUsingGoogleFit;
+
+  // Getters cho chế độ nhận diện phương tiện di chuyển
+  bool get isVehicleMode => _isVehicleMode;
+  bool get isCyclingMode => _isCyclingMode;
+  double get currentSpeedKmH => _currentSpeedKmH;
+  int get discardedVehicleSteps => _discardedVehicleSteps;
 
   /// Cập nhật dữ liệu từ Google Fit
   void applyGoogleFitData({required int steps, double? calories, double? distanceKm}) {
@@ -134,6 +150,7 @@ class StepTrackerService extends ChangeNotifier {
         _bootAccumulatedSensorSteps = _prefs!.getInt('nutrisnap_steps_boot_accum_$_accountKey') ?? 0;
         _isBaseSet = _prefs!.getBool('nutrisnap_steps_base_set_$_accountKey') ?? false;
         _lastRawSensorSteps = _prefs!.getInt('nutrisnap_steps_last_raw_$_accountKey') ?? 0;
+        _discardedVehicleSteps = _prefs!.getInt('nutrisnap_steps_discarded_$_accountKey') ?? 0;
       } else {
         // Ngày mới -> reset về 0 hoàn toàn theo giờ Việt Nam
         _sensorSteps = 0;
@@ -143,6 +160,7 @@ class StepTrackerService extends ChangeNotifier {
         _bootAccumulatedSensorSteps = 0;
         _isBaseSet = false;
         _lastRawSensorSteps = 0;
+        _discardedVehicleSteps = 0;
         await _saveState(forceDate: todayStr);
       }
 
@@ -157,8 +175,87 @@ class StepTrackerService extends ChangeNotifier {
 
       // Kiểm tra và khởi động lắng nghe cảm biến
       await _checkPermissionAndStartListening();
+
+      // Khởi động bộ theo dõi tốc độ di chuyển GPS để lọc xe máy & đạp xe
+      _startSpeedTracking();
     } catch (e) {
       debugPrint('[StepTrackerService] Init error: $e');
+    }
+  }
+
+  /// Khởi động theo dõi tốc độ GPS tiết kiệm pin (Battery-efficient location tracking)
+  Future<void> _startSpeedTracking() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      _positionSubscription?.cancel();
+      const locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.medium,
+        distanceFilter: 15,
+      );
+
+      _positionSubscription = Geolocator.getPositionStream(
+        locationSettings: locationSettings,
+      ).listen(_onPositionUpdate, onError: (e) {
+        debugPrint('[StepTrackerService] Location stream error: $e');
+      });
+    } catch (e) {
+      debugPrint('[StepTrackerService] Start speed tracking error: $e');
+    }
+  }
+
+  /// Xử lý cập nhật vị trí và tốc độ di chuyển
+  void _onPositionUpdate(Position position) {
+    if (position.speed < 0) return;
+    // position.speed có đơn vị m/s -> nhân 3.6 ra km/h
+    final speedKmH = position.speed * 3.6;
+    _currentSpeedKmH = speedKmH;
+
+    // 1. Nhận diện đi xe máy / ô tô (Tốc độ >= 20 km/h)
+    if (speedKmH >= 20.0) {
+      _lastHighSpeedTime = DateTime.now();
+      if (!_isVehicleMode) {
+        _isVehicleMode = true;
+        _isCyclingMode = false;
+        notifyListeners();
+      }
+    }
+    // 2. Nhận diện đạp xe (Tốc độ từ 12 km/h đến dưới 20 km/h)
+    else if (speedKmH >= 12.0 && speedKmH < 20.0) {
+      _lastHighSpeedTime = DateTime.now();
+      if (!_isCyclingMode) {
+        _isCyclingMode = true;
+        _isVehicleMode = false;
+        notifyListeners();
+      }
+    }
+    // 3. Tốc độ đi bộ bình thường (< 10 km/h)
+    else if (speedKmH < 10.0) {
+      // Giữ trạng thái xe trong 15 giây (chống trường hợp xe máy dừng đèn đỏ tạm thời bị nhảy lại bước đi bộ)
+      if (_lastHighSpeedTime != null) {
+        final elapsed = DateTime.now().difference(_lastHighSpeedTime!).inSeconds;
+        if (elapsed > 15) {
+          if (_isVehicleMode || _isCyclingMode) {
+            _isVehicleMode = false;
+            _isCyclingMode = false;
+            notifyListeners();
+          }
+        }
+      } else {
+        if (_isVehicleMode || _isCyclingMode) {
+          _isVehicleMode = false;
+          _isCyclingMode = false;
+          notifyListeners();
+        }
+      }
     }
   }
 
@@ -175,6 +272,7 @@ class StepTrackerService extends ChangeNotifier {
     await prefs.setInt('nutrisnap_steps_boot_accum_$_accountKey', _bootAccumulatedSensorSteps);
     await prefs.setBool('nutrisnap_steps_base_set_$_accountKey', _isBaseSet);
     await prefs.setInt('nutrisnap_steps_last_raw_$_accountKey', _lastRawSensorSteps);
+    await prefs.setInt('nutrisnap_steps_discarded_$_accountKey', _discardedVehicleSteps);
   }
 
   /// Kiểm tra chuyển ngày tự động theo giờ Việt Nam (00:00:00 UTC+7)
@@ -189,6 +287,7 @@ class StepTrackerService extends ChangeNotifier {
       _manualSteps = 0;
       _todaySteps = 0;
       _bootAccumulatedSensorSteps = 0;
+      _discardedVehicleSteps = 0;
       if (_lastRawSensorSteps > 0) {
         _todayBaseSensorSteps = _lastRawSensorSteps;
         _isBaseSet = true;
@@ -365,7 +464,20 @@ class StepTrackerService extends ChangeNotifier {
 
     checkDayRollover();
 
-    // 1. Nếu ngày hôm nay chưa khóa mốc gốc (Base):
+    // 1. BỘ LỌC CHỐNG BƯỚC ẢO XE MÁY & ĐẠP XE:
+    // Nếu phát hiện đang di chuyển bằng xe máy (tốc độ >= 20km/h) hoặc đạp xe (>= 12km/h),
+    // mọi xung động do ổ gà, rung máy sẽ được bù trừ vào mốc gốc để triệt tiêu hoàn toàn.
+    if (_isVehicleMode || _isCyclingMode) {
+      if (_lastRawSensorSteps > 0 && rawSteps > _lastRawSensorSteps) {
+        final bumpSteps = rawSteps - _lastRawSensorSteps;
+        _todayBaseSensorSteps += bumpSteps;
+        _discardedVehicleSteps += bumpSteps;
+      }
+      _lastRawSensorSteps = rawSteps;
+      return;
+    }
+
+    // 2. Nếu ngày hôm nay chưa khóa mốc gốc (Base):
     if (!_isBaseSet) {
       _todayBaseSensorSteps = rawSteps;
       _bootAccumulatedSensorSteps = 0;
@@ -379,14 +491,14 @@ class StepTrackerService extends ChangeNotifier {
       return;
     }
 
-    // 2. Kiểm tra nếu điện thoại vừa khởi động lại (Reboot):
+    // 3. Kiểm tra nếu điện thoại vừa khởi động lại (Reboot):
     // rawSteps bị reset về giá trị nhỏ hơn lần đọc trước đó
     if (_lastRawSensorSteps > 0 && rawSteps < _lastRawSensorSteps) {
       _bootAccumulatedSensorSteps = _sensorSteps;
       _todayBaseSensorSteps = rawSteps;
     }
 
-    // 3. Tính toán số bước của đợt hoạt động hiện tại
+    // 4. Tính toán số bước của đợt hoạt động hiện tại
     int currentSessionSteps = rawSteps - _todayBaseSensorSteps;
     if (currentSessionSteps < 0) {
       // Trường hợp cảm biến lệch âm nhẹ, tự cân chỉnh mốc
@@ -396,7 +508,7 @@ class StepTrackerService extends ChangeNotifier {
 
     final calculatedSensorSteps = _bootAccumulatedSensorSteps + currentSessionSteps;
 
-    // 4. Bộ lọc chống nhảy số glitch bất thường (> 50.000 bước trong 1 event)
+    // 5. Bộ lọc chống nhảy số glitch bất thường (> 50.000 bước trong 1 event)
     if (calculatedSensorSteps >= _sensorSteps && (calculatedSensorSteps - _sensorSteps) < 50000) {
       _sensorSteps = calculatedSensorSteps;
     }
@@ -453,6 +565,7 @@ class StepTrackerService extends ChangeNotifier {
     _manualSteps = 0;
     _todaySteps = 0;
     _bootAccumulatedSensorSteps = 0;
+    _discardedVehicleSteps = 0;
     _todayBaseSensorSteps = _lastRawSensorSteps;
     _isBaseSet = true;
     notifyListeners();
@@ -469,6 +582,7 @@ class StepTrackerService extends ChangeNotifier {
     _todayBaseSensorSteps = 0;
     _bootAccumulatedSensorSteps = 0;
     _isBaseSet = false;
+    _discardedVehicleSteps = 0;
     await init();
   }
 
@@ -476,6 +590,7 @@ class StepTrackerService extends ChangeNotifier {
   void dispose() {
     _stepCountSubscription?.cancel();
     _pedestrianStatusSubscription?.cancel();
+    _positionSubscription?.cancel();
     _cloudSyncDebounce?.cancel();
     _rolloverTimer?.cancel();
     super.dispose();
