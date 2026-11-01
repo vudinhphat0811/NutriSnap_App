@@ -459,18 +459,35 @@ class _StepTrackerDetailSheetState extends State<StepTrackerDetailSheet> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
+                color: Colors.orange.shade50.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.shade200),
+                border: Border.all(color: Colors.orange.shade200),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Text('💡', style: TextStyle(fontSize: 18)),
-                  SizedBox(width: 10),
+                  const Text('💡', style: TextStyle(fontSize: 18)),
+                  const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      'Cảm biến phần cứng tự động đếm khi bạn bỏ điện thoại trong túi hoặc cầm trên tay mà không tiêu tốn pin.',
-                      style: TextStyle(fontSize: 11, color: AppColors.textGray, height: 1.3),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Cơ chế cảm biến thông minh:',
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Để tiết kiệm pin, Android gom từ 5-10 bước đi liên tục mới gửi tín hiệu. Khi bạn đi bộ đều đặn, máy sẽ tự động cập nhật chuẩn xác 100%.',
+                          style: TextStyle(fontSize: 11, color: AppColors.textGray, height: 1.3),
+                        ),
+                        if (_stepService.manualSteps > 0) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            '• Đã bao gồm ${_stepService.manualSteps} bước cộng thêm.',
+                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Colors.blue.shade700),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
