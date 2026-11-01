@@ -22,7 +22,7 @@ class GoogleFitData {
   });
 }
 
-/// Dịch vụ kết nối và đồng bộ dữ liệu sức khoẻ từ Google Fit (Fitness REST API)
+/// Dịch vụ kết nối và đồng bộ 2 chiều dữ liệu sức khoẻ từ Google Fit (Fitness REST API)
 class GoogleFitService extends ChangeNotifier {
   static final GoogleFitService instance = GoogleFitService._internal();
 
@@ -32,6 +32,10 @@ class GoogleFitService extends ChangeNotifier {
     'email',
     'https://www.googleapis.com/auth/fitness.activity.read',
     'https://www.googleapis.com/auth/fitness.location.read',
+    'https://www.googleapis.com/auth/fitness.body.read',
+    'https://www.googleapis.com/auth/fitness.body.write',
+    'https://www.googleapis.com/auth/fitness.nutrition.write',
+    'https://www.googleapis.com/auth/fitness.hydration.write',
   ];
 
   bool _isLinked = false;
@@ -40,11 +44,20 @@ class GoogleFitService extends ChangeNotifier {
   DateTime? _lastSyncTime;
   String? _lastError;
 
+  // Dữ liệu số đo mới nhất tìm thấy từ Google Fit
+  double? _latestFitWeightKg;
+  double? _latestFitHeightCm;
+  DateTime? _latestFitWeightTime;
+
   bool get isLinked => _isLinked;
   bool get isSyncing => _isSyncing;
   String? get linkedEmail => _linkedEmail;
   DateTime? get lastSyncTime => _lastSyncTime;
   String? get lastError => _lastError;
+
+  double? get latestFitWeightKg => _latestFitWeightKg;
+  double? get latestFitHeightCm => _latestFitHeightCm;
+  DateTime? get latestFitWeightTime => _latestFitWeightTime;
 
   String get _accountKey {
     final email = AppStateService.instance.userProfile.email.trim().toLowerCase();
@@ -82,7 +95,21 @@ class GoogleFitService extends ChangeNotifier {
     );
   }
 
-  /// Mở hộp thoại Google cấp quyền đọc dữ liệu Google Fit
+  Future<String?> _getAccessToken() async {
+    try {
+      final googleSignIn = _getFitnessGoogleSignIn();
+      GoogleSignInAccount? account = googleSignIn.currentUser;
+      account ??= await googleSignIn.signInSilently();
+      if (account == null) return null;
+      final auth = await account.authentication;
+      return auth.accessToken;
+    } catch (e) {
+      debugPrint('[GoogleFitService] GetAccessToken error: $e');
+      return null;
+    }
+  }
+
+  /// Mở hộp thoại Google cấp quyền đọc & ghi dữ liệu Google Fit
   Future<bool> linkGoogleFit(BuildContext context) async {
     _isSyncing = true;
     _lastError = null;
@@ -122,6 +149,8 @@ class GoogleFitService extends ChangeNotifier {
 
       // Đồng bộ dữ liệu ngày hôm nay ngay sau khi liên kết
       await _fetchFitnessData(accessToken);
+      await _fetchLatestBodyMetrics(accessToken);
+
       _isSyncing = false;
       notifyListeners();
       return true;
@@ -142,19 +171,7 @@ class GoogleFitService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final googleSignIn = _getFitnessGoogleSignIn();
-      GoogleSignInAccount? account = googleSignIn.currentUser;
-      account ??= await googleSignIn.signInSilently();
-
-      if (account == null) {
-        _isSyncing = false;
-        notifyListeners();
-        return false;
-      }
-
-      final GoogleSignInAuthentication auth = await account.authentication;
-      final accessToken = auth.accessToken;
-
+      final accessToken = await _getAccessToken();
       if (accessToken == null || accessToken.isEmpty) {
         _isSyncing = false;
         notifyListeners();
@@ -162,6 +179,8 @@ class GoogleFitService extends ChangeNotifier {
       }
 
       final success = await _fetchFitnessData(accessToken);
+      await _fetchLatestBodyMetrics(accessToken);
+
       _isSyncing = false;
       notifyListeners();
       return success;
@@ -174,7 +193,7 @@ class GoogleFitService extends ChangeNotifier {
     }
   }
 
-  /// Gọi Google Fitness REST API: POST /fitness/v1/users/me/dataset:aggregate
+  /// Gọi Google Fitness REST API để lấy Bước chân, Calo đốt & Km
   Future<bool> _fetchFitnessData(String accessToken) async {
     try {
       final now = DateTime.now();
@@ -272,11 +291,398 @@ class GoogleFitService extends ChangeNotifier {
     }
   }
 
+  /// Lấy số đo Cân nặng & Chiều cao gần nhất từ Google Fit
+  Future<Map<String, double>?> fetchLatestBodyMetrics() async {
+    final token = await _getAccessToken();
+    if (token == null) return null;
+    return await _fetchLatestBodyMetrics(token);
+  }
+
+  Future<Map<String, double>?> _fetchLatestBodyMetrics(String accessToken) async {
+    try {
+      final now = DateTime.now();
+      final endNs = now.millisecondsSinceEpoch * 1000000;
+      final startNs = now.subtract(const Duration(days: 90)).millisecondsSinceEpoch * 1000000;
+
+      double? foundWeight;
+      double? foundHeight;
+
+      // 1. Lấy mốc cân nặng gần nhất từ merge_weight (trong vòng 90 ngày)
+      try {
+        final weightUrl = Uri.parse(
+          'https://www.googleapis.com/fitness/v1/users/me/dataSources/derived:com.google.weight:com.google.android.gms:merge_weight/datasets/$startNs-$endNs',
+        );
+        final res = await http.get(weightUrl, headers: {'Authorization': 'Bearer $accessToken'}).timeout(const Duration(seconds: 8));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final points = data['point'] as List?;
+          if (points != null && points.isNotEmpty) {
+            final lastPoint = points.last;
+            final vals = lastPoint['value'] as List?;
+            if (vals != null && vals.isNotEmpty) {
+              final val = vals[0]['fpVal'];
+              if (val is num && val > 0) {
+                foundWeight = double.parse(val.toDouble().toStringAsFixed(1));
+                final endNsVal = lastPoint['endTimeNanos'];
+                if (endNsVal != null) {
+                  final ms = int.tryParse(endNsVal.toString()) != null
+                      ? (int.parse(endNsVal.toString()) ~/ 1000000)
+                      : null;
+                  if (ms != null) {
+                    _latestFitWeightTime = DateTime.fromMillisecondsSinceEpoch(ms);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[GoogleFitService] Fetch weight error: $e');
+      }
+
+      // 2. Lấy mốc chiều cao từ merge_height
+      try {
+        final heightUrl = Uri.parse(
+          'https://www.googleapis.com/fitness/v1/users/me/dataSources/derived:com.google.height:com.google.android.gms:merge_height/datasets/0-$endNs',
+        );
+        final res = await http.get(heightUrl, headers: {'Authorization': 'Bearer $accessToken'}).timeout(const Duration(seconds: 8));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final points = data['point'] as List?;
+          if (points != null && points.isNotEmpty) {
+            final lastPoint = points.last;
+            final vals = lastPoint['value'] as List?;
+            if (vals != null && vals.isNotEmpty) {
+              final val = vals[0]['fpVal'];
+              if (val is num && val > 0) {
+                // Chiều cao trả về tính bằng mét -> nhân 100 thành cm
+                foundHeight = double.parse((val.toDouble() * 100).toStringAsFixed(1));
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[GoogleFitService] Fetch height error: $e');
+      }
+
+      if (foundWeight != null || foundHeight != null) {
+        _latestFitWeightKg = foundWeight;
+        _latestFitHeightCm = foundHeight;
+        notifyListeners();
+        return {
+          if (foundWeight != null) 'weightKg': foundWeight,
+          if (foundHeight != null) 'heightCm': foundHeight,
+        };
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[GoogleFitService] Fetch body metrics error: $e');
+      return null;
+    }
+  }
+
+  // ==========================================
+  // CHIỀU 2: ĐẨY DỮ LIỆU TỪ NUTRISNAP ➔ GOOGLE FIT
+  // ==========================================
+
+  /// Đẩy bản ghi dinh dưỡng bữa ăn lên Google Fit
+  Future<bool> pushMealNutrition({
+    required String foodName,
+    required double calories,
+    required double protein,
+    required double carbs,
+    required double fat,
+    String? mealType,
+    DateTime? time,
+  }) async {
+    if (!_isLinked) return false;
+    try {
+      final token = await _getAccessToken();
+      if (token == null) return false;
+
+      final mealTime = time ?? DateTime.now();
+      final startNs = mealTime.millisecondsSinceEpoch * 1000000;
+      final endNs = startNs + (60 * 1000000000); // Khoảng thời gian 1 phút
+
+      int mealTypeInt = 2; // Mặc định là bữa trưa
+      final upperMeal = (mealType ?? '').toUpperCase();
+      if (upperMeal.contains('SÁNG') || upperMeal.contains('BREAKFAST')) {
+        mealTypeInt = 1;
+      } else if (upperMeal.contains('TRƯA') || upperMeal.contains('LUNCH')) {
+        mealTypeInt = 2;
+      } else if (upperMeal.contains('TỐI') || upperMeal.contains('DINNER')) {
+        mealTypeInt = 3;
+      } else if (upperMeal.contains('NHẸ') || upperMeal.contains('SNACK')) {
+        mealTypeInt = 4;
+      }
+
+      const dataSourceId = 'raw:com.google.nutrition:com.example.flutter_application_1:NutriSnap:NutriSnapNutrition';
+      final patchUrl = Uri.parse('https://www.googleapis.com/fitness/v1/users/me/dataSources/$dataSourceId/datasets/$startNs-$endNs');
+
+      final body = {
+        'dataSourceId': dataSourceId,
+        'minStartTimeNs': startNs,
+        'maxEndTimeNs': endNs,
+        'point': [
+          {
+            'startTimeNanos': startNs,
+            'endTimeNanos': endNs,
+            'dataTypeName': 'com.google.nutrition',
+            'value': [
+              {
+                'mapVal': [
+                  {'key': 'calories', 'value': {'fpVal': calories}},
+                  {'key': 'protein', 'value': {'fpVal': protein}},
+                  {'key': 'carbs.total', 'value': {'fpVal': carbs}},
+                  {'key': 'fat.total', 'value': {'fpVal': fat}},
+                ],
+              },
+              {'intVal': mealTypeInt},
+              {'stringVal': foodName},
+            ],
+          },
+        ],
+      };
+
+      var res = await http.patch(
+        patchUrl,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 404 || res.statusCode == 400) {
+        await _createNutritionDataSource(token);
+        res = await http.patch(
+          patchUrl,
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body),
+        ).timeout(const Duration(seconds: 10));
+      }
+
+      debugPrint('[GoogleFitService] Push meal nutrition result: ${res.statusCode}');
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('[GoogleFitService] Push nutrition error: $e');
+      return false;
+    }
+  }
+
+  Future<void> _createNutritionDataSource(String token) async {
+    try {
+      final url = Uri.parse('https://www.googleapis.com/fitness/v1/users/me/dataSources');
+      final body = {
+        'dataStreamName': 'NutriSnapNutrition',
+        'type': 'raw',
+        'application': {'name': 'NutriSnap', 'version': '1.0'},
+        'dataType': {
+          'name': 'com.google.nutrition',
+          'field': [
+            {'name': 'nutrients', 'format': 'map'},
+            {'name': 'meal_type', 'format': 'integer'},
+            {'name': 'food_item', 'format': 'string'},
+          ],
+        },
+      };
+      await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+    } catch (e) {
+      debugPrint('[GoogleFitService] Create nutrition dataSource error: $e');
+    }
+  }
+
+  /// Đẩy lượng nước uống lên Google Fit
+  Future<bool> pushHydration(int amountMl) async {
+    if (!_isLinked || amountMl <= 0) return false;
+    try {
+      final token = await _getAccessToken();
+      if (token == null) return false;
+
+      final now = DateTime.now();
+      final startNs = now.millisecondsSinceEpoch * 1000000;
+      final endNs = startNs + (10 * 1000000000);
+      final volumeLiters = amountMl / 1000.0;
+
+      const dataSourceId = 'raw:com.google.hydration:com.example.flutter_application_1:NutriSnap:NutriSnapHydration';
+      final patchUrl = Uri.parse('https://www.googleapis.com/fitness/v1/users/me/dataSources/$dataSourceId/datasets/$startNs-$endNs');
+
+      final body = {
+        'dataSourceId': dataSourceId,
+        'minStartTimeNs': startNs,
+        'maxEndTimeNs': endNs,
+        'point': [
+          {
+            'startTimeNanos': startNs,
+            'endTimeNanos': endNs,
+            'dataTypeName': 'com.google.hydration',
+            'value': [
+              {'fpVal': volumeLiters},
+            ],
+          },
+        ],
+      };
+
+      var res = await http.patch(
+        patchUrl,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 404 || res.statusCode == 400) {
+        await _createHydrationDataSource(token);
+        res = await http.patch(
+          patchUrl,
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body),
+        ).timeout(const Duration(seconds: 10));
+      }
+
+      debugPrint('[GoogleFitService] Push hydration result: ${res.statusCode}');
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('[GoogleFitService] Push hydration error: $e');
+      return false;
+    }
+  }
+
+  Future<void> _createHydrationDataSource(String token) async {
+    try {
+      final url = Uri.parse('https://www.googleapis.com/fitness/v1/users/me/dataSources');
+      final body = {
+        'dataStreamName': 'NutriSnapHydration',
+        'type': 'raw',
+        'application': {'name': 'NutriSnap', 'version': '1.0'},
+        'dataType': {
+          'name': 'com.google.hydration',
+          'field': [
+            {'name': 'volume', 'format': 'floatPoint'},
+          ],
+        },
+      };
+      await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+    } catch (e) {
+      debugPrint('[GoogleFitService] Create hydration dataSource error: $e');
+    }
+  }
+
+  /// Đẩy số cân nặng mới lên Google Fit
+  Future<bool> pushWeight(double weightKg) async {
+    if (!_isLinked || weightKg <= 0) return false;
+    try {
+      final token = await _getAccessToken();
+      if (token == null) return false;
+
+      final now = DateTime.now();
+      final startNs = now.millisecondsSinceEpoch * 1000000;
+      final endNs = startNs + (10 * 1000000000);
+
+      const dataSourceId = 'raw:com.google.weight:com.example.flutter_application_1:NutriSnap:NutriSnapWeight';
+      final patchUrl = Uri.parse('https://www.googleapis.com/fitness/v1/users/me/dataSources/$dataSourceId/datasets/$startNs-$endNs');
+
+      final body = {
+        'dataSourceId': dataSourceId,
+        'minStartTimeNs': startNs,
+        'maxEndTimeNs': endNs,
+        'point': [
+          {
+            'startTimeNanos': startNs,
+            'endTimeNanos': endNs,
+            'dataTypeName': 'com.google.weight',
+            'value': [
+              {'fpVal': weightKg},
+            ],
+          },
+        ],
+      };
+
+      var res = await http.patch(
+        patchUrl,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 404 || res.statusCode == 400) {
+        await _createWeightDataSource(token);
+        res = await http.patch(
+          patchUrl,
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body),
+        ).timeout(const Duration(seconds: 10));
+      }
+
+      debugPrint('[GoogleFitService] Push weight result: ${res.statusCode}');
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('[GoogleFitService] Push weight error: $e');
+      return false;
+    }
+  }
+
+  Future<void> _createWeightDataSource(String token) async {
+    try {
+      final url = Uri.parse('https://www.googleapis.com/fitness/v1/users/me/dataSources');
+      final body = {
+        'dataStreamName': 'NutriSnapWeight',
+        'type': 'raw',
+        'application': {'name': 'NutriSnap', 'version': '1.0'},
+        'dataType': {
+          'name': 'com.google.weight',
+          'field': [
+            {'name': 'weight', 'format': 'floatPoint'},
+          ],
+        },
+      };
+      await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+    } catch (e) {
+      debugPrint('[GoogleFitService] Create weight dataSource error: $e');
+    }
+  }
+
   /// Hủy liên kết Google Fit và quay về cảm biến máy nội bộ
   Future<void> unlinkGoogleFit() async {
     _isLinked = false;
     _linkedEmail = null;
     _lastSyncTime = null;
+    _latestFitWeightKg = null;
+    _latestFitHeightCm = null;
+    _latestFitWeightTime = null;
     notifyListeners();
 
     try {
@@ -299,6 +705,9 @@ class GoogleFitService extends ChangeNotifier {
     _isLinked = false;
     _linkedEmail = null;
     _lastSyncTime = null;
+    _latestFitWeightKg = null;
+    _latestFitHeightCm = null;
+    _latestFitWeightTime = null;
     await init();
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_translations.dart';
 import '../services/app_state_service.dart';
+import '../services/google_fit_service.dart';
 import '../services/meal_db_service.dart';
 import '../services/recipe_translator.dart';
 import '../widgets/user_avatar_widget.dart';
@@ -1422,7 +1423,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(AppTranslations.tr('body_stats'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textBlack)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(AppTranslations.tr('body_stats'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textBlack)),
+            InkWell(
+              onTap: _handleSyncGoogleFitBodyMetrics,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.sync_rounded, size: 14, color: Color(0xFF2563EB)),
+                    SizedBox(width: 4),
+                    Text(
+                      'Đồng bộ Fit',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 10),
         Row(
           children: [
@@ -1744,6 +1773,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
             },
             onDisconnect: () => _confirmUnlink('Google', () => appState.unlinkGoogleAccount()),
           ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+
+          // 2. Google Fit (Đồng bộ 2 chiều: Bước chân, Calo nạp, Nước & Cân nặng)
+          _buildSocialLinkRow(
+            title: 'Google Fit (2 Chiều)',
+            detail: GoogleFitService.instance.isLinked
+                ? 'Đã liên kết (${GoogleFitService.instance.linkedEmail ?? 'Fit'}) • 2 Chiều'
+                : 'Đồng bộ bước chân, calo nạp & số đo cơ thể',
+            isLinked: GoogleFitService.instance.isLinked,
+            iconWidget: const Center(
+              child: Text('👟', style: TextStyle(fontSize: 18)),
+            ),
+            onConnect: () async {
+              final ok = await GoogleFitService.instance.linkGoogleFit(context);
+              if (ok && mounted) setState(() {});
+            },
+            onDisconnect: () => _confirmUnlink('Google Fit', () async {
+              await GoogleFitService.instance.unlinkGoogleFit();
+              if (mounted) setState(() {});
+            }),
+          ),
 
           // 3. Khối kiểm thử ngày Khách (chỉ hiện khi đang ở chế độ khách)
           if (isGuest) ...[
@@ -1928,6 +1980,155 @@ class _ProfileScreenState extends State<ProfileScreen> {
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             child: const Text('Hủy liên kết'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleSyncGoogleFitBodyMetrics() async {
+    final fitService = GoogleFitService.instance;
+    if (!fitService.isLinked) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Text('⚡', style: TextStyle(fontSize: 22)),
+              SizedBox(width: 8),
+              Text('Liên Kết Google Fit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: const Text(
+            'Bạn chưa liên kết Google Fit. Khi kết nối, NutriSnap sẽ tự động đọc cân nặng từ cân thông minh và đồng bộ dinh dưỡng, calo 2 chiều.',
+            style: TextStyle(fontSize: 13, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Để sau', style: TextStyle(color: AppColors.textGray)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await fitService.linkGoogleFit(context);
+                if (mounted) setState(() {});
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+              child: const Text('Liên kết ngay'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Đang kiểm tra số đo mới nhất từ Google Fit...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    final metrics = await fitService.fetchLatestBodyMetrics();
+    if (!mounted) return;
+
+    if (metrics == null || (metrics['weightKg'] == null && metrics['heightCm'] == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không tìm thấy bản ghi cân nặng/chiều cao mới trên Google Fit.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final newWeight = metrics['weightKg'];
+    final newHeight = metrics['heightCm'];
+    final profile = appState.userProfile;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Text('⚖️', style: TextStyle(fontSize: 22)),
+            SizedBox(width: 8),
+            Text('Đồng Bộ Google Fit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Tìm thấy số đo mới nhất từ tài khoản Google Fit của bạn:',
+              style: TextStyle(fontSize: 13, color: AppColors.textGray),
+            ),
+            const SizedBox(height: 12),
+            if (newWeight != null)
+              Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(10)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Cân nặng:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    Text('${profile.weightKg} kg ➔ $newWeight kg', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                  ],
+                ),
+              ),
+            if (newHeight != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(10)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Chiều cao:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    Text('${profile.heightCm.toInt()} cm ➔ ${newHeight.toInt()} cm', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF16A34A))),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 10),
+            const Text(
+              'Cập nhật sẽ tự động tính lại TDEE và mục tiêu Calo/Đạm hàng ngày cho bạn.',
+              style: TextStyle(fontSize: 11, color: AppColors.textGray, fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Bỏ qua', style: TextStyle(color: AppColors.textGray)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              appState.updateProfileMetrics(
+                fullName: profile.fullName,
+                gender: profile.gender,
+                age: profile.age,
+                heightCm: newHeight ?? profile.heightCm,
+                weightKg: newWeight ?? profile.weightKg,
+                targetWeightKg: profile.targetWeightKg,
+                goal: profile.goal,
+                dietType: profile.dietType,
+                activityLevel: profile.activityLevel,
+              );
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('🎉 Đã cập nhật chỉ số cơ thể & tính lại calo thành công!'),
+                  backgroundColor: AppColors.primary,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+            child: const Text('Cập nhật ngay'),
           ),
         ],
       ),

@@ -929,7 +929,10 @@ class AppStateService extends ChangeNotifier {
     saveToLocalStorage();
     notifyListeners();
 
-    // Đồng bộ lên Cloud Backend C# nếu đã đăng nhập tài khoản thật
+    // 1. Đồng bộ 2 chiều lượng nước uống lên Google Fit
+    GoogleFitService.instance.pushHydration(amountMl);
+
+    // 2. Đồng bộ lên Cloud Backend C# nếu đã đăng nhập tài khoản thật
     if (authToken != null && !isGuestMode && !authToken!.startsWith('guest_') && !authToken!.startsWith('mock_')) {
       _syncAddWaterToServer(amountMl);
     }
@@ -1120,6 +1123,9 @@ class AppStateService extends ChangeNotifier {
     saveToLocalStorage();
     notifyListeners();
 
+    // Đồng bộ 2 chiều cân nặng lên Google Fit
+    GoogleFitService.instance.pushWeight(weightKg);
+
     // Tự động đẩy chỉ số mới lên máy chủ Backend C#
     syncProfileToServer();
   }
@@ -1208,6 +1214,17 @@ class AppStateService extends ChangeNotifier {
     saveToLocalStorage();
     notifyListeners();
 
+    // Đồng bộ 2 chiều dinh dưỡng bữa ăn lên Google Fit
+    GoogleFitService.instance.pushMealNutrition(
+      foodName: entry.title,
+      calories: entry.calories.toDouble(),
+      protein: entry.protein.toDouble(),
+      carbs: entry.carbs.toDouble(),
+      fat: entry.fat.toDouble(),
+      mealType: entry.mealType,
+      time: now,
+    );
+
     if (authToken != null && !isGuestMode && !authToken!.startsWith('guest_') && !authToken!.startsWith('mock_')) {
       _addMealLogToServer(entry);
     }
@@ -1242,6 +1259,17 @@ class AppStateService extends ChangeNotifier {
     mealLogs.insert(0, entry);
     saveToLocalStorage();
     notifyListeners();
+
+    // Đồng bộ 2 chiều dinh dưỡng bữa ăn lên Google Fit
+    GoogleFitService.instance.pushMealNutrition(
+      foodName: entry.title,
+      calories: entry.calories.toDouble(),
+      protein: entry.protein.toDouble(),
+      carbs: entry.carbs.toDouble(),
+      fat: entry.fat.toDouble(),
+      mealType: entry.mealType,
+      time: now,
+    );
 
     if (authToken != null && !isGuestMode && !authToken!.startsWith('guest_') && !authToken!.startsWith('mock_')) {
       _addMealLogToServer(entry);

@@ -600,9 +600,15 @@ class _StepTrackerDetailSheetState extends State<StepTrackerDetailSheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Dữ liệu tự động lọc rung lắc xe máy',
-                  style: TextStyle(fontSize: 10.5, color: Color(0xFF166534)),
+                const Row(
+                  children: [
+                    Icon(Icons.swap_vert_rounded, size: 14, color: Color(0xFF166534)),
+                    SizedBox(width: 4),
+                    Text(
+                      'Đồng bộ 2 chiều: Bước, Calo nạp, Nước & Cân',
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF166534)),
+                    ),
+                  ],
                 ),
                 GestureDetector(
                   onTap: () async {
