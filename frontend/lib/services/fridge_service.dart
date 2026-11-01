@@ -20,7 +20,6 @@ class FridgeService extends ChangeNotifier {
     return 'nutrisnap_fridge_items_guest';
   }
 
-  static const String _legacyStorageKey = 'nutrisnap_fridge_items_v1';
   final List<FridgeItemModel> _items = [];
   bool _initialized = false;
 
@@ -52,24 +51,24 @@ class FridgeService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       String? rawJson = prefs.getString(_storageKey);
 
-      // Nếu tài khoản mới chưa có key riêng, thử migrate từ legacy key nếu có
-      if (rawJson == null && prefs.containsKey(_legacyStorageKey)) {
-        rawJson = prefs.getString(_legacyStorageKey);
-      }
-
       if (rawJson != null && rawJson.isNotEmpty) {
         final List decoded = jsonDecode(rawJson);
         _items.clear();
         for (var itemMap in decoded) {
           try {
-            _items.add(FridgeItemModel.fromJson(Map<String, dynamic>.from(itemMap)));
+            final item = FridgeItemModel.fromJson(Map<String, dynamic>.from(itemMap));
+            // Tự động dọn dẹp các món mẫu mặc định cũ (seed_) nếu có
+            if (!item.id.startsWith('seed_')) {
+              _items.add(item);
+            }
           } catch (e) {
             debugPrint('[FridgeService] Error parsing item: $e');
           }
         }
+        await _save();
       } else {
-        // Nạp sẵn một số đồ mẫu siêu thị thực tế để người dùng trải nghiệm ngay
-        _seedSampleItems();
+        // Tài khoản mới: Bắt đầu với tủ lạnh trống hoàn toàn 100%
+        _items.clear();
         await _save();
       }
       _initialized = true;
@@ -306,77 +305,10 @@ class FridgeService extends ChangeNotifier {
     }
   }
 
-  void _seedSampleItems() {
-    final now = DateTime.now();
-    _items.addAll([
-      FridgeItemModel(
-        id: 'seed_1',
-        name: 'Thịt ba chỉ heo',
-        category: 'Thịt & Trứng',
-        categoryIcon: '🥩',
-        quantity: '400g',
-        netWeightG: 400,
-        storageLocation: 'fridge',
-        manufacturingDate: now.subtract(const Duration(days: 1)),
-        expirationDate: now.add(const Duration(days: 1)), // Hết hạn ngày mai -> Cảnh báo vàng
-        addedAt: now.subtract(const Duration(days: 1)),
-        caloriesPer100g: 260,
-        proteinPer100g: 16.5,
-        carbsPer100g: 0.0,
-        fatPer100g: 21.5,
-        notes: 'Khay tem cân siêu thị WinMart',
-      ),
-      FridgeItemModel(
-        id: 'seed_2',
-        name: 'Cá hồi tươi phi lê',
-        category: 'Hải sản',
-        categoryIcon: '🐟',
-        quantity: '300g',
-        netWeightG: 300,
-        storageLocation: 'fridge',
-        manufacturingDate: now,
-        expirationDate: now.add(const Duration(days: 2)), // Còn 2 ngày
-        addedAt: now,
-        caloriesPer100g: 208,
-        proteinPer100g: 20.4,
-        carbsPer100g: 0.0,
-        fatPer100g: 13.4,
-        notes: 'Co.opmart phi lê tươi',
-      ),
-      FridgeItemModel(
-        id: 'seed_3',
-        name: 'Cà chua bi tươi',
-        category: 'Rau củ',
-        categoryIcon: '🍅',
-        quantity: '500g',
-        netWeightG: 500,
-        storageLocation: 'fridge',
-        manufacturingDate: now.subtract(const Duration(days: 2)),
-        expirationDate: now.add(const Duration(days: 3)), // Còn 3 ngày
-        addedAt: now.subtract(const Duration(days: 2)),
-        caloriesPer100g: 18,
-        proteinPer100g: 0.9,
-        carbsPer100g: 3.9,
-        fatPer100g: 0.2,
-        notes: 'Rau VietGAP',
-      ),
-      FridgeItemModel(
-        id: 'seed_4',
-        name: 'Sữa chua không đường Vinamilk',
-        category: 'Sữa & Bơ',
-        categoryIcon: '🥛',
-        quantity: '4 hộp',
-        netWeightG: 400,
-        storageLocation: 'fridge',
-        manufacturingDate: now.subtract(const Duration(days: 10)),
-        expirationDate: now.add(const Duration(days: 14)), // Tươi lâu
-        addedAt: now.subtract(const Duration(days: 2)),
-        caloriesPer100g: 61,
-        proteinPer100g: 3.7,
-        carbsPer100g: 4.8,
-        fatPer100g: 3.1,
-        notes: 'Lốc 4 hộp',
-      ),
-    ]);
+  /// Xóa toàn bộ thực phẩm trong tủ lạnh
+  Future<void> clearAll() async {
+    _items.clear();
+    await _save();
+    notifyListeners();
   }
 }
