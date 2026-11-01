@@ -533,6 +533,80 @@ class _AiNutritionReportSheetState extends State<AiNutritionReportSheet> {
             metrics.targetFatG > 0 ? metrics.avgFatG / metrics.targetFatG : 0.0,
             const Color(0xFFEF4444), // Red
           ),
+
+          // Vận động thể chất & Bước chân (nếu có dữ liệu)
+          if (metrics.totalSteps > 0 || metrics.totalCaloriesBurned > 0) ...[
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.directions_walk_rounded, size: 16, color: Colors.green),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isVi ? 'Vận động TB' : 'Avg Steps',
+                              style: const TextStyle(fontSize: 10, color: AppColors.textGray),
+                            ),
+                            Text(
+                              '${metrics.avgStepsPerDay.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} ${isVi ? 'bước' : 'steps'}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textBlack),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.deepOrange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.local_fire_department_rounded, size: 16, color: Colors.deepOrange),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isVi ? 'Đốt TB' : 'Avg Burned',
+                              style: const TextStyle(fontSize: 10, color: AppColors.textGray),
+                            ),
+                            Text(
+                              '${metrics.avgCaloriesBurnedPerDay.round()} kcal',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.deepOrange),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

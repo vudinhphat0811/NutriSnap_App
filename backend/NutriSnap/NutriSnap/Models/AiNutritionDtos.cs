@@ -27,4 +27,8 @@ public class NutritionReviewMetricsDto
     public int TargetFatG { get; set; }
     public int MealsCount { get; set; }
     public int DaysCount { get; set; }
+    public int TotalSteps { get; set; } = 0;
+    public int AvgStepsPerDay { get; set; } = 0;
+    public double TotalCaloriesBurned { get; set; } = 0.0;
+    public double AvgCaloriesBurnedPerDay { get; set; } = 0.0;
 }

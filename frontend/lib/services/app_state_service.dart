@@ -423,6 +423,10 @@ class NutritionReviewMetrics {
   final int targetFatG;
   final int mealsCount;
   final int daysCount;
+  final int totalSteps;
+  final int avgStepsPerDay;
+  final double totalCaloriesBurned;
+  final double avgCaloriesBurnedPerDay;
 
   NutritionReviewMetrics({
     this.totalCalories = 0,
@@ -437,6 +441,10 @@ class NutritionReviewMetrics {
     this.targetFatG = 50,
     this.mealsCount = 0,
     this.daysCount = 1,
+    this.totalSteps = 0,
+    this.avgStepsPerDay = 0,
+    this.totalCaloriesBurned = 0.0,
+    this.avgCaloriesBurnedPerDay = 0.0,
   });
 
   factory NutritionReviewMetrics.fromJson(Map<String, dynamic> json) {
@@ -453,6 +461,10 @@ class NutritionReviewMetrics {
       targetFatG: (json['targetFatG'] as num?)?.toInt() ?? 50,
       mealsCount: (json['mealsCount'] as num?)?.toInt() ?? 0,
       daysCount: (json['daysCount'] as num?)?.toInt() ?? 1,
+      totalSteps: (json['totalSteps'] as num?)?.toInt() ?? 0,
+      avgStepsPerDay: (json['avgStepsPerDay'] as num?)?.toInt() ?? 0,
+      totalCaloriesBurned: (json['totalCaloriesBurned'] as num?)?.toDouble() ?? 0.0,
+      avgCaloriesBurnedPerDay: (json['avgCaloriesBurnedPerDay'] as num?)?.toDouble() ?? 0.0,
     );
   }
 
@@ -469,6 +481,10 @@ class NutritionReviewMetrics {
         'targetFatG': targetFatG,
         'mealsCount': mealsCount,
         'daysCount': daysCount,
+        'totalSteps': totalSteps,
+        'avgStepsPerDay': avgStepsPerDay,
+        'totalCaloriesBurned': totalCaloriesBurned,
+        'avgCaloriesBurnedPerDay': avgCaloriesBurnedPerDay,
       };
 }
 

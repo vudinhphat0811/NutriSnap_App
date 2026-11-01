@@ -48,7 +48,8 @@ public class AiNutritionAdvisorService
             _ => "yesterday"
         };
 
-        var today = DateOnly.FromDateTime(DateTime.Now);
+        var vnNow = DateTime.UtcNow.AddHours(7);
+        var today = DateOnly.FromDateTime(vnNow);
         DateOnly startDate;
         DateOnly endDate;
         int daysCount;
@@ -107,6 +108,17 @@ public class AiNutritionAdvisorService
 
         int deltaCalories = avgCalories - targetCalories;
 
+        // 3. Lấy dữ liệu bước chân và năng lượng tiêu hao vận động trong khoảng thời gian
+        var stepLogs = await _context.DailyStepLogs
+            .AsNoTracking()
+            .Where(s => s.UserId == userId && s.LogDate >= startDate && s.LogDate <= endDate)
+            .ToListAsync();
+
+        int totalSteps = stepLogs.Sum(s => s.Steps);
+        double totalCaloriesBurned = stepLogs.Sum(s => s.CaloriesBurned);
+        int avgSteps = daysCount > 1 ? (int)Math.Round((double)totalSteps / daysCount) : totalSteps;
+        double avgCaloriesBurned = daysCount > 1 ? Math.Round(totalCaloriesBurned / daysCount, 1) : Math.Round(totalCaloriesBurned, 1);
+
         var metrics = new NutritionReviewMetricsDto
         {
             TotalCalories = totalCalories,
@@ -120,7 +132,11 @@ public class AiNutritionAdvisorService
             AvgFatG = avgFat,
             TargetFatG = targetFat,
             MealsCount = meals.Count,
-            DaysCount = daysCount
+            DaysCount = daysCount,
+            TotalSteps = totalSteps,
+            AvgStepsPerDay = avgSteps,
+            TotalCaloriesBurned = totalCaloriesBurned,
+            AvgCaloriesBurnedPerDay = avgCaloriesBurned
         };
 
         // Nếu không có dữ liệu bữa ăn nào (Tài khoản mới hoặc chưa ghi món)
@@ -274,13 +290,17 @@ public class AiNutritionAdvisorService
             promptBuilder.AppendLine($"- Average Calories/day: {metrics.AvgCaloriesPerDay} kcal (Difference: {metrics.DeltaCalories:+0;-0;0} kcal)");
             promptBuilder.AppendLine($"- Protein: {metrics.AvgProteinG}g/day | Carbs: {metrics.AvgCarbsG}g/day | Fat: {metrics.AvgFatG}g/day");
             promptBuilder.AppendLine($"- Typical Meals: {mealListSummary}");
+            promptBuilder.AppendLine("--- PHYSICAL ACTIVITY & STEPS ---");
+            promptBuilder.AppendLine($"- Total Steps in Period: {metrics.TotalSteps:N0} steps (Average: {metrics.AvgStepsPerDay:N0} steps/day)");
+            promptBuilder.AppendLine($"- Burned Calories from Activity: {metrics.TotalCaloriesBurned:N0} kcal (Average: {metrics.AvgCaloriesBurnedPerDay:N0} kcal/day)");
             promptBuilder.AppendLine("--- EVALUATION REQUIREMENTS ---");
             promptBuilder.AppendLine("Score the nutrition on a 100-point scale and provide empathetic, scientific, inspiring feedback.");
+            promptBuilder.AppendLine("IMPORTANT: Evaluate both dietary intake and walking/activity expenditure. Synthesize how physical movement aids the user's physique goal.");
             promptBuilder.AppendLine("ALL TEXT MUST BE IN ENGLISH.");
             promptBuilder.AppendLine("You MUST return ONLY a valid JSON object matching the following structure (no ```json code blocks, no text outside JSON):");
             promptBuilder.AppendLine("{");
             promptBuilder.AppendLine("  \"score\": 85,");
-            promptBuilder.AppendLine("  \"summary\": \"1-2 concise, insightful sentences summarizing overall energy and meal quality in English.\",");
+            promptBuilder.AppendLine("  \"summary\": \"1-2 concise, insightful sentences summarizing overall energy, physical activity, and meal quality in English.\",");
             promptBuilder.AppendLine("  \"strengths\": [\"Positive point 1\", \"Positive point 2\"],");
             promptBuilder.AppendLine("  \"improvements\": [\"Area for improvement 1\", \"Area for improvement 2\"],");
             promptBuilder.AppendLine("  \"actionableAdvice\": [\"Specific action 1 for today/tomorrow\", \"Specific action 2\"]");
@@ -300,13 +320,17 @@ public class AiNutritionAdvisorService
             promptBuilder.AppendLine($"- Calo trung bình/ngày: {metrics.AvgCaloriesPerDay} kcal (Chênh lệch: {metrics.DeltaCalories:+0;-0;0} kcal)");
             promptBuilder.AppendLine($"- Đạm nạp: {metrics.AvgProteinG}g/ngày | Tinh bột: {metrics.AvgCarbsG}g/ngày | Chất béo: {metrics.AvgFatG}g/ngày");
             promptBuilder.AppendLine($"- Các món ăn tiêu biểu: {mealListSummary}");
+            promptBuilder.AppendLine("--- HOẠT ĐỘNG THỂ CHẤT & VẬN ĐỘNG ---");
+            promptBuilder.AppendLine($"- Tổng bước chân trong kỳ: {metrics.TotalSteps:N0} bước (Trung bình: {metrics.AvgStepsPerDay:N0} bước/ngày)");
+            promptBuilder.AppendLine($"- Năng lượng tiêu hao do vận động: {metrics.TotalCaloriesBurned:N0} kcal (Trung bình: {metrics.AvgCaloriesBurnedPerDay:N0} kcal/ngày)");
             promptBuilder.AppendLine("--- YÊU CẦU ĐÁNH GIÁ ---");
             promptBuilder.AppendLine("Hãy chấm điểm dinh dưỡng trên thang 100 và đưa ra nhận xét khoa học, nhân văn, truyền cảm hứng.");
+            promptBuilder.AppendLine("ĐẶC BIỆT: Hãy đánh giá tổng hợp CẢ chế độ ăn uống và mức độ vận động bước chân/tiêu hao calo. Nhận xét mối tương quan giữa nạp vào và tiêu hao so với mục tiêu người dùng, biểu dương vận động tích cực hoặc khuyến khích đi bộ kết hợp bù nước, đạm hợp lý.");
             promptBuilder.AppendLine("TOÀN BỘ NỘI DUNG PHẢI BẰNG TIẾNG VIỆT.");
             promptBuilder.AppendLine("BẮT BUỘC trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng mẫu sau (không dùng ```json, không thêm chữ nào ngoài JSON):");
             promptBuilder.AppendLine("{");
             promptBuilder.AppendLine("  \"score\": 85,");
-            promptBuilder.AppendLine("  \"summary\": \"Tóm tắt 1-2 câu nhận xét tổng quan ngắn gọn, sâu sắc về năng lượng và chất lượng bữa ăn bằng tiếng Việt.\",");
+            promptBuilder.AppendLine("  \"summary\": \"Tóm tắt 1-2 câu nhận xét tổng quan ngắn gọn, sâu sắc về năng lượng nạp, vận động thể chất và chất lượng bữa ăn bằng tiếng Việt.\",");
             promptBuilder.AppendLine("  \"strengths\": [\"Điểm tích cực 1\", \"Điểm tích cực 2\"],");
             promptBuilder.AppendLine("  \"improvements\": [\"Điểm cần cải thiện 1\", \"Điểm cần cải thiện 2\"],");
             promptBuilder.AppendLine("  \"actionableAdvice\": [\"Hành động cụ thể 1 cho hôm nay/ngày mai\", \"Hành động cụ thể 2\"]");
@@ -535,6 +559,24 @@ public class AiNutritionAdvisorService
             strengths.Add(isEn
                 ? $"Consistently logged regular meals ({metrics.MealsCount} meals recorded), building strong dietary discipline."
                 : $"Duy trì ghi chép đầy đủ các bữa ({metrics.MealsCount} bữa ghi nhận) tạo thói quen kỷ luật cao.");
+        }
+
+        // 4. Đánh giá vận động thể chất & bước chân
+        if (metrics.AvgStepsPerDay >= 7000)
+        {
+            score += 5;
+            strengths.Add(isEn
+                ? $"Great physical activity ({metrics.AvgStepsPerDay:N0} steps/day, burned ~{metrics.AvgCaloriesBurnedPerDay:N0} kcal), promoting efficient metabolic health."
+                : $"Vận động thể chất rất tích cực ({metrics.AvgStepsPerDay:N0} bước/ngày, tiêu hao ~{metrics.AvgCaloriesBurnedPerDay:N0} kcal), hỗ trợ đắc lực cho trao đổi chất.");
+        }
+        else if (metrics.AvgStepsPerDay > 0 && metrics.AvgStepsPerDay < 4000)
+        {
+            improvements.Add(isEn
+                ? $"Daily step count is fairly low ({metrics.AvgStepsPerDay:N0} steps/day). Increasing light walking can boost energy expenditure."
+                : $"Mức độ đi bộ còn khá ít ({metrics.AvgStepsPerDay:N0} bước/ngày). Nên tăng cường đi bộ nhẹ nhàng để kích hoạt tiêu hao năng lượng.");
+            advice.Add(isEn
+                ? "Try a brisk 15-20 minute walk after meals to aid digestion and boost daily calorie burn."
+                : "Thử đi bộ nhẹ nhàng 15-20 phút sau các bữa ăn để hỗ trợ tiêu hóa và gia tăng calo tiêu hao.");
         }
 
         // Đảm bảo score trong khoảng 45-98

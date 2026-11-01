@@ -255,11 +255,13 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   }
 
   Widget _buildCalorieCard() {
+    final isVi = appState.currentLanguage == 'vi';
     final profile = appState.userProfile;
     final logged = appState.totalCaloriesLogged;
     final goal = appState.dailyCalorieGoal;
     final remaining = appState.remainingCalories;
     final progress = goal > 0 ? (logged / goal).clamp(0.0, 1.0) : 0.0;
+    final burnedCal = stepService.burnedCalories.round();
 
     final targetPro = profile.targetProtein > 0 ? profile.targetProtein : 120.0;
     final targetCarb = profile.targetCarbs > 0 ? profile.targetCarbs : 200.0;
@@ -322,6 +324,48 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+          // Hướng 2: Giữ nguyên mục tiêu TDEE cố định + Bổ sung dòng hiển thị tiêu hao do vận động
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: Colors.deepOrange.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.local_fire_department_rounded, size: 16, color: Colors.deepOrange),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          isVi ? 'Đốt từ vận động (đi bộ):' : 'Burned from activity:',
+                          style: const TextStyle(fontSize: 11, color: AppColors.textGray, fontWeight: FontWeight.w500),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '-$burnedCal kcal',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.deepOrange),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
