@@ -22,7 +22,7 @@ if (!string.IsNullOrEmpty(envPort))
     builder.WebHost.UseUrls($"http://0.0.0.0:{envPort}");
 }
 
-// 1. Cấu hình Database (Tự động nhận diện PostgreSQL hoặc SQL Server)
+// 1. Cấu hình Database (Tự động nhận diện PostgreSQL, SQL Server hoặc SQLite Fallback)
 var rawConn = builder.Configuration["DATABASE_URL"]
     ?? builder.Configuration["POSTGRES_CONNECTION"]
     ?? builder.Configuration["DEFAULT_CONNECTION"]
@@ -37,9 +37,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         var pgConn = ParsePostgresConnectionString(rawConn);
         options.UseNpgsql(pgConn);
     }
-    else
+    else if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(rawConn) && !rawConn.Contains(".db", StringComparison.OrdinalIgnoreCase))
     {
         options.UseSqlServer(rawConn);
+    }
+    else
+    {
+        // Tự động dự phòng SQLite khi chạy trên môi trường Linux/Docker (Render) mà chưa cấu hình PostgreSQL
+        var sqliteConn = rawConn.Contains("Data Source=", StringComparison.OrdinalIgnoreCase) ? rawConn : "Data Source=nutrisnap.db";
+        options.UseSqlite(sqliteConn);
     }
 });
 
@@ -259,6 +265,18 @@ using (var scope = app.Services.CreateScope())
                         UpdatedAt TEXT NOT NULL
                     );
                     CREATE UNIQUE INDEX IF NOT EXISTS IX_DailyStepLogs_UserId_LogDate ON DailyStepLogs (UserId, LogDate);
+
+                    CREATE TABLE IF NOT EXISTS DailyAiReviews (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        UserId INTEGER NOT NULL,
+                        ReviewDate TEXT NOT NULL,
+                        Period TEXT NOT NULL,
+                        Lang TEXT NOT NULL DEFAULT 'vi',
+                        Score INTEGER NOT NULL,
+                        ReviewJson TEXT NOT NULL,
+                        CreatedAt TEXT NOT NULL
+                    );
+                    CREATE UNIQUE INDEX IF NOT EXISTS IX_DailyAiReviews_User_Date_Period_Lang ON DailyAiReviews (UserId, ReviewDate, Period, Lang);
                 "); } catch {}
             }
 
@@ -289,6 +307,10 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+// Health check endpoints cho Render / Cloud monitoring
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+app.MapGet("/healthz", () => Results.Ok(new { status = "healthy" }));
 
 // Khi truy cập http://localhost:5065/ thì tự động chuyển hướng sang giao diện Swagger API
 app.MapGet("/", () => Results.Redirect("/swagger"));
@@ -415,11 +437,11 @@ static string ParsePostgresConnectionString(string raw)
             var match = System.Text.RegularExpressions.Regex.Match(raw, @"^postgres(?:ql)?://([^:]+):(.*)@([^:/]+)(?::(\d+))?/([^?]+)");
             if (match.Success)
             {
-                var user = match.Groups[1].Value;
-                var pass = match.Groups[2].Value;
+                var user = Uri.UnescapeDataString(match.Groups[1].Value);
+                var pass = Uri.UnescapeDataString(match.Groups[2].Value);
                 var host = match.Groups[3].Value;
                 var port = match.Groups[4].Success ? int.Parse(match.Groups[4].Value) : 5432;
-                var db = match.Groups[5].Value;
+                var db = match.Groups[5].Value.Split('?')[0];
 
                 // Tự động gỡ bỏ dấu ngoặc vuông [] nếu người dùng copy giữ nguyên placeholder [PASSWORD]
                 if (pass.StartsWith("[") && pass.EndsWith("]"))
