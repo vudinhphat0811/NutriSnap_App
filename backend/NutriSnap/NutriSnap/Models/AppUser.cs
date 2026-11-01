@@ -45,6 +45,13 @@ public class AppUser : IdentityUser<int>
     [MaxLength(200)]
     public string? GoogleEmail { get; set; }
 
+    public bool IsGoogleFitLinked { get; set; } = false;
+
+    [MaxLength(200)]
+    public string? GoogleFitEmail { get; set; }
+
+    public DateTime? GoogleFitLinkedAt { get; set; }
+
     [MaxLength(200)]
     public string? FacebookName { get; set; }
 

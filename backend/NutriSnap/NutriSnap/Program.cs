@@ -187,6 +187,12 @@ using (var scope = app.Services.CreateScope())
                         ALTER TABLE AspNetUsers ADD ActivityLevel NVARCHAR(50) NULL;
                     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AspNetUsers') AND name = 'TargetWeightKg')
                         ALTER TABLE AspNetUsers ADD TargetWeightKg FLOAT NOT NULL DEFAULT 0;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AspNetUsers') AND name = 'IsGoogleFitLinked')
+                        ALTER TABLE AspNetUsers ADD IsGoogleFitLinked BIT NOT NULL DEFAULT 0;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AspNetUsers') AND name = 'GoogleFitEmail')
+                        ALTER TABLE AspNetUsers ADD GoogleFitEmail NVARCHAR(200) NULL;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('AspNetUsers') AND name = 'GoogleFitLinkedAt')
+                        ALTER TABLE AspNetUsers ADD GoogleFitLinkedAt DATETIME2 NULL;
                     UPDATE AspNetUsers SET ActivityLevel = 'Moderate' WHERE ActivityLevel IS NULL;
                     UPDATE AspNetUsers SET Goal = 'LoseWeight' WHERE Goal IS NULL;
                     UPDATE AspNetUsers SET DietType = 'HighProtein' WHERE DietType IS NULL;
@@ -216,6 +222,9 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE ""AspNetUsers"" ADD COLUMN IF NOT EXISTS ""DietType"" VARCHAR(50);
                     ALTER TABLE ""AspNetUsers"" ADD COLUMN IF NOT EXISTS ""ActivityLevel"" VARCHAR(50);
                     ALTER TABLE ""AspNetUsers"" ADD COLUMN IF NOT EXISTS ""TargetWeightKg"" DOUBLE PRECISION NOT NULL DEFAULT 0;
+                    ALTER TABLE ""AspNetUsers"" ADD COLUMN IF NOT EXISTS ""IsGoogleFitLinked"" BOOLEAN NOT NULL DEFAULT FALSE;
+                    ALTER TABLE ""AspNetUsers"" ADD COLUMN IF NOT EXISTS ""GoogleFitEmail"" VARCHAR(200);
+                    ALTER TABLE ""AspNetUsers"" ADD COLUMN IF NOT EXISTS ""GoogleFitLinkedAt"" TIMESTAMP;
                     UPDATE ""AspNetUsers"" SET ""ActivityLevel"" = 'Moderate' WHERE ""ActivityLevel"" IS NULL;
                     UPDATE ""AspNetUsers"" SET ""Goal"" = 'LoseWeight' WHERE ""Goal"" IS NULL;
                     UPDATE ""AspNetUsers"" SET ""DietType"" = 'HighProtein' WHERE ""DietType"" IS NULL;
@@ -254,6 +263,9 @@ using (var scope = app.Services.CreateScope())
                 try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN DietType TEXT;"); } catch {}
                 try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN ActivityLevel TEXT;"); } catch {}
                 try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN TargetWeightKg REAL NOT NULL DEFAULT 0;"); } catch {}
+                try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN IsGoogleFitLinked INTEGER NOT NULL DEFAULT 0;"); } catch {}
+                try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN GoogleFitEmail TEXT;"); } catch {}
+                try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"ALTER TABLE AspNetUsers ADD COLUMN GoogleFitLinkedAt TEXT;"); } catch {}
                 try { Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(db.Database, @"
                     CREATE TABLE IF NOT EXISTS DailyStepLogs (
                         Id INTEGER PRIMARY KEY AUTOINCREMENT,

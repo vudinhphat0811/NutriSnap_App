@@ -29,6 +29,8 @@ class UserProfile {
   String? avatarPath;
   String? googleEmail;
   String? facebookName;
+  bool isGoogleFitLinked;
+  String? googleFitEmail;
 
   UserProfile({
     this.fullName = '',
@@ -51,6 +53,8 @@ class UserProfile {
     this.avatarPath,
     this.googleEmail,
     this.facebookName,
+    this.isGoogleFitLinked = false,
+    this.googleFitEmail,
   });
 
   bool get isProfileCompleted => hasProfile && heightCm > 0 && weightKg > 0 && age > 0;
@@ -118,6 +122,8 @@ class UserProfile {
         'avatarPath': avatarPath,
         'googleEmail': googleEmail,
         'facebookName': facebookName,
+        'isGoogleFitLinked': isGoogleFitLinked,
+        'googleFitEmail': googleFitEmail,
       };
 
   factory UserProfile.fromJson(Map<String, dynamic> map) => UserProfile(
@@ -141,6 +147,8 @@ class UserProfile {
         avatarPath: map['avatarPath'],
         googleEmail: map['googleEmail'],
         facebookName: map['facebookName'],
+        isGoogleFitLinked: map['isGoogleFitLinked'] == true,
+        googleFitEmail: map['googleFitEmail']?.toString(),
       );
 }
 
@@ -607,6 +615,8 @@ class AppStateService extends ChangeNotifier {
       dailyWaterGoalMl: (data['dailyWaterGoalMl'] as num?)?.toInt() ?? 0,
       hasProfile: !isNew && serverHasProfile && rawHeight > 0 && rawWeight > 0 && rawAge > 0,
       hasPassword: data['hasPassword'] == true,
+      isGoogleFitLinked: data['isGoogleFitLinked'] == true,
+      googleFitEmail: data['googleFitEmail']?.toString(),
     );
 
     isGuestMode = false; // Đã liên kết tài khoản -> Hết trạng thái Khách
@@ -662,6 +672,33 @@ class AppStateService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('[Unlink Google Error] $e');
+    }
+  }
+
+  /// Cập nhật trạng thái liên kết Google Fit và lưu lên Cloud Database C#
+  Future<void> setGoogleFitCloudStatus({required bool isLinked, String? email}) async {
+    userProfile.isGoogleFitLinked = isLinked;
+    userProfile.googleFitEmail = isLinked ? email : null;
+    saveToLocalStorage();
+    notifyListeners();
+
+    try {
+      if (authToken != null && !authToken!.startsWith('guest_')) {
+        final endpoint = isLinked ? 'link-social' : 'unlink-social';
+        await http.post(
+          Uri.parse('${ApiConstants.baseUrl}/api/user/$endpoint'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $authToken',
+          },
+          body: jsonEncode({
+            'provider': 'google_fit',
+            'accountIdentifier': email ?? '',
+          }),
+        ).timeout(const Duration(seconds: 10));
+      }
+    } catch (e) {
+      debugPrint('[Set Google Fit Cloud Status Error] $e');
     }
   }
 
@@ -910,6 +947,12 @@ class AppStateService extends ChangeNotifier {
         }
         if (data['email'] != null && data['email'].toString().isNotEmpty) {
           userProfile.email = data['email'].toString();
+        }
+        if (data['isGoogleFitLinked'] != null) {
+          userProfile.isGoogleFitLinked = data['isGoogleFitLinked'] == true;
+        }
+        if (data['googleFitEmail'] != null) {
+          userProfile.googleFitEmail = data['googleFitEmail']?.toString();
         }
         await saveToLocalStorage();
         notifyListeners();

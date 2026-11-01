@@ -63,6 +63,8 @@ public class UserController : ControllerBase
             targetFat = user.TargetFat,
             dailyWaterGoalMl = user.DailyWaterGoalMl,
             googleEmail = user.GoogleEmail,
+            isGoogleFitLinked = user.IsGoogleFitLinked,
+            googleFitEmail = user.GoogleFitEmail,
             facebookName = user.FacebookName,
             isGuest = user.IsGuest,
             hasProfile = user.HasProfile,
@@ -240,13 +242,19 @@ public class UserController : ControllerBase
         {
             user.GoogleEmail = req.AccountIdentifier;
         }
+        else if (req.Provider.Equals("google_fit", StringComparison.OrdinalIgnoreCase) || req.Provider.Equals("googlefit", StringComparison.OrdinalIgnoreCase))
+        {
+            user.IsGoogleFitLinked = true;
+            user.GoogleFitEmail = req.AccountIdentifier;
+            user.GoogleFitLinkedAt = DateTime.UtcNow;
+        }
         else if (req.Provider.Equals("facebook", StringComparison.OrdinalIgnoreCase))
         {
             user.FacebookName = req.AccountIdentifier;
         }
         else
         {
-            return BadRequest(new { message = "Nhà cung cấp không hợp lệ (hỗ trợ google hoặc facebook)." });
+            return BadRequest(new { message = "Nhà cung cấp không hợp lệ (hỗ trợ google, google_fit hoặc facebook)." });
         }
 
         // Nếu là khách mà liên kết tài khoản thì mở khóa thành tài khoản chính thức
@@ -261,6 +269,8 @@ public class UserController : ControllerBase
         {
             message = $"Liên kết tài khoản {req.Provider} thành công!",
             user.GoogleEmail,
+            user.IsGoogleFitLinked,
+            user.GoogleFitEmail,
             user.FacebookName,
             user.IsGuest
         });
@@ -285,6 +295,12 @@ public class UserController : ControllerBase
         {
             user.GoogleEmail = null;
         }
+        else if (req.Provider.Equals("google_fit", StringComparison.OrdinalIgnoreCase) || req.Provider.Equals("googlefit", StringComparison.OrdinalIgnoreCase))
+        {
+            user.IsGoogleFitLinked = false;
+            user.GoogleFitEmail = null;
+            user.GoogleFitLinkedAt = null;
+        }
         else if (req.Provider.Equals("facebook", StringComparison.OrdinalIgnoreCase))
         {
             user.FacebookName = null;
@@ -296,6 +312,8 @@ public class UserController : ControllerBase
         {
             message = $"Đã hủy liên kết tài khoản {req.Provider}.",
             user.GoogleEmail,
+            user.IsGoogleFitLinked,
+            user.GoogleFitEmail,
             user.FacebookName
         });
     }

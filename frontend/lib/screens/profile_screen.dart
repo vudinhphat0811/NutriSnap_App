@@ -1789,7 +1789,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             onConnect: () async {
               final ok = await GoogleFitService.instance.linkGoogleFit(context);
-              if (ok && mounted) setState(() {});
+              if (ok && mounted) {
+                setState(() {});
+              } else if (!ok && mounted && GoogleFitService.instance.lastError != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(GoogleFitService.instance.lastError!),
+                    backgroundColor: Colors.red.shade700,
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 5),
+                  ),
+                );
+              }
             },
             onDisconnect: () => _confirmUnlink('Google Fit', () async {
               await GoogleFitService.instance.unlinkGoogleFit();
@@ -2012,8 +2023,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ElevatedButton(
               onPressed: () async {
                 Navigator.pop(ctx);
-                await fitService.linkGoogleFit(context);
-                if (mounted) setState(() {});
+                final ok = await fitService.linkGoogleFit(context);
+                if (ok && mounted) {
+                  setState(() {});
+                } else if (!ok && mounted && fitService.lastError != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(fitService.lastError!),
+                      backgroundColor: Colors.red.shade700,
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 5),
+                    ),
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
               child: const Text('Liên kết ngay'),

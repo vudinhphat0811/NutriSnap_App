@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../constants/api_constants.dart';
 import 'app_state_service.dart';
 import 'step_tracker_service.dart';
 
@@ -67,31 +66,48 @@ class GoogleFitService extends ChangeNotifier {
     return 'guest';
   }
 
-  /// Khởi tạo trạng thái liên kết từ SharedPreferences
+  /// Khởi tạo trạng thái liên kết từ Cloud UserProfile và SharedPreferences (Local fallback)
   Future<void> init() async {
     try {
+      final userProfile = AppStateService.instance.userProfile;
       final prefs = await SharedPreferences.getInstance();
-      _isLinked = prefs.getBool('nutrisnap_google_fit_linked_$_accountKey') ?? false;
-      _linkedEmail = prefs.getString('nutrisnap_google_fit_email_$_accountKey');
+
+      // 1. Ưu tiên đọc trạng thái liên kết từ Cloud Database của tài khoản
+      if (userProfile.isGoogleFitLinked) {
+        _isLinked = true;
+        _linkedEmail = userProfile.googleFitEmail;
+      } else {
+        // Dự phòng bộ nhớ cục bộ trên máy hiện tại
+        _isLinked = prefs.getBool('nutrisnap_google_fit_linked_$_accountKey') ?? false;
+        _linkedEmail = prefs.getString('nutrisnap_google_fit_email_$_accountKey');
+      }
+
       final lastSyncStr = prefs.getString('nutrisnap_google_fit_last_sync_$_accountKey');
       if (lastSyncStr != null) {
         _lastSyncTime = DateTime.tryParse(lastSyncStr);
       }
       notifyListeners();
 
-      // Nếu đã liên kết, tự động đồng bộ ngầm dữ liệu mới nhất
+      // 2. Nếu đã liên kết, thử khôi phục phiên Google ngầm (signInSilently)
+      // Giúp khi đổi sang điện thoại khác, ứng dụng vẫn tự động kết nối lại dữ liệu Google Fit!
       if (_isLinked) {
-        syncTodayData();
+        final token = await _getAccessToken();
+        if (token != null && token.isNotEmpty) {
+          syncTodayData();
+        }
       }
     } catch (e) {
       debugPrint('[GoogleFitService] Init error: $e');
     }
   }
 
+  /// Khởi tạo GoogleSignIn client cho Google Fit
+  /// LƯU Ý: KHÔNG truyền serverClientId ở đây vì sẽ kích hoạt luồng xin Server Auth Code cho Web Client
+  /// với các scope Fitness nhạy cảm, gây ra lỗi PlatformException(12500, ApiException: 12500).
+  /// Bằng cách chỉ truyền scopes, Google Play Services sẽ ủy quyền trực tiếp cho ứng dụng Android!
   GoogleSignIn _getFitnessGoogleSignIn() {
     return GoogleSignIn(
       scopes: _fitnessScopes,
-      serverClientId: ApiConstants.googleServerClientId.isNotEmpty ? ApiConstants.googleServerClientId : null,
     );
   }
 
@@ -141,9 +157,14 @@ class GoogleFitService extends ChangeNotifier {
       _isLinked = true;
       _linkedEmail = account.email;
 
+      // 1. Lưu cục bộ trên thiết bị hiện tại
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('nutrisnap_google_fit_linked_$_accountKey', true);
       await prefs.setString('nutrisnap_google_fit_email_$_accountKey', account.email);
+
+      // 2. ĐỒNG BỘ LÊN CLOUD DATABASE: Lưu vĩnh viễn vào tài khoản NutriSnap
+      // Khi người dùng đăng nhập trên điện thoại khác, trạng thái liên kết sẽ tự động được giữ nguyên!
+      await AppStateService.instance.setGoogleFitCloudStatus(isLinked: true, email: account.email);
 
       notifyListeners();
 
@@ -156,7 +177,12 @@ class GoogleFitService extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('[GoogleFitService] Link error: $e');
-      _lastError = 'Lỗi kết nối Google Fit: $e';
+      final errStr = e.toString();
+      if (errStr.contains('12500')) {
+        _lastError = 'Lỗi 12500 từ Google: Vui lòng kiểm tra email đã được thêm vào danh sách "Test users" trên Google Cloud Console chưa, hoặc kiểm tra quyền Fitness API.';
+      } else {
+        _lastError = 'Lỗi kết nối Google Fit: $e';
+      }
       _isSyncing = false;
       notifyListeners();
       return false;
@@ -693,6 +719,9 @@ class GoogleFitService extends ChangeNotifier {
       await prefs.remove('nutrisnap_google_fit_linked_$_accountKey');
       await prefs.remove('nutrisnap_google_fit_email_$_accountKey');
       await prefs.remove('nutrisnap_google_fit_last_sync_$_accountKey');
+
+      // Hủy liên kết trên Cloud Database
+      await AppStateService.instance.setGoogleFitCloudStatus(isLinked: false);
 
       StepTrackerService.instance.clearGoogleFitData();
     } catch (e) {
