@@ -79,7 +79,22 @@ class StepTrackerService extends ChangeNotifier {
     _googleFitSteps = steps;
     _googleFitCalories = calories;
     _googleFitDistanceKm = distanceKm;
+
+    final prefs = _prefs;
+    if (prefs != null) {
+      final todayStr = _getTodayDateString();
+      prefs.setString('nutrisnap_fit_date_$_accountKey', todayStr);
+      prefs.setInt('nutrisnap_fit_steps_$_accountKey', steps);
+      if (calories != null) {
+        prefs.setDouble('nutrisnap_fit_cal_$_accountKey', calories);
+      }
+      if (distanceKm != null) {
+        prefs.setDouble('nutrisnap_fit_dist_$_accountKey', distanceKm);
+      }
+    }
+
     notifyListeners();
+    syncStepsToCloud(immediate: true);
   }
 
   /// Xóa dữ liệu Google Fit khi hủy liên kết
@@ -88,6 +103,10 @@ class StepTrackerService extends ChangeNotifier {
     _googleFitSteps = 0;
     _googleFitCalories = null;
     _googleFitDistanceKm = null;
+    _prefs?.remove('nutrisnap_fit_date_$_accountKey');
+    _prefs?.remove('nutrisnap_fit_steps_$_accountKey');
+    _prefs?.remove('nutrisnap_fit_cal_$_accountKey');
+    _prefs?.remove('nutrisnap_fit_dist_$_accountKey');
     notifyListeners();
   }
 
@@ -151,6 +170,13 @@ class StepTrackerService extends ChangeNotifier {
         _isBaseSet = _prefs!.getBool('nutrisnap_steps_base_set_$_accountKey') ?? false;
         _lastRawSensorSteps = _prefs!.getInt('nutrisnap_steps_last_raw_$_accountKey') ?? 0;
         _discardedVehicleSteps = _prefs!.getInt('nutrisnap_steps_discarded_$_accountKey') ?? 0;
+
+        final fitDate = _prefs!.getString('nutrisnap_fit_date_$_accountKey');
+        if (fitDate == todayStr) {
+          _googleFitSteps = _prefs!.getInt('nutrisnap_fit_steps_$_accountKey') ?? 0;
+          _googleFitCalories = _prefs!.getDouble('nutrisnap_fit_cal_$_accountKey');
+          _googleFitDistanceKm = _prefs!.getDouble('nutrisnap_fit_dist_$_accountKey');
+        }
       } else {
         // Ngày mới -> reset về 0 hoàn toàn theo giờ Việt Nam
         _sensorSteps = 0;
@@ -288,6 +314,13 @@ class StepTrackerService extends ChangeNotifier {
       _todaySteps = 0;
       _bootAccumulatedSensorSteps = 0;
       _discardedVehicleSteps = 0;
+      _googleFitSteps = 0;
+      _googleFitCalories = null;
+      _googleFitDistanceKm = null;
+      prefs.remove('nutrisnap_fit_date_$_accountKey');
+      prefs.remove('nutrisnap_fit_steps_$_accountKey');
+      prefs.remove('nutrisnap_fit_cal_$_accountKey');
+      prefs.remove('nutrisnap_fit_dist_$_accountKey');
       if (_lastRawSensorSteps > 0) {
         _todayBaseSensorSteps = _lastRawSensorSteps;
         _isBaseSet = true;

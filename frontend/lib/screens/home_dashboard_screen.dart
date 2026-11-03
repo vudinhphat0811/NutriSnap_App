@@ -70,6 +70,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             await appState.fetchDashboardToday();
             await appState.syncMealLogsFromServer();
           }
+          if (GoogleFitService.instance.isLinked) {
+            await GoogleFitService.instance.syncTodayData();
+          }
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),

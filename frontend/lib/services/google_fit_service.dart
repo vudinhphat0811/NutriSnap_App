@@ -224,17 +224,22 @@ class GoogleFitService extends ChangeNotifier {
       final url = Uri.parse('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate');
       final requestBody = {
         'aggregateBy': [
+          // 1. Số bước chân (không giới hạn dataSourceId để nhận diện từ mọi nguồn: điện thoại, đồng hồ)
           {
             'dataTypeName': 'com.google.step_count.delta',
-            'dataSourceId': 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps',
           },
+          // 2. Calo tiêu hao chuyên biệt từ hoạt động/vận động (from_activities)
           {
             'dataTypeName': 'com.google.calories.expended',
-            'dataSourceId': 'derived:com.google.calories.expended:com.google.android.gms:merge_calories_expended',
+            'dataSourceId': 'derived:com.google.calories.expended:com.google.android.gms:from_activities',
           },
+          // 3. Calo tiêu hao tổng quát (dự phòng trường hợp thiết bị không hỗ trợ from_activities)
+          {
+            'dataTypeName': 'com.google.calories.expended',
+          },
+          // 4. Quãng đường di chuyển (km)
           {
             'dataTypeName': 'com.google.distance.delta',
-            'dataSourceId': 'derived:com.google.distance.delta:com.google.android.gms:merge_distance_delta',
           },
         ],
         'bucketByTime': {'durationMillis': 86400000},
@@ -256,7 +261,8 @@ class GoogleFitService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = jsonDecode(response.body);
         int totalSteps = 0;
-        double totalCalories = 0.0;
+        double activeCaloriesFromFit = 0.0;
+        double generalCaloriesFromFit = 0.0;
         double totalDistanceMeters = 0.0;
 
         final buckets = data['bucket'] as List?;
@@ -265,18 +271,28 @@ class GoogleFitService extends ChangeNotifier {
             final datasets = bucket['dataset'] as List?;
             if (datasets != null) {
               for (var ds in datasets) {
+                final dsId = ds['dataSourceId']?.toString().toLowerCase() ?? '';
                 final points = ds['point'] as List?;
-                if (points != null) {
+                if (points != null && points.isNotEmpty) {
                   for (var pt in points) {
                     final values = pt['value'] as List?;
-                    final dataTypeName = pt['dataTypeName']?.toString() ?? '';
+                    final ptTypeName = pt['dataTypeName']?.toString().toLowerCase() ?? '';
+                    final typeName = ptTypeName.isNotEmpty ? ptTypeName : dsId;
+
                     if (values != null && values.isNotEmpty) {
                       final firstVal = values[0];
-                      if (dataTypeName.contains('step_count')) {
+                      if (typeName.contains('step_count')) {
                         totalSteps += (firstVal['intVal'] as num?)?.toInt() ?? 0;
-                      } else if (dataTypeName.contains('calories')) {
-                        totalCalories += (firstVal['fpVal'] as num?)?.toDouble() ?? 0.0;
-                      } else if (dataTypeName.contains('distance')) {
+                      } else if (typeName.contains('calories')) {
+                        final calVal = (firstVal['fpVal'] as num?)?.toDouble() ?? 0.0;
+                        if (dsId.contains('from_activities')) {
+                          // Calo tiêu hao chính xác từ vận động/đi bộ do Google Fit ghi nhận
+                          activeCaloriesFromFit += calVal;
+                        } else {
+                          // Calo tổng (có thể gồm cả BMR/chuyển hóa cơ bản)
+                          generalCaloriesFromFit += calVal;
+                        }
+                      } else if (typeName.contains('distance')) {
                         totalDistanceMeters += (firstVal['fpVal'] as num?)?.toDouble() ?? 0.0;
                       }
                     }
@@ -287,13 +303,54 @@ class GoogleFitService extends ChangeNotifier {
           }
         }
 
+        // TÍNH TOÁN LƯỢNG CALO ĐỐT CHÁY TỪ VẬN ĐỘNG / ĐI BỘ CHUẨN XÁC:
+        double? finalCalories;
+
+        if (activeCaloriesFromFit > 0) {
+          // Ưu tiên 1: Google Fit trả về đúng calo tiêu hao từ vận động (from_activities)
+          finalCalories = activeCaloriesFromFit;
+        } else if (generalCaloriesFromFit > 0) {
+          // Ưu tiên 2: Phân tách calo vận động từ calo tổng của Fit (loại bỏ BMR nền nếu bị gộp)
+          final profile = AppStateService.instance.userProfile;
+          final weight = profile.weightKg > 0 ? profile.weightKg : 65.0;
+          final height = profile.heightCm > 0 ? profile.heightCm : 168.0;
+          final age = profile.age > 0 ? profile.age : 25;
+          final isMale = profile.gender == 'Nam';
+
+          // BMR cả ngày theo công thức chuẩn Mifflin-St Jeor (kcal/ngày)
+          final dailyBmr = isMale
+              ? (10 * weight + 6.25 * height - 5 * age + 5)
+              : (10 * weight + 6.25 * height - 5 * age - 161);
+          final fractionOfDay = (now.hour + (now.minute / 60.0)) / 24.0;
+          final elapsedBmr = dailyBmr * fractionOfDay;
+
+          if (generalCaloriesFromFit > elapsedBmr + 10) {
+            // Tách lượng calo đốt do vận động = Tổng calo - BMR tích lũy từ 0h đến thời điểm hiện tại
+            final netCal = generalCaloriesFromFit - elapsedBmr;
+            finalCalories = netCal > 0 ? netCal : null;
+          } else if (generalCaloriesFromFit < 800 && totalSteps > 0) {
+            // Nếu generalCalories nhỏ hơn 800 kcal thì đó chính là calo hoạt động
+            finalCalories = generalCaloriesFromFit;
+          }
+        }
+
+        // Ưu tiên 3: Nếu Google Fit trả về bước chân > 0 nhưng calo = 0 hoặc null,
+        // tự động tính calo vận động chuẩn xác theo MET dựa trên cân nặng và số bước thực tế
+        if ((finalCalories == null || finalCalories <= 0) && totalSteps > 0) {
+          final profile = AppStateService.instance.userProfile;
+          final weight = profile.weightKg > 0 ? profile.weightKg : 65.0;
+          finalCalories = totalSteps * 0.04 * (weight / 70.0);
+        }
+
         final distanceKm = totalDistanceMeters / 1000.0;
         _lastSyncTime = DateTime.now();
 
-        // Cập nhật số liệu vào StepTrackerService
+        debugPrint('[GoogleFitService] Đồng bộ Fit thành công: Bước=$totalSteps, CaloVậnĐộng=${finalCalories?.toStringAsFixed(1)}, Km=${distanceKm.toStringAsFixed(2)}');
+
+        // Cập nhật số liệu vào StepTrackerService (bao gồm calo vận động chuẩn xác)
         StepTrackerService.instance.applyGoogleFitData(
           steps: totalSteps,
-          calories: totalCalories > 0 ? totalCalories : null,
+          calories: (finalCalories != null && finalCalories > 0) ? finalCalories : null,
           distanceKm: distanceKm > 0 ? distanceKm : null,
         );
 
