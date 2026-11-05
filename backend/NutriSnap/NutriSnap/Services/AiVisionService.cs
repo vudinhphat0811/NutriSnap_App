@@ -134,7 +134,6 @@ public class AiVisionService
 
                         _logger.LogInformation("Local AI (LM Studio Qwen2.5-VL) nhận diện thành công: {Name} ({En}) - {Calories} ({Weight}).", parsed.Name, parsed.EnglishName, parsed.Calories, parsed.Weight);
 
-                        // Nếu Local AI đã có nhận xét và thông số dinh dưỡng trên 100g, hoàn tất 100% thuần Offline
                         if (!string.IsNullOrWhiteSpace(parsed.NutritionComment) && parsed.CalorieNumber > 0)
                         {
                             _logger.LogInformation("Hoàn tất phân tích 100% bằng Local AI (LM Studio Qwen2.5-VL)");

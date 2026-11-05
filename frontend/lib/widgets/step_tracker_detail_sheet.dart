@@ -615,9 +615,13 @@ class _StepTrackerDetailSheetState extends State<StepTrackerDetailSheet> {
                     onPressed: () async {
                       final success = await _fitService.syncTodayData();
                       if (mounted) {
+                        final errorMsg = _fitService.lastError;
+                        final msg = success
+                            ? 'Đã đồng bộ dữ liệu mới nhất từ Google Fit!'
+                            : (errorMsg ?? 'Không có dữ liệu mới trên Google Fit.');
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(success ? 'Đã đồng bộ dữ liệu mới nhất từ Google Fit!' : 'Không có dữ liệu mới hoặc lỗi kết nối.'),
+                            content: Text(msg),
                             duration: const Duration(seconds: 2),
                             behavior: SnackBarBehavior.floating,
                           ),

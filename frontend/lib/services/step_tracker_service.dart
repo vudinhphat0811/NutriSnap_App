@@ -53,7 +53,9 @@ class StepTrackerService extends ChangeNotifier {
 
   int get todaySteps {
     checkDayRollover();
-    return _isUsingGoogleFit ? _googleFitSteps : _todaySteps;
+    return _isUsingGoogleFit
+        ? (_googleFitSteps > 0 ? _googleFitSteps : _todaySteps)
+        : _todaySteps;
   }
 
   int get sensorSteps => _sensorSteps;
@@ -492,14 +494,10 @@ class StepTrackerService extends ChangeNotifier {
     if (_isUsingGoogleFit) return;
     final rawSteps = event.steps;
 
-    // Đã xác nhận phần cứng có hỗ trợ cảm biến, an toàn để theo dõi trạng thái di chuyển
     _startPedestrianStatusListening();
 
     checkDayRollover();
 
-    // 1. BỘ LỌC CHỐNG BƯỚC ẢO XE MÁY & ĐẠP XE:
-    // Nếu phát hiện đang di chuyển bằng xe máy (tốc độ >= 20km/h) hoặc đạp xe (>= 12km/h),
-    // mọi xung động do ổ gà, rung máy sẽ được bù trừ vào mốc gốc để triệt tiêu hoàn toàn.
     if (_isVehicleMode || _isCyclingMode) {
       if (_lastRawSensorSteps > 0 && rawSteps > _lastRawSensorSteps) {
         final bumpSteps = rawSteps - _lastRawSensorSteps;

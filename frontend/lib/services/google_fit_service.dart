@@ -185,7 +185,10 @@ class GoogleFitService extends ChangeNotifier {
 
   /// Đồng bộ lại dữ liệu hôm nay từ Google Fit
   Future<bool> syncTodayData() async {
-    if (!_isLinked) return false;
+    if (!_isLinked) {
+      _lastError = 'Chưa liên kết tài khoản Google Fit.';
+      return false;
+    }
     _isSyncing = true;
     _lastError = null;
     notifyListeners();
@@ -193,6 +196,7 @@ class GoogleFitService extends ChangeNotifier {
     try {
       final accessToken = await _getAccessToken();
       if (accessToken == null || accessToken.isEmpty) {
+        _lastError = 'Phiên Google hết hạn, vui lòng kết nối lại.';
         _isSyncing = false;
         notifyListeners();
         return false;
@@ -224,27 +228,22 @@ class GoogleFitService extends ChangeNotifier {
       final url = Uri.parse('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate');
       final requestBody = {
         'aggregateBy': [
-          // 1. Số bước chân (không giới hạn dataSourceId để nhận diện từ mọi nguồn: điện thoại, đồng hồ)
+          // 1. Số bước chân (không giới hạn nguồn, Google Fit tự merge từ cảm biến & đồng hồ)
           {
             'dataTypeName': 'com.google.step_count.delta',
           },
-          // 2. Calo tiêu hao chuyên biệt từ hoạt động/vận động (from_activities)
-          {
-            'dataTypeName': 'com.google.calories.expended',
-            'dataSourceId': 'derived:com.google.calories.expended:com.google.android.gms:from_activities',
-          },
-          // 3. Calo tiêu hao tổng quát (dự phòng trường hợp thiết bị không hỗ trợ from_activities)
+          // 2. Calo tiêu hao (Google Fit tự động merge và tổng hợp tất cả calo)
           {
             'dataTypeName': 'com.google.calories.expended',
           },
-          // 4. Quãng đường di chuyển (km)
+          // 3. Quãng đường di chuyển (m)
           {
             'dataTypeName': 'com.google.distance.delta',
           },
         ],
         'bucketByTime': {'durationMillis': 86400000},
         'startTimeMillis': startMillis,
-        'endTimeMillis': endMillis,
+        'endTimeMillis': endMillis > startMillis ? endMillis : (startMillis + 1000),
       };
 
       final response = await http
@@ -265,38 +264,44 @@ class GoogleFitService extends ChangeNotifier {
         double generalCaloriesFromFit = 0.0;
         double totalDistanceMeters = 0.0;
 
+        final List datasetsToProcess = [];
         final buckets = data['bucket'] as List?;
         if (buckets != null && buckets.isNotEmpty) {
           for (var bucket in buckets) {
             final datasets = bucket['dataset'] as List?;
-            if (datasets != null) {
-              for (var ds in datasets) {
-                final dsId = ds['dataSourceId']?.toString().toLowerCase() ?? '';
-                final points = ds['point'] as List?;
-                if (points != null && points.isNotEmpty) {
-                  for (var pt in points) {
-                    final values = pt['value'] as List?;
-                    final ptTypeName = pt['dataTypeName']?.toString().toLowerCase() ?? '';
-                    final typeName = ptTypeName.isNotEmpty ? ptTypeName : dsId;
+            if (datasets != null) datasetsToProcess.addAll(datasets);
+          }
+        }
+        final rootDatasets = data['dataset'] as List?;
+        if (rootDatasets != null && rootDatasets.isNotEmpty) {
+          datasetsToProcess.addAll(rootDatasets);
+        }
 
-                    if (values != null && values.isNotEmpty) {
-                      final firstVal = values[0];
-                      if (typeName.contains('step_count')) {
-                        totalSteps += (firstVal['intVal'] as num?)?.toInt() ?? 0;
-                      } else if (typeName.contains('calories')) {
-                        final calVal = (firstVal['fpVal'] as num?)?.toDouble() ?? 0.0;
-                        if (dsId.contains('from_activities')) {
-                          // Calo tiêu hao chính xác từ vận động/đi bộ do Google Fit ghi nhận
-                          activeCaloriesFromFit += calVal;
-                        } else {
-                          // Calo tổng (có thể gồm cả BMR/chuyển hóa cơ bản)
-                          generalCaloriesFromFit += calVal;
-                        }
-                      } else if (typeName.contains('distance')) {
-                        totalDistanceMeters += (firstVal['fpVal'] as num?)?.toDouble() ?? 0.0;
-                      }
-                    }
+        for (var ds in datasetsToProcess) {
+          final dsId = ds['dataSourceId']?.toString().toLowerCase() ?? '';
+          final points = ds['point'] as List?;
+          if (points != null && points.isNotEmpty) {
+            for (var pt in points) {
+              final values = pt['value'] as List?;
+              final ptTypeName = pt['dataTypeName']?.toString().toLowerCase() ?? '';
+              final typeName = ptTypeName.isNotEmpty ? ptTypeName : dsId;
+
+              if (values != null && values.isNotEmpty) {
+                final firstVal = values[0];
+                final num? intVal = firstVal['intVal'] as num?;
+                final num? fpVal = firstVal['fpVal'] as num?;
+                final double valNum = (fpVal ?? intVal)?.toDouble() ?? 0.0;
+
+                if (typeName.contains('step_count')) {
+                  totalSteps += (intVal ?? fpVal)?.toInt() ?? 0;
+                } else if (typeName.contains('calories')) {
+                  if (dsId.contains('from_activities')) {
+                    activeCaloriesFromFit += valNum;
+                  } else {
+                    generalCaloriesFromFit += valNum;
                   }
+                } else if (typeName.contains('distance')) {
+                  totalDistanceMeters += valNum;
                 }
               }
             }
@@ -359,10 +364,12 @@ class GoogleFitService extends ChangeNotifier {
 
         return true;
       } else {
+        _lastError = 'Lỗi Google Fit API (${response.statusCode})';
         debugPrint('[GoogleFitService] API Error: ${response.statusCode} - ${response.body}');
         return false;
       }
     } catch (e) {
+      _lastError = 'Lỗi xử lý dữ liệu Google Fit: $e';
       debugPrint('[GoogleFitService] Parse API error: $e');
       return false;
     }

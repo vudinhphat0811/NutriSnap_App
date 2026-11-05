@@ -11,7 +11,7 @@ class ApiConstants {
   static const bool useCloudApi = true;
 
   // Địa chỉ IP của máy tính trong mạng Wi-Fi hiện tại (để test khi không cắm cáp)
-  static const String localHostIp = '192.168.1.10';
+  static const String localHostIp = '192.168.1.9';
 
   // Đặt true khi cắm cáp USB (đã chạy: adb reverse tcp:5065 tcp:5065)
   // Đặt false để điện thoại kết nối qua mạng Wi-Fi cục bộ (192.168.1.10:5065) không cần cắm cáp

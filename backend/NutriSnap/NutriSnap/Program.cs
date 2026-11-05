@@ -8,18 +8,20 @@ using NutriSnap.Data;
 using NutriSnap.Models;
 using NutriSnap.Services;
 
-// Cho phép Npgsql hỗ trợ mọi kiểu DateTime (không bắt buộc UTC)
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 LoadDotEnv();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Hỗ trợ tự động nhận diện cổng PORT do Render / Cloud cung cấp
 var envPort = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrEmpty(envPort))
 {
     builder.WebHost.UseUrls($"http://0.0.0.0:{envPort}");
+}
+else
+{
+    builder.WebHost.UseUrls("http://0.0.0.0:5065");
 }
 
 // 1. Cấu hình Database (Tự động nhận diện PostgreSQL, SQL Server hoặc SQLite Fallback)
@@ -486,4 +488,4 @@ static string ParsePostgresConnectionString(string raw)
 
     return raw;
 }
-
+

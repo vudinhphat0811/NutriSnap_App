@@ -121,7 +121,46 @@ public class EmailSender : IEmailSender<AppUser>
             ?? "vphat544@gmail.com";
         var senderName = smtpSection["SenderName"] ?? "NutriSnap Support";
 
-        // 1. ƯU TIÊN GỬI QUA BREVO REST API (HTTPS PORT 443 - HOẠT ĐỘNG HOÀN HẢO TRÊN RENDER CLOUD)
+        // 1. GỬI QUA SMTP SERVER (GMAIL SMTP / SMTP SERVER THEO YÊU CẦU DỰ ÁN)
+        try
+        {
+            var host = _config["SMTP_SERVER"] ?? Environment.GetEnvironmentVariable("SMTP_SERVER") ?? smtpSection["Server"] ?? "smtp.gmail.com";
+            var port = int.Parse(_config["SMTP_PORT"] ?? Environment.GetEnvironmentVariable("SMTP_PORT") ?? smtpSection["Port"] ?? "587");
+            var password = _config["SMTP_PASSWORD"] ?? Environment.GetEnvironmentVariable("SMTP_PASSWORD") ?? smtpSection["Password"];
+
+            if (!string.IsNullOrEmpty(senderEmail) && !string.IsNullOrEmpty(password))
+            {
+                using var client = new SmtpClient(host, port)
+                {
+                    Credentials = new NetworkCredential(senderEmail, password),
+                    EnableSsl = true,
+                    Timeout = 15000 // 15s timeout
+                };
+
+                var mailMessage = new MailMessage
+                {
+                    From = new MailAddress(senderEmail, senderName),
+                    Subject = subject,
+                    Body = message,
+                    IsBodyHtml = true
+                };
+
+                mailMessage.To.Add(toEmail);
+                await client.SendMailAsync(mailMessage);
+                Console.WriteLine($"[SMTP Server] Đã gửi email thành công tới {toEmail} qua {host}:{port}");
+                return;
+            }
+            else
+            {
+                Console.WriteLine("[SMTP Warning] Chưa cấu hình SenderEmail hoặc Password trong .env hoặc appsettings.json!");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Lỗi gửi mail SMTP Server]: {ex.Message}");
+        }
+
+        // 2. DỰ PHÒNG: NẾU SMTP THẤT BẠI VÀ CÓ CẤU HÌNH BREVO API THÌ MỚI GỌI BREVO
         var brevoApiKey = _config["BREVO_API_KEY"]
             ?? Environment.GetEnvironmentVariable("BREVO_API_KEY")
             ?? smtpSection["BrevoApiKey"]
@@ -147,54 +186,18 @@ public class EmailSender : IEmailSender<AppUser>
                 var response = await _httpClient.SendAsync(request);
                 if (response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[Brevo HTTP API] Đã gửi email thành công tới {toEmail} (Status {response.StatusCode})");
+                    Console.WriteLine($"[Brevo HTTP API Fallback] Đã gửi email thành công tới {toEmail} (Status {response.StatusCode})");
                     return;
                 }
 
                 var errorBody = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"[Brevo HTTP API Warning] ({response.StatusCode}): {errorBody}. Chuyển sang fallback SMTP...");
+                Console.WriteLine($"[Brevo HTTP API Fallback Warning] ({response.StatusCode}): {errorBody}");
             }
             catch (Exception brevoEx)
             {
-                Console.WriteLine($"[Brevo HTTP API Exception]: {brevoEx.Message}. Chuyển sang fallback SMTP...");
+                Console.WriteLine($"[Brevo HTTP API Fallback Exception]: {brevoEx.Message}");
             }
         }
 
-        // 2. FALLBACK: GỬI QUA SMTP CLIENT TRUYỀN THỐNG (DÙNG CHO MÁY LOCALHOST)
-        try
-        {
-            var host = _config["SMTP_SERVER"] ?? Environment.GetEnvironmentVariable("SMTP_SERVER") ?? smtpSection["Server"] ?? "smtp.gmail.com";
-            var port = int.Parse(_config["SMTP_PORT"] ?? Environment.GetEnvironmentVariable("SMTP_PORT") ?? smtpSection["Port"] ?? "587");
-            var password = _config["SMTP_PASSWORD"] ?? Environment.GetEnvironmentVariable("SMTP_PASSWORD") ?? smtpSection["Password"];
-
-            if (string.IsNullOrEmpty(senderEmail) || string.IsNullOrEmpty(password))
-            {
-                Console.WriteLine("[SMTP Warning] Chưa cấu hình SenderEmail hoặc Password trong .env hoặc appsettings.json!");
-                return;
-            }
-
-            using var client = new SmtpClient(host, port)
-            {
-                Credentials = new NetworkCredential(senderEmail, password),
-                EnableSsl = true,
-                Timeout = 10000 // 10s timeout để tránh treo server trên Render
-            };
-
-            var mailMessage = new MailMessage
-            {
-                From = new MailAddress(senderEmail, senderName),
-                Subject = subject,
-                Body = message,
-                IsBodyHtml = true
-            };
-
-            mailMessage.To.Add(toEmail);
-            await client.SendMailAsync(mailMessage);
-            Console.WriteLine($"[SMTP] Đã gửi email thành công tới {toEmail}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Lỗi gửi mail SMTP]: {ex.Message}");
-        }
     }
 }
